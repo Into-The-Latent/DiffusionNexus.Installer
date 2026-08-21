@@ -1,0 +1,88 @@
+@page "/"
+@using System.Reflection
+@using DiffusionNexus.Installer.Electron.Services
+@using ElectronNET.API
+@inject UpdaterLog Log
+@implements IDisposable
+
+<PageTitle>DiffusionNexus Installer</PageTitle>
+
+<div class="shell">
+    <header>
+        <h1>DiffusionNexus Installer</h1>
+        <p class="version">Version @AppVersion</p>
+        <p class="host">@HostDescription</p>
+    </header>
+
+    <section class="actions">
+        <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@(_busy || !ElectronActive)">
+            @(_busy ? "Checking..." : "Check for updates")
+        </button>
+
+        @if (Log.UpdateReady)
+        {
+            <button class="primary install" @onclick="InstallUpdate">Restart and install</button>
+        }
+    </section>
+
+    <section class="log">
+        <h2>Updater log</h2>
+        @if (Log.Lines.Count == 0)
+        {
+            <p class="empty">Nothing yet.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var line in Log.Lines)
+                {
+                    <li>@line</li>
+                }
+            </ul>
+        }
+    </section>
+</div>
+
+@code {
+    private bool _busy;
+
+    private static bool ElectronActive => HybridSupport.IsElectronActive;
+
+    private static string AppVersion =>
+        typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? "unknown";
+
+    private static string HostDescription => ElectronActive
+        ? "Running inside the Electron shell."
+        : "Running as a plain web app - the updater is unavailable outside Electron.";
+
+    protected override void OnInitialized() => Log.Changed += OnLogChanged;
+
+    // Fires on Electron's socket thread, so hop back onto the circuit before re-rendering.
+    private void OnLogChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task CheckForUpdatesAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Electron.AutoUpdater.CheckForUpdatesAsync();
+        }
+        catch (Exception ex)
+        {
+            // A failed update check must never take the app down with it - the installer still
+            // works perfectly well on an older version.
+            Log.Append($"Update check failed: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void InstallUpdate() => Electron.AutoUpdater.QuitAndInstall(false, true);
+
+    // Method group, so -= removes the handler this component actually added.
+    public void Dispose() => Log.Changed -= OnLogChanged;
+}

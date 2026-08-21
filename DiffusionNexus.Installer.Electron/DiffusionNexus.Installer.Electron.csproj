@@ -1,0 +1,85 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoDefaultLaunchSettingsFile>True</NoDefaultLaunchSettingsFile>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <RootNamespace>DiffusionNexus.Installer.Electron</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Directory.Build.targets attaches ProjectReferences to all five SDK projects to every
+      project in this repo when the SDK source is present. This shell does not use the SDK
+      yet, and pulling in EF Core + SQLite + the catalog DB would bloat the artifact that
+      the auto-update round-trip is being measured against. Remove this line when the SDK
+      is actually wired in.
+    -->
+    <UseLocalSDK>false</UseLocalSDK>
+  </PropertyGroup>
+
+
+  <PropertyGroup>
+    <!--
+      ElectronNET.Core 0.5.2 DEFAULTS to Electron 30.4.0, which is end-of-life and ships an
+      unpatched Chromium. Electron supports only the newest three majors (41/42/43 as of
+      2026-08). 42.4.1 is the highest version 0.5.2's curated list offers and is inside that
+      window; verified building and running here. Re-check when bumping ElectronNET.Core.
+    -->
+    <ElectronVersion>42.4.1</ElectronVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Publish self-contained: the app ships to machines that will NOT have the ASP.NET Core
+      runtime installed. Framework-dependent packaging looks fine on a dev box and fails on a
+      clean user machine, which is the worst possible place to discover it.
+    -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      The ElectronNET runtime execs the Electron binary by name, read from the ElectronExecutable
+      assembly metadata. Its default is RID-DEPENDENT and that is a trap:
+
+        RuntimeIdentifier starts with "win"  -> $(Title)              (matches electron-builder)
+        otherwise (INCLUDING when unset)     -> $(ElectronPackageId)  (does NOT match)
+
+      Building without a RID therefore takes the non-Windows branch on Windows, and the app
+      starts and silently exits with code 0 because it execs a name electron-builder never
+      produced. Pinned explicitly so it no longer depends on whether a RID happens to be set.
+      electron-builder names the exe after productName, which ElectronNET fills from Title.
+
+      ElectronPackageId still becomes the NSIS appId. Changing it after release orphans every
+      installed client's update path, so it is set deliberately and must not be churned.
+    -->
+    <ElectronPackageId>diffusion-nexus-installer</ElectronPackageId>
+    <Title>DiffusionNexus Installer</Title>
+    <ElectronExecutable>$(Title)</ElectronExecutable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      electron-builder AUTO-PUBLISHES whenever the config carries a publish provider; it does
+      not wait to be asked, and fails the build with "GitHub Personal Access Token is not set"
+      when none is available. CLI args cannot be injected to stop it: ElectronNET's targets
+      hard-reset ElectronPaParams before composing the command line.
+
+      So publishing is selected by CONFIG FILE instead. The default below stays token-free:
+        Local build   : dotnet publish -c Release                     (this file, no publish block)
+        Release build : dotnet publish -c Release ^
+                          -p:ElectronBuilderJson=electron-builder.json   (with GH_TOKEN set)
+    -->
+    <ElectronBuilderJson>electron-builder.local.json</ElectronBuilderJson>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ElectronNET.Core" Version="0.5.2" />
+    <PackageReference Include="ElectronNET.Core.AspNet" Version="0.5.2" />
+  </ItemGroup>
+
+</Project>

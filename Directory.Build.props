@@ -1,0 +1,24 @@
+<Project>
+  <PropertyGroup>
+    <!--
+      The 3.x line. A clean break from the 2.x Avalonia installer: different UI stack,
+      different packaging (NSIS installer rather than a portable zip), no upgrade path
+      from 2.x - users download 3.0.0 by hand once, and auto-update takes over after that.
+    -->
+    <Version>3.0.0</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
+    <!-- Without this the SDK appends "+<commit-sha>", which the UI then shows to users. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>Into The Latent</Authors>
+    <Company>Into The Latent</Company>
+    <Copyright>Copyright © Into The Latent</Copyright>
+    <PackageProjectUrl>https://github.com/Into-The-Latent/DiffusionNexus.Installer</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Into-The-Latent/DiffusionNexus.Installer</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+</Project>

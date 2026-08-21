@@ -1,0 +1,11 @@
+<Solution>
+  <!--
+    The DiffusionNexus Installer 3.x (Electron + Blazor). Consumes the Installer SDK as
+    NuGet packages, the same way any other consumer would.
+
+    For working on the UI and the SDK together, open DiffusionNexus.Installer.LocalSDK.slnx
+    instead - it adds the SDK source projects so Visual Studio's solution-scoped restore has
+    the full project graph when Directory.Build.targets redirects to ProjectReferences.
+  -->
+  <Project Path="DiffusionNexus.Installer.Electron\DiffusionNexus.Installer.Electron.csproj" />
+</Solution>
