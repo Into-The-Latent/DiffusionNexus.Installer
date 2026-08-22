@@ -42,6 +42,10 @@ public sealed class UpdaterLog
             _lines.Add(message);
         }
 
+        // Also to stdout: updater problems are otherwise invisible unless someone is watching
+        // the window, and the window is exactly what is unavailable when an update goes wrong.
+        Console.WriteLine($"[updater] {message}");
+
         Changed?.Invoke();
     }
 

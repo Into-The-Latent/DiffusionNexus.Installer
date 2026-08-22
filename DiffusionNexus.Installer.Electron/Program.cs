@@ -57,6 +57,21 @@ builder.UseElectron(args, async (IServiceProvider services) =>
         log.Append($"Update {info.Version} downloaded and ready to install.");
         log.MarkUpdateReady();
     };
+
+    // Check once at startup. An installer is a short-lived, occasionally-run app: if it waited
+    // for the user to ask, most installs would simply never update. Fire-and-forget so a slow
+    // or unreachable GitHub cannot delay the window appearing.
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await Electron.AutoUpdater.CheckForUpdatesAsync();
+        }
+        catch (Exception ex)
+        {
+            log.Append($"Startup update check failed: {ex.Message}");
+        }
+    });
 });
 
 var app = builder.Build();
