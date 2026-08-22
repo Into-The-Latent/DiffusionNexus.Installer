@@ -42,14 +42,23 @@ It does **not** upload anything — publishing is opt-in, see below.
 
 ## Publishing a release
 
-`electron-builder` auto-publishes whenever its config names a publish provider, so the default
-build deliberately uses a config with that block removed. To actually upload:
-
 ```
-dotnet publish DiffusionNexus.Installer.Electron -c Release -p:ElectronBuilderJson=electron-builder.json
+.\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "What changed."
 ```
 
-with `GH_TOKEN` set to a token that can write releases to this repository.
+Do not hand-roll this. Packaging takes two steps, and skipping the second produces an installer
+that runs fine and then fails permanently at its first update check:
+
+- `dotnet publish` packages using `Properties/electron-builder.local.json`, which has the
+  `publish` block removed. It has to be removed, because electron-builder auto-publishes
+  whenever a provider is configured, and a plain local build would fail with
+  "GitHub Personal Access Token is not set".
+- But electron-builder only emits `resources/app-update.yml` when a provider **is** configured,
+  and that file is how the installed app learns where its updates live. So the script re-runs
+  electron-builder with the real config plus `--publish never`: provider present, upload
+  suppressed, no token required. It aborts if `app-update.yml` is missing.
+
+Assets are uploaded with `gh`, which uses your existing login rather than a token in the build.
 
 ## Working on the SDK at the same time
 
