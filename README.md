@@ -5,13 +5,19 @@ The DiffusionNexus installer, 3.x line — **Electron shell + Blazor UI, written
 Replaces the 2.x Avalonia installer. Install logic is not duplicated here: it lives in the
 **DiffusionNexus Installer SDK** and is consumed as NuGet packages.
 
+> **Licence:** this repository is public so that releases are downloadable without a token
+> and so CI runs on free runners. It carries **no licence — all rights reserved**. You may
+> read the source; you may not copy, modify or redistribute it.
+
 ## Repositories
 
 | Repo | Purpose |
 |------|---------|
-| **this one** | The installer application (UI + Electron packaging) |
+| **this one** | The installer application, and its Releases are the public download + auto-update channel |
 | `Little-God1983/DiffusionNexus.Installer.SDK` | Install/git/python/download/catalog logic → NuGet |
-| `Into-The-Latent/DiffusionNexus.Installer.Releases` | Public download + auto-update channel |
+
+Releases are published to this repository. Because it is public, the installed app reads
+update metadata with **no credentials of any kind** — nothing secret ships to users.
 
 ## Requirements
 
@@ -43,7 +49,7 @@ build deliberately uses a config with that block removed. To actually upload:
 dotnet publish DiffusionNexus.Installer.Electron -c Release -p:ElectronBuilderJson=electron-builder.json
 ```
 
-with `GH_TOKEN` set to a token that can write to the releases repo.
+with `GH_TOKEN` set to a token that can write releases to this repository.
 
 ## Working on the SDK at the same time
 
