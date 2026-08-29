@@ -3002,16 +3002,19 @@ git commit -m "feat(gallery): catalog-driven workload gallery with installabilit
 
 ---
 
-### Task 13: Wizard host and stage navigation
+### Task 13: Stage navigation
 
 **Files:**
 - Create: `DiffusionNexus.Installer.Core/Wizard/WizardRun.cs`
-- Create: `DiffusionNexus.Installer.Electron/Components/Pages/Install.razor`
 - Test: `DiffusionNexus.Installer.Tests/Wizard/WizardRunTests.cs`
 
 **Interfaces:**
 - Consumes: `WizardPlan`, `WizardModuleRegistry`, `IWorkloadSource`.
-- Produces: `WizardRun` with `CurrentStage`, `CanGoNext`, `CanGoBack`, `TryNext()`, `Back()`, `ValidationErrors`.
+- Produces: `WizardRun` with `CurrentStage`, `CurrentModules`, `CanGoNext`, `CanGoBack`, `TryNext()`, `Back()`, `ValidationErrors`. Task 15 builds the page that drives it.
+
+> **Scope note:** the wizard host page (`Install.razor`) is deliberately NOT in this task. It
+> references the four module panels from Task 14 and the two stage components from Task 15, so
+> creating it here would not compile. It lands in Task 15.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3167,102 +3170,7 @@ public sealed class WizardRun(WizardPlan plan)
 Run: `dotnet test DiffusionNexus.Installer.slnx --filter WizardRunTests`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Build the wizard page**
-
-Create `DiffusionNexus.Installer.Electron/Components/Pages/Install.razor`:
-
-```razor
-@page "/install/{WorkloadId:guid}"
-@using DiffusionNexus.Installer.Core.Catalog
-@using DiffusionNexus.Installer.Core.Modules
-@using DiffusionNexus.Installer.Core.Wizard
-@using DiffusionNexus.Installer.Electron.Components.Wizard
-@inject IWorkloadSource Workloads
-@inject WizardModuleRegistry Registry
-@inject NavigationManager Nav
-
-<PageTitle>Install</PageTitle>
-
-@if (_run is null)
-{
-    <p>Preparing...</p>
-}
-else
-{
-    <h1>@_run.Plan.Selection.Workload.Name</h1>
-    <ol class="stage-strip">
-        @foreach (var stage in _run.Plan.Stages)
-        {
-            <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@stage</li>
-        }
-    </ol>
-
-    @if (_run.CurrentStage == WizardStage.Confirm)
-    {
-        <ConfirmStage Run="_run" />
-    }
-    else if (_run.CurrentStage == WizardStage.Install)
-    {
-        <InstallStage Run="_run" />
-    }
-    else
-    {
-        @foreach (var module in _run.CurrentModules)
-        {
-            @RenderModule(module)
-        }
-    }
-
-    @if (_run.CurrentStage != WizardStage.Install)
-    {
-        <div class="wizard-actions">
-            <button class="btn-secondary" disabled="@(!_run.CanGoBack)" @onclick="Back">Back</button>
-            <button class="btn-primary" disabled="@(!_run.CanGoNext)" @onclick="Next">Next</button>
-        </div>
-
-        @foreach (var error in _run.ValidationErrors)
-        {
-            <p class="validation-error">@error</p>
-        }
-    }
-}
-
-@code {
-    [Parameter] public Guid WorkloadId { get; set; }
-
-    private WizardRun? _run;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var workloads = await Workloads.GetInstallerWorkloadsAsync();
-        var workload = workloads.FirstOrDefault(w => w.Id == WorkloadId);
-
-        if (workload is null)
-        {
-            Nav.NavigateTo("/");
-            return;
-        }
-
-        var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload });
-        _run = new WizardRun(plan);
-    }
-
-    private void Next() => _run!.TryNext();
-
-    private void Back() => _run!.Back();
-
-    private RenderFragment RenderModule(IWizardModule module) => module switch
-    {
-        InstallFolderModule m => @<InstallFolderPanel Module="m" />,
-        ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" />,
-        GpuPreflightModule m => @<GpuPreflightPanel Module="m" />,
-        ShortcutsModule m => @<ShortcutsPanel Module="m" />,
-        _ => @<p>Unknown module: @module.Id</p>
-    };
-}
-```
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add DiffusionNexus.Installer.Core/Wizard DiffusionNexus.Installer.Electron/Components DiffusionNexus.Installer.Tests/Wizard
@@ -3459,11 +3367,12 @@ git commit -m "feat(wizard): panels for the four slice-1 modules"
 
 ---
 
-### Task 15: Confirm and Install stages
+### Task 15: Wizard host page, Confirm and Install stages
 
 **Files:**
 - Create: `DiffusionNexus.Installer.Electron/Components/Wizard/ConfirmStage.razor`
 - Create: `DiffusionNexus.Installer.Electron/Components/Wizard/InstallStage.razor`
+- Create: `DiffusionNexus.Installer.Electron/Components/Pages/Install.razor` (moved here from Task 13 — it references Task 14's panels and this task's stage components, so it cannot compile earlier)
 - Modify: `DiffusionNexus.Installer.Electron/Components/Layout/MainLayout.razor`
 
 **Interfaces:**
@@ -3615,7 +3524,102 @@ Create `DiffusionNexus.Installer.Electron/Components/Wizard/InstallStage.razor`:
 
 `InstallReportEntry` lives in `DiffusionNexus.Installer.SDK.Models/Installation/InstallReport.cs` and its members are `PlannedOperation`, `Category`, `Outcome`, `Comment`, `IsWarning`, `ItemId` — the markup above uses those exact names.
 
-- [ ] **Step 3: Mount the prompt modal globally**
+- [ ] **Step 3: Build the wizard host page**
+
+Create `DiffusionNexus.Installer.Electron/Components/Pages/Install.razor`:
+
+```razor
+@page "/install/{WorkloadId:guid}"
+@using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Modules
+@using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.Electron.Components.Wizard
+@inject IWorkloadSource Workloads
+@inject WizardModuleRegistry Registry
+@inject NavigationManager Nav
+
+<PageTitle>Install</PageTitle>
+
+@if (_run is null)
+{
+    <p>Preparing...</p>
+}
+else
+{
+    <h1>@_run.Plan.Selection.Workload.Name</h1>
+    <ol class="stage-strip">
+        @foreach (var stage in _run.Plan.Stages)
+        {
+            <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@stage</li>
+        }
+    </ol>
+
+    @if (_run.CurrentStage == WizardStage.Confirm)
+    {
+        <ConfirmStage Run="_run" />
+    }
+    else if (_run.CurrentStage == WizardStage.Install)
+    {
+        <InstallStage Run="_run" />
+    }
+    else
+    {
+        @foreach (var module in _run.CurrentModules)
+        {
+            @RenderModule(module)
+        }
+    }
+
+    @if (_run.CurrentStage != WizardStage.Install)
+    {
+        <div class="wizard-actions">
+            <button class="btn-secondary" disabled="@(!_run.CanGoBack)" @onclick="Back">Back</button>
+            <button class="btn-primary" disabled="@(!_run.CanGoNext)" @onclick="Next">Next</button>
+        </div>
+
+        @foreach (var error in _run.ValidationErrors)
+        {
+            <p class="validation-error">@error</p>
+        }
+    }
+}
+
+@code {
+    [Parameter] public Guid WorkloadId { get; set; }
+
+    private WizardRun? _run;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var workloads = await Workloads.GetInstallerWorkloadsAsync();
+        var workload = workloads.FirstOrDefault(w => w.Id == WorkloadId);
+
+        if (workload is null)
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
+        var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload });
+        _run = new WizardRun(plan);
+    }
+
+    private void Next() => _run!.TryNext();
+
+    private void Back() => _run!.Back();
+
+    private RenderFragment RenderModule(IWizardModule module) => module switch
+    {
+        InstallFolderModule m => @<InstallFolderPanel Module="m" />,
+        ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" />,
+        GpuPreflightModule m => @<GpuPreflightPanel Module="m" />,
+        ShortcutsModule m => @<ShortcutsPanel Module="m" />,
+        _ => @<p>Unknown module: @module.Id</p>
+    };
+}
+```
+
+- [ ] **Step 4: Mount the prompt modal globally**
 
 In `DiffusionNexus.Installer.Electron/Components/Layout/MainLayout.razor`, add just before the closing tag of the layout markup:
 
@@ -3623,12 +3627,12 @@ In `DiffusionNexus.Installer.Electron/Components/Layout/MainLayout.razor`, add j
 <DiffusionNexus.Installer.Electron.Components.Shared.PromptModal />
 ```
 
-- [ ] **Step 4: Build and run every test**
+- [ ] **Step 5: Build and run every test**
 
 Run: `dotnet build DiffusionNexus.Installer.slnx && dotnet test DiffusionNexus.Installer.slnx`
 Expected: Build succeeded 0 errors; all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add DiffusionNexus.Installer.Electron/Components
@@ -3729,10 +3733,15 @@ jobs:
       - name: Restore
         run: dotnet restore DiffusionNexus.Installer.slnx -p:UseLocalSDK=false
         env:
-          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+          # nuget.config reads %GITHUB_PACKAGES_TOKEN% for the github-littlegod source.
+          # The repository secret is named PACKAGES_READ_TOKEN; the env var name is not
+          # negotiable, so map one to the other here or every restore 401s.
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
       - name: Build
         run: dotnet build DiffusionNexus.Installer.slnx -c Release --no-restore -p:UseLocalSDK=false
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
       - name: Test
         run: dotnet test DiffusionNexus.Installer.slnx -c Release --no-build -p:UseLocalSDK=false
@@ -3754,8 +3763,11 @@ git push -u origin feature/catalog-driven-wizard
 - [ ] **Step 5: Confirm CI is green**
 
 Run: `gh run list --repo Into-The-Latent/DiffusionNexus.Installer --limit 3`
-Expected: the latest run on `feature/catalog-driven-wizard` succeeds. If restore 403s, the
-`PACKAGES_READ_TOKEN` secret is missing or lacks `read:packages` — fix the secret, not the build.
+**The repository currently has NO secrets configured** (verified with `gh secret list`), so this
+first run is expected to fail its restore with a 401 until the owner adds a `PACKAGES_READ_TOKEN`
+secret holding a token with `read:packages` on the Little-God1983 account. That is an owner
+action, not a build fix: do not work around it by removing `-p:UseLocalSDK=false`, which would
+destroy the only gate proving the package references are complete. Record the red run and move on.
 
 ---
 
