@@ -78,4 +78,9 @@
     <ProjectReference Include="..\DiffusionNexus.Installer.Core\DiffusionNexus.Installer.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Catalog\catalog.zip" LogicalName="catalog.zip" />
+    <EmbeddedResource Include="Assets\Catalog\manifest.json" LogicalName="manifest.json" />
+  </ItemGroup>
+
 </Project>
