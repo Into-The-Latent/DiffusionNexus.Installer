@@ -1,7 +1,9 @@
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Models.Installation;
+using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using FluentAssertions;
 using Moq;
@@ -77,7 +79,17 @@ public class UnconditionalModuleTests
     [Fact]
     public void Shortcuts_contributes_both_flags_and_the_conflict_callback()
     {
-        var module = new ShortcutsModule { CreateDesktopShortcut = false, CustomName = "Fooocus (test)" };
+        // Held in a local so the assertion can compare delegate identity: a method group or lambda
+        // converted at each use site would produce a different delegate instance every time.
+        Func<string, string, Task<ShortcutConflictResult>> handler =
+            (_, _) => Task.FromResult(new ShortcutConflictResult(ShortcutConflictResolution.Overwrite));
+
+        var module = new ShortcutsModule
+        {
+            CreateDesktopShortcut = false,
+            CustomName = "Fooocus (test)",
+            OnShortcutConflict = handler,
+        };
         var draft = new InstallationOptionsDraft();
 
         module.Contribute(draft);
@@ -86,16 +98,33 @@ public class UnconditionalModuleTests
         draft.CreateStartMenuShortcut.Should().BeTrue();
         draft.DesktopShortcutName.Should().Be("Fooocus (test)");
         draft.StartMenuShortcutName.Should().Be("Fooocus (test)");
+        draft.OnShortcutConflict.Should().BeSameAs(handler);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Shortcuts_normalizes_a_blank_name_to_null(string? customName)
+    {
+        // null tells the SDK to use its default name for the repository type; an empty string
+        // would be a real, empty shortcut name, so blank input must not reach the options.
+        var module = new ShortcutsModule { CustomName = customName };
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        draft.DesktopShortcutName.Should().BeNull();
+        draft.StartMenuShortcutName.Should().BeNull();
     }
 
     [Fact]
-    public void Shortcuts_leaves_names_null_when_the_user_did_not_rename()
+    public void Shortcuts_leaves_the_conflict_callback_null_when_the_host_supplied_none()
     {
         var draft = new InstallationOptionsDraft();
 
         new ShortcutsModule().Contribute(draft);
 
-        draft.DesktopShortcutName.Should().BeNull();
-        draft.StartMenuShortcutName.Should().BeNull();
+        draft.OnShortcutConflict.Should().BeNull();
     }
 }
