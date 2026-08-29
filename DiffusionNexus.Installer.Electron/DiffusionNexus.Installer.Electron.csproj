@@ -80,6 +80,14 @@
   <ItemGroup>
     <PackageReference Include="ElectronNET.Core" Version="0.5.2" />
     <PackageReference Include="ElectronNET.Core.AspNet" Version="0.5.2" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Models" Version="2.0.0-preview.3" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Shared" Version="2.0.0-preview.3" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Services" Version="2.0.0-preview.3" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Catalog" Version="2.0.0-preview.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiffusionNexus.Installer.Core\DiffusionNexus.Installer.Core.csproj" />
   </ItemGroup>
 
 </Project>
