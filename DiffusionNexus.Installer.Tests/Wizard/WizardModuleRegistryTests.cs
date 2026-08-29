@@ -15,12 +15,17 @@ public class WizardModuleRegistryTests
         public WizardStage Stage => stage;
         public int Order => order;
         public WorkloadCapability Satisfies => satisfies;
-        public bool Initialized { get; private set; }
+        public int InitializeCount { get; private set; }
+        public bool Initialized => InitializeCount > 0;
 
-        public bool AppliesTo(WizardSelection selection) => applies;
+        // Depends on Initialized deliberately: if BuildPlanAsync ever filtered before it
+        // initialized, this module would report "does not apply" and vanish from the plan --
+        // which is exactly what would happen to GpuPreflightModule and its hardware probe.
+        public bool AppliesTo(WizardSelection selection) => Initialized && applies;
+
         public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
         {
-            Initialized = true;
+            InitializeCount++;
             return Task.CompletedTask;
         }
         public void Contribute(InstallationOptionsDraft draft) { }
@@ -67,14 +72,15 @@ public class WizardModuleRegistryTests
     }
 
     [Fact]
-    public async Task Every_module_is_initialized_before_applicability_is_read()
+    public async Task Applicability_is_read_only_after_every_module_is_initialized()
     {
         var module = new StubModule("m", WizardStage.System, 0, WorkloadCapability.None, applies: true);
         var registry = new WizardModuleRegistry([module]);
 
-        await registry.BuildPlanAsync(Selection());
+        var plan = await registry.BuildPlanAsync(Selection());
 
         module.Initialized.Should().BeTrue();
+        plan.Modules(WizardStage.System).Should().ContainSingle().Which.Id.Should().Be("m");
     }
 
     [Fact]
@@ -111,5 +117,20 @@ public class WizardModuleRegistryTests
         fooocus.Repository.Type = RepositoryType.Fooocus;
 
         registry.IsInstallable(fooocus).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Building_a_second_plan_reinitializes_the_same_module_instances()
+    {
+        // Pins the one-plan-at-a-time contract documented on WizardModuleRegistry: the two plans
+        // share module instances, so a future flow that kept both alive would silently share state.
+        var module = new StubModule("m", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
+        var registry = new WizardModuleRegistry([module]);
+
+        var first = await registry.BuildPlanAsync(Selection());
+        var second = await registry.BuildPlanAsync(Selection());
+
+        module.InitializeCount.Should().Be(2);
+        first.AllModules.Single().Should().BeSameAs(second.AllModules.Single());
     }
 }

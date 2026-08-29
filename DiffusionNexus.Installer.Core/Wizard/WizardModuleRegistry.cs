@@ -5,6 +5,12 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 /// <summary>
 /// Every capability module the app knows about. Also the installability gate: the gallery may only
 /// offer a workload whose every detected capability has a registered module behind it.
+/// <para>
+/// Exactly one plan may be in flight at a time. The registry hands out its own long-lived module
+/// instances and modules hold per-run state, so a second <see cref="BuildPlanAsync"/> re-initializes
+/// those instances and invalidates any plan still held from an earlier call. The wizard drives one
+/// plan at a time, which is what makes that safe.
+/// </para>
 /// </summary>
 public sealed class WizardModuleRegistry(IEnumerable<IWizardModule> modules)
 {
