@@ -6,23 +6,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <PropertyGroup>
-    <!--
-      Directory.Build.targets auto-detects UseLocalSDK=true whenever the sibling SDK repo
-      (..\DiffusionNexus.Installer.SDK) exists on disk, which is the standard developer
-      layout documented in that repo's CLAUDE.md. Left to that default, this project's SDK
-      PackageReferences would redirect to local ProjectReferences at the checkout's current
-      on-disk version (plain "2.0.0"), while DiffusionNexus.Installer.Electron.csproj pins
-      UseLocalSDK=false and stays on the published "2.0.0-preview.3" NuGet packages -
-      restoring the solution then fails with NU1605 package-downgrade errors because the two
-      projects disagree on which version of the same package graph to use. Pin false here
-      too, matching Electron, so the default (no flag) build/test uses NuGet packages
-      solution-wide; pass -p:UseLocalSDK=true to opt the whole solution into the local-source
-      path instead.
-    -->
-    <UseLocalSDK>false</UseLocalSDK>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="DiffusionNexus.Installer.SDK.Models" Version="2.0.0-preview.3" />
     <PackageReference Include="DiffusionNexus.Installer.SDK.Shared" Version="2.0.0-preview.3" />
