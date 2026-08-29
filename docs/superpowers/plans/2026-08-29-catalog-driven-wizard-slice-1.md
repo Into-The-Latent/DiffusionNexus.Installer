@@ -646,7 +646,9 @@ Create `DiffusionNexus.Installer.Core/Wizard/ModuleValidation.cs`:
 ```csharp
 namespace DiffusionNexus.Installer.Core.Wizard;
 
-public sealed record ModuleValidation(bool IsValid, string? Error)
+// The positional property cannot be named Error: it would collide with the static Error factory
+// below (CS0102). ErrorMessage is the property; Error(string) stays the factory.
+public sealed record ModuleValidation(bool IsValid, string? ErrorMessage)
 {
     public static ModuleValidation Ok() => new(true, null);
     public static ModuleValidation Error(string message) => new(false, message);
@@ -714,7 +716,11 @@ public sealed class InstallationOptionsDraft
     public string? OutputFolder { get; set; }
     public bool CpuTorch { get; set; }
 
-    public InstallationOptions ToOptions() => new()
+    // Qualified deliberately: the SDK defines TWO InstallationOptions types --
+    // Models.Installation.InstallationOptions (a class) and Services.InstallationOptions (the
+    // record the orchestrator takes). This file imports both namespaces, so the bare name is
+    // CS0104-ambiguous.
+    public SDK.Services.InstallationOptions ToOptions() => new()
     {
         OnlyModelDownload = false,
         SelectedVramProfile = SelectedVramProfile,
@@ -1724,6 +1730,7 @@ Create `DiffusionNexus.Installer.Tests/Wizard/CapabilityAgreementTests.cs`:
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Hardware;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -1834,7 +1841,7 @@ public class CapabilityAgreementTests
 - [ ] **Step 7: Run the agreement tests**
 
 Run: `dotnet test DiffusionNexus.Installer.slnx --filter CapabilityAgreementTests`
-Expected: PASS, 11 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 8: Commit**
 
@@ -3143,7 +3150,7 @@ public sealed class WizardRun(WizardPlan plan)
     public IReadOnlyList<string> ValidationErrors =>
         CurrentModules.Select(m => m.Validate())
             .Where(v => !v.IsValid)
-            .Select(v => v.Error!)
+            .Select(v => v.ErrorMessage!)
             .ToList();
 
     public bool CanGoNext => _index < plan.Stages.Count - 1 && ValidationErrors.Count == 0;
