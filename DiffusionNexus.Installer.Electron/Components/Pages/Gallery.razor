@@ -13,16 +13,20 @@
 {
     <p>Loading the catalog...</p>
 }
+else if (_loadError is not null)
+{
+    <p class="gallery-error">The catalog could not be read: @_loadError</p>
+}
 else if (_entries.Count == 0)
 {
-    <p>No workloads are available. The catalog could not be read.</p>
+    <p>No workloads are available.</p>
 }
 else
 {
     <div class="filters">
         <span class="filter-label">Type</span>
         <button class="@TypeClass(null)" @onclick="() => _type = null">All</button>
-        @foreach (var type in Enum.GetValues<WorkflowType>())
+        @foreach (var type in AvailableTypes())
         {
             <button class="@TypeClass(type)" @onclick="() => _type = type">@type</button>
         }
@@ -37,33 +41,58 @@ else
         }
     </div>
 
-    <div class="gallery">
-        @foreach (var entry in Filtered())
-        {
-            <div class="card @(entry.IsInstallable ? "" : "card-disabled")">
-                <h2>@entry.Workload.Name</h2>
-                <p class="card-software">@entry.Workload.Repository.Type — @entry.Workload.WorkflowType</p>
-                <p class="card-description">@entry.Workload.Description</p>
+    var shown = Filtered().ToList();
 
-                @if (entry.IsInstallable)
-                {
-                    <button class="btn-primary" @onclick="() => Install(entry)">Install</button>
-                }
-                else
-                {
-                    <p class="card-unavailable">Coming soon — needs @entry.MissingCapabilities</p>
-                }
-            </div>
-        }
-    </div>
+    @if (shown.Count == 0)
+    {
+        <p class="gallery-empty">No workloads match these filters.</p>
+    }
+    else
+    {
+        <div class="gallery">
+            @foreach (var entry in shown)
+            {
+                <div class="card @(entry.IsInstallable ? "" : "card-disabled")">
+                    <h2>@entry.Workload.Name</h2>
+                    <p class="card-software">@entry.Workload.Repository.Type — @entry.Workload.WorkflowType</p>
+                    <p class="card-description">@entry.Workload.Description</p>
+
+                    @if (entry.IsInstallable)
+                    {
+                        <button class="btn-primary" @onclick="() => Install(entry)">Install</button>
+                    }
+                    else
+                    {
+                        <p class="card-unavailable">Coming soon — needs @entry.MissingCapabilities</p>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <p class="gallery-footer"><a href="/updates">Version and updates</a></p>
 }
 
 @code {
     private IReadOnlyList<GalleryEntry>? _entries;
+    private string? _loadError;
     private WorkflowType? _type;
     private RepositoryType? _software;
 
-    protected override async Task OnInitializedAsync() => _entries = await Builder.BuildAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _entries = await Builder.BuildAsync();
+        }
+        catch (Exception ex)
+        {
+            // This is the first screen; it must say why it is empty rather than take the app down
+            // with an unhandled exception out of the component lifecycle.
+            _loadError = ex.Message;
+            _entries = [];
+        }
+    }
 
     private IEnumerable<GalleryEntry> Filtered() => _entries!
         .Where(e => _type is null || e.Workload.WorkflowType == _type)
@@ -73,6 +102,13 @@ else
     // unused software never shows an empty filter.
     private IEnumerable<RepositoryType> AvailableSoftware() => _entries!
         .Select(e => e.Workload.Repository.Type)
+        .Distinct()
+        .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
+
+    // Catalog-derived for the same reason AvailableSoftware is: a filter that can only ever return
+    // nothing is a dead control.
+    private IEnumerable<WorkflowType> AvailableTypes() => _entries!
+        .Select(e => e.Workload.WorkflowType)
         .Distinct()
         .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
 
