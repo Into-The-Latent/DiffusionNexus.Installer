@@ -1,0 +1,29 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel panel-warning">
+    <h2>No compatible GPU found</h2>
+
+    @if (Module.CanOfferCpuFallback)
+    {
+        <p>
+            No usable NVIDIA GPU was detected@(Module.GpuName is null ? "" : $" (found: {Module.GpuName})").
+            ComfyUI can run on CPU, but generation will be very slow.
+        </p>
+        <label class="checkbox">
+            <input type="checkbox" checked="@Module.AcceptCpuOnly"
+                   @onchange="e => Module.AcceptCpuOnly = (bool)(e.Value ?? false)" />
+            Install the CPU-only build anyway
+        </label>
+    }
+    else
+    {
+        <p>
+            No usable NVIDIA GPU was detected@(Module.GpuName is null ? "" : $" (found: {Module.GpuName})").
+            This workload requires one and cannot run on CPU.
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public GpuPreflightModule Module { get; set; } = default!;
+}

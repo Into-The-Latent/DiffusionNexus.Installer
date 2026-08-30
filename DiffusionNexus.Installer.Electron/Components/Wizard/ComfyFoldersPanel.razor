@@ -1,0 +1,55 @@
+@using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.Core.Modules
+@inject IFolderPicker FolderPicker
+
+<section class="panel">
+    <h2>Model and output folders</h2>
+
+    <label>Model library folder <span class="panel-hint">(optional)</span></label>
+    <p class="panel-hint">
+        Point this at an existing model library and the installer writes an
+        <code>extra_model_paths.yaml</code> so the workload reads from it instead of duplicating
+        downloads.
+    </p>
+    <div class="path-row">
+        <input type="text" value="@Module.ModelBaseFolder"
+               @oninput="e => Module.ModelBaseFolder = e.Value?.ToString() ?? string.Empty" />
+        <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+    {
+        <label class="checkbox">
+            <input type="checkbox" checked="@Module.OverwriteExtraModelPaths"
+                   @onchange="e => Module.OverwriteExtraModelPaths = (bool)(e.Value ?? false)" />
+            Overwrite an existing extra_model_paths.yaml
+        </label>
+    }
+
+    @if (Module.SupportsOutputFolder)
+    {
+        <label>Output folder <span class="panel-hint">(optional)</span></label>
+        <p class="panel-hint">Generated images and videos are written here instead of inside the install.</p>
+        <div class="path-row">
+            <input type="text" value="@Module.OutputFolder"
+                   @oninput="e => Module.OutputFolder = e.Value?.ToString() ?? string.Empty" />
+            <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ComfyFoldersModule Module { get; set; } = default!;
+
+    private async Task BrowseModels()
+    {
+        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", Module.ModelBaseFolder);
+        if (chosen is not null) Module.ModelBaseFolder = chosen;
+    }
+
+    private async Task BrowseOutput()
+    {
+        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", Module.OutputFolder);
+        if (chosen is not null) Module.OutputFolder = chosen;
+    }
+}

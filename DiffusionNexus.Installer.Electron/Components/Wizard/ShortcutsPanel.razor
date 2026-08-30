@@ -1,0 +1,25 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel">
+    <h2>Shortcuts</h2>
+
+    <label class="checkbox">
+        <input type="checkbox" checked="@Module.CreateDesktopShortcut"
+               @onchange="e => Module.CreateDesktopShortcut = (bool)(e.Value ?? false)" />
+        Create a desktop shortcut
+    </label>
+
+    <label class="checkbox">
+        <input type="checkbox" checked="@Module.CreateStartMenuShortcut"
+               @onchange="e => Module.CreateStartMenuShortcut = (bool)(e.Value ?? false)" />
+        Create a Start Menu shortcut
+    </label>
+
+    <label>Shortcut name <span class="panel-hint">(optional)</span></label>
+    <input type="text" value="@Module.CustomName"
+           @oninput="e => Module.CustomName = e.Value?.ToString()" placeholder="Use the default name" />
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ShortcutsModule Module { get; set; } = default!;
+}

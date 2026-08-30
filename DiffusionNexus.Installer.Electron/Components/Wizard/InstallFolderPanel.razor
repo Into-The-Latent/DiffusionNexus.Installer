@@ -1,0 +1,23 @@
+@using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.Core.Modules
+@inject IFolderPicker FolderPicker
+
+<section class="panel">
+    <h2>Install location</h2>
+    <p class="panel-hint">Where the workload gets installed.</p>
+    <div class="path-row">
+        <input type="text" value="@Module.TargetFolder"
+               @oninput="e => Module.TargetFolder = e.Value?.ToString() ?? string.Empty" />
+        <button class="btn-secondary" @onclick="Browse">Browse...</button>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public InstallFolderModule Module { get; set; } = default!;
+
+    private async Task Browse()
+    {
+        var chosen = await FolderPicker.PickFolderAsync("Select the install folder", Module.TargetFolder);
+        if (chosen is not null) Module.TargetFolder = chosen;
+    }
+}
