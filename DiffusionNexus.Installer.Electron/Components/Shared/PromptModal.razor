@@ -1,0 +1,25 @@
+@using DiffusionNexus.Installer.Electron.Services
+@implements IDisposable
+@inject ModalPromptService Prompts
+
+@if (Prompts.IsOpen)
+{
+    <div class="modal-backdrop">
+        <div class="modal-card" role="dialog" aria-modal="true">
+            <h2>@Prompts.Title</h2>
+            <p>@Prompts.Message</p>
+            <div class="modal-actions">
+                <button class="btn-secondary" @onclick="() => Prompts.Answer(false)">@Prompts.CancelLabel</button>
+                <button class="btn-primary" @onclick="() => Prompts.Answer(true)">@Prompts.ConfirmLabel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Prompts.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Prompts.Changed -= OnChanged;
+}
