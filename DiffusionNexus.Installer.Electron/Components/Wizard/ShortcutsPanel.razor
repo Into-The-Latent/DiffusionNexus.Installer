@@ -4,22 +4,44 @@
     <h2>Shortcuts</h2>
 
     <label class="checkbox">
-        <input type="checkbox" checked="@Module.CreateDesktopShortcut"
-               @onchange="e => Module.CreateDesktopShortcut = (bool)(e.Value ?? false)" />
+        <input type="checkbox" checked="@Module.CreateDesktopShortcut" @onchange="OnCreateDesktopShortcutChanged" />
         Create a desktop shortcut
     </label>
 
     <label class="checkbox">
-        <input type="checkbox" checked="@Module.CreateStartMenuShortcut"
-               @onchange="e => Module.CreateStartMenuShortcut = (bool)(e.Value ?? false)" />
+        <input type="checkbox" checked="@Module.CreateStartMenuShortcut" @onchange="OnCreateStartMenuShortcutChanged" />
         Create a Start Menu shortcut
     </label>
 
     <label>Shortcut name <span class="panel-hint">(optional)</span></label>
-    <input type="text" value="@Module.CustomName"
-           @oninput="e => Module.CustomName = e.Value?.ToString()" placeholder="Use the default name" />
+    <input type="text" value="@Module.CustomName" @oninput="OnCustomNameTyped" placeholder="Use the default name" />
 </section>
 
 @code {
     [Parameter, EditorRequired] public ShortcutsModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler -- without this the parent's disabled state goes stale and the
+    /// user can never leave the stage.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnCreateDesktopShortcutChanged(ChangeEventArgs e)
+    {
+        Module.CreateDesktopShortcut = (bool)(e.Value ?? false);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnCreateStartMenuShortcutChanged(ChangeEventArgs e)
+    {
+        Module.CreateStartMenuShortcut = (bool)(e.Value ?? false);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnCustomNameTyped(ChangeEventArgs e)
+    {
+        Module.CustomName = e.Value?.ToString();
+        await Changed.InvokeAsync();
+    }
 }

@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="bunit" Version="2.8.6" />
     <PackageReference Include="FluentAssertions" Version="7.2.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="Moq" Version="4.20.72" />
@@ -18,5 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DiffusionNexus.Installer.Core\DiffusionNexus.Installer.Core.csproj" />
+    <!-- bUnit renders the real panel components, so the panels' own project is a test dependency
+         even though this is a plain xunit project, not a Blazor one. -->
+    <ProjectReference Include="..\DiffusionNexus.Installer.Electron\DiffusionNexus.Installer.Electron.csproj" />
   </ItemGroup>
 </Project>

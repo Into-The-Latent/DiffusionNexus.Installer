@@ -6,8 +6,7 @@
     <h2>Install location</h2>
     <p class="panel-hint">Where the workload gets installed.</p>
     <div class="path-row">
-        <input type="text" value="@Module.TargetFolder"
-               @oninput="e => Module.TargetFolder = e.Value?.ToString() ?? string.Empty" />
+        <input type="text" value="@Module.TargetFolder" @oninput="OnFolderTyped" />
         <button class="btn-secondary" @onclick="Browse">Browse...</button>
     </div>
 </section>
@@ -15,9 +14,25 @@
 @code {
     [Parameter, EditorRequired] public InstallFolderModule Module { get; set; } = default!;
 
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler -- without this the parent's disabled state goes stale and the
+    /// user can never leave the stage.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnFolderTyped(ChangeEventArgs e)
+    {
+        Module.TargetFolder = e.Value?.ToString() ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
     private async Task Browse()
     {
         var chosen = await FolderPicker.PickFolderAsync("Select the install folder", Module.TargetFolder);
-        if (chosen is not null) Module.TargetFolder = chosen;
+        if (chosen is null) return;          // dismissed -- leave the field untouched
+
+        Module.TargetFolder = chosen;
+        await Changed.InvokeAsync();
     }
 }

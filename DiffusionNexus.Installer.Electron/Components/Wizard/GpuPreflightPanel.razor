@@ -10,8 +10,7 @@
             ComfyUI can run on CPU, but generation will be very slow.
         </p>
         <label class="checkbox">
-            <input type="checkbox" checked="@Module.AcceptCpuOnly"
-                   @onchange="e => Module.AcceptCpuOnly = (bool)(e.Value ?? false)" />
+            <input type="checkbox" checked="@Module.AcceptCpuOnly" @onchange="OnAcceptCpuOnlyChanged" />
             Install the CPU-only build anyway
         </label>
     }
@@ -26,4 +25,17 @@
 
 @code {
     [Parameter, EditorRequired] public GpuPreflightModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler -- without this the parent's disabled state goes stale and the
+    /// user can never leave the stage.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnAcceptCpuOnlyChanged(ChangeEventArgs e)
+    {
+        Module.AcceptCpuOnly = (bool)(e.Value ?? false);
+        await Changed.InvokeAsync();
+    }
 }

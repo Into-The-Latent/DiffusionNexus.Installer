@@ -59,9 +59,15 @@ else
     [Parameter] public Guid WorkloadId { get; set; }
 
     private WizardRun? _run;
+    private EventCallback _moduleChanged;
 
     protected override async Task OnInitializedAsync()
     {
+        // Blazor only re-renders the component that owns an event handler. Every panel is a child
+        // component, so without an explicit callback back up to this page, an edit inside a panel
+        // (typing a folder, ticking a checkbox) never refreshes this page's disabled="@(!_run.CanGoNext)".
+        _moduleChanged = EventCallback.Factory.Create(this, StateHasChanged);
+
         // A circuit reconnect rebuilds this component while the install keeps running in the
         // singleton session. Rejoin that run rather than starting the wizard over, which would
         // hide the install and reset the answers the user already gave.
@@ -92,10 +98,10 @@ else
 
     private RenderFragment RenderModule(IWizardModule module) => module switch
     {
-        InstallFolderModule m => @<InstallFolderPanel Module="m" />,
-        ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" />,
-        GpuPreflightModule m => @<GpuPreflightPanel Module="m" />,
-        ShortcutsModule m => @<ShortcutsPanel Module="m" />,
+        InstallFolderModule m => @<InstallFolderPanel Module="m" Changed="_moduleChanged" />,
+        ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" Changed="_moduleChanged" />,
+        GpuPreflightModule m => @<GpuPreflightPanel Module="m" Changed="_moduleChanged" />,
+        ShortcutsModule m => @<ShortcutsPanel Module="m" Changed="_moduleChanged" />,
         _ => @<p>Unknown module: @module.Id</p>
     };
 }
