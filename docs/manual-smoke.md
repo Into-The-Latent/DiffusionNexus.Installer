@@ -12,7 +12,12 @@ real run can prove. Use a scratch install folder, never a real one.
    ComfyUI Llama Cpp test, Config535, and FlashVSR-Video&Image Upscale. Every other card is visible
    but disabled with a "Coming soon" note (all disabled cards need ModelDownloads or VramProfile,
    which are not in slice 1).
-3. Filter by type Audio. **Expect:** ACE-Step-1.5 appears; the Image and Video cards do not.
+3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
+   Wan 2.2 - GGUF appear (all disabled/"coming soon" — none are in the slice-1 installable set);
+   the Image cards do not.
+   Note: the embedded seed predates the catalog's Audio workflow type, so no workload in it is
+   tagged Audio yet (ACE-Step-1.5 is still `Image` in this snapshot) and no Audio filter button
+   renders. Re-check this step once an Audio-tagged workload ships in the embedded catalog.
 4. Filter by software ComfyUI. **Expect:** only ComfyUI-based cards remain, and the software
    filter offers exactly the software the catalog actually contains — no empty options.
 5. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
