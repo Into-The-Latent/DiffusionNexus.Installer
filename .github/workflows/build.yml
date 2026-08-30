@@ -1,0 +1,36 @@
+name: build
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The SDK packages live under a different GitHub account, so the default GITHUB_TOKEN
+      # cannot read them. UseLocalSDK=false is the point: this job is the gate that proves the
+      # package references are complete, which a local build with the SDK checkout cannot.
+      - name: Restore
+        run: dotnet restore DiffusionNexus.Installer.slnx -p:UseLocalSDK=false
+        env:
+          # nuget.config reads %GITHUB_PACKAGES_TOKEN% for the github-littlegod source.
+          # The repository secret is named PACKAGES_READ_TOKEN; the env var name is not
+          # negotiable, so map one to the other here or every restore 401s.
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+
+      - name: Build
+        run: dotnet build DiffusionNexus.Installer.slnx -c Release --no-restore -p:UseLocalSDK=false
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+
+      - name: Test
+        run: dotnet test DiffusionNexus.Installer.slnx -c Release --no-build -p:UseLocalSDK=false
