@@ -18,7 +18,7 @@
 - Never reference `DiffusionNexus.Installer.SDK.DataAccess` or `.Database`. Both were deleted in SDK 2.0.
 - `DiffusionNexus.Installer.Core` must not reference Blazor, ASP.NET, or ElectronNET. It is headless and testable.
 - Do not call `ICatalog.Source`, `.State`, or `.Diagnostics` on a render path — first access can run the catalog seed on the calling thread. Use the `GetXxxAsync` members.
-- `InstallLogEntry.Level` is the SDK's own `LogLevel`, which collides with `Microsoft.Extensions.Logging.LogLevel`. Alias it (`using SdkLogLevel = DiffusionNexus.Installer.SDK.Services.LogLevel;`) wherever both are in scope.
+- `InstallLogEntry.Level` is the SDK's own `LogLevel`, which collides with `Microsoft.Extensions.Logging.LogLevel`. Alias it (`using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;`) wherever both are in scope.
 - Branch: `feature/catalog-driven-wizard`. Commit after every task.
 - Run tests with `dotnet test DiffusionNexus.Installer.slnx`.
 
@@ -1880,7 +1880,7 @@ using DiffusionNexus.Installer.SDK.Services;
 using FluentAssertions;
 using Moq;
 using Xunit;
-using SdkLogLevel = DiffusionNexus.Installer.SDK.Services.LogLevel;
+using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
 
 namespace DiffusionNexus.Installer.Tests.Install;
 
@@ -2092,7 +2092,7 @@ public enum InstallPhase
 Create `DiffusionNexus.Installer.Core/Install/InstallLogLine.cs`:
 
 ```csharp
-using SdkLogLevel = DiffusionNexus.Installer.SDK.Services.LogLevel;
+using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
 
 namespace DiffusionNexus.Installer.Core.Install;
 
