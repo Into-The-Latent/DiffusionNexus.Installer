@@ -2334,7 +2334,7 @@ git commit -m "feat(install): singleton install session that survives circuit re
 - Create: `DiffusionNexus.Installer.Core/Host/IFolderPicker.cs`
 - Create: `DiffusionNexus.Installer.Core/Host/IUserPrompt.cs`
 - Create: `DiffusionNexus.Installer.Electron/Services/ElectronFolderPicker.cs`
-- Create: `DiffusionNexus.Installer.Electron/Services/ModalPromptService.cs`
+- Create: `DiffusionNexus.Installer.Core/Host/ModalPromptService.cs` (Core, not Electron: it holds no UI type, and Core is where its direct analogue `InstallSession` lives, so it stays unit-testable)
 - Create: `DiffusionNexus.Installer.Electron/Components/Shared/PromptModal.razor`
 - Test: `DiffusionNexus.Installer.Tests/Host/ModalPromptContractTests.cs`
 
@@ -2463,12 +2463,12 @@ public sealed class ElectronFolderPicker : IFolderPicker
 
 - [ ] **Step 5: Implement the modal prompt service and its component**
 
-Create `DiffusionNexus.Installer.Electron/Services/ModalPromptService.cs`:
+Create `DiffusionNexus.Installer.Core/Host/ModalPromptService.cs`:
 
 ```csharp
 using DiffusionNexus.Installer.Core.Host;
 
-namespace DiffusionNexus.Installer.Electron.Services;
+namespace DiffusionNexus.Installer.Core.Host;
 
 /// <summary>
 /// Bridges a pipeline call that must block on a human answer to a Blazor modal.
@@ -2522,7 +2522,7 @@ public sealed class ModalPromptService : IUserPrompt
 Create `DiffusionNexus.Installer.Electron/Components/Shared/PromptModal.razor`:
 
 ```razor
-@using DiffusionNexus.Installer.Electron.Services
+@using DiffusionNexus.Installer.Core.Host
 @implements IDisposable
 @inject ModalPromptService Prompts
 
