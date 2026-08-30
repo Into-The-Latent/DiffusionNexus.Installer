@@ -7,10 +7,12 @@ real run can prove. Use a scratch install folder, never a real one.
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
    **Expect:** the gallery populates from the embedded seed; no error, no empty state.
-2. **Expect:** exactly six cards are enabled — Stable Diffusion web UI, Forge, Fooocus,
-   ACE-Step, AI-Toolkit, Blanck-ComfyUI. Every other card is visible but disabled with a
-   "Coming soon" note.
-3. Filter by type Audio. **Expect:** ACE-Step appears; the Image and Video cards do not.
+2. **Expect:** exactly ten cards are enabled — Stable Diffusion web UI, Stable Diffusion WebUI Forge,
+   Fooocus, ACE-Step-1.5, AI-Toolkit, Blanck-ComfyUI, Base-install-Triton-SageAttention-Manager,
+   ComfyUI Llama Cpp test, Config535, and FlashVSR-Video&Image Upscale. Every other card is visible
+   but disabled with a "Coming soon" note (all disabled cards need ModelDownloads or VramProfile,
+   which are not in slice 1).
+3. Filter by type Audio. **Expect:** ACE-Step-1.5 appears; the Image and Video cards do not.
 4. Filter by software ComfyUI. **Expect:** only ComfyUI-based cards remain, and the software
    filter offers exactly the software the catalog actually contains — no empty options.
 5. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
@@ -43,16 +45,19 @@ real run can prove. Use a scratch install folder, never a real one.
    reconnect. **Expect:** the install keeps running and the log continues where it left off.
 4. While an install is running, reconnect by navigating away and back to the gallery, then
    reopen the same workload's wizard. **Expect:** you return to the install's report stage,
-   not the wizard's first screen. If you instead see the wizard's first screen, that means
-   you reconnected to a different workload — this is a known limitation: only one install
-   runs at a time, and opening a second workload's wizard renders the first one's session
-   under the second workload's UI.
+   not the wizard's first screen.
+5. Start an install, let it finish, then reconnect to the same workload by navigating away and
+   back, then opening the wizard again. **Expect:** the wizard restarts from the first screen,
+   not the finished report. The install itself never runs again. This is a known limitation:
+   reconnecting after an install has completed returns to the wizard's start, not the result.
 
 ## 4. Known limitations
 
-Only one install can run at a time. If you open a second workload's wizard while one is
-running, the first workload's session state renders under the second workload's UI. The install
-itself never restarts — the limitation is UI-only.
+Only one install can run at a time. If you open a second workload's wizard while one is running
+and walk it through to the Install stage, the first workload's progress and result render under
+the second workload's header. Opening the second wizard alone does not cause this — the Location,
+System, and Confirm stages all render correctly. The mixing appears only if you reach Install.
+The install itself never restarts; the first workload's session continues running in the background.
 
 ## 5. Known gap
 

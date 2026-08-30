@@ -4,7 +4,11 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 
 /// <summary>
 /// Every capability module the app knows about. Also the installability gate: the gallery may only
-/// offer a workload whose every detected capability has a registered module behind it.
+/// offer a workload whose every <em>blocking</em> detected capability has a registered module behind it.
+/// The gate considers only <see cref="WorkloadCapabilities.Blocking"/> — non-blocking capabilities
+/// like CustomNodes, Workflows, and Accelerators are correct without a module, since the catalog's own
+/// declarations (gitRepositories, workflows, installTriton) handle them. Only VramProfile and ModelDownloads
+/// block an install if missing.
 /// <para>
 /// Exactly one plan may be in flight at a time. The registry hands out its own long-lived module
 /// instances and modules hold per-run state, so a second <see cref="BuildPlanAsync"/> re-initializes
@@ -22,12 +26,12 @@ public sealed class WizardModuleRegistry(IEnumerable<IWizardModule> modules)
 
     /// <summary>
     /// A workload is installable when nothing it needs is missing. Deliberately asks
-    /// WorkloadCapabilities.Detect rather than the modules themselves — a module that is not
+    /// WorkloadCapabilities.DetectBlocking rather than the modules themselves — a module that is not
     /// registered cannot be asked whether it applies.
     /// </summary>
     public bool IsInstallable(InstallationConfiguration workload)
     {
-        var needed = WorkloadCapabilities.Detect(workload);
+        var needed = WorkloadCapabilities.DetectBlocking(workload);
         return (needed & ~SatisfiedCapabilities) == WorkloadCapability.None;
     }
 

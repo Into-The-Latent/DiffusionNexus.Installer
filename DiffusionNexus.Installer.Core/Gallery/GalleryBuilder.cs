@@ -16,7 +16,7 @@ public sealed class GalleryBuilder(IWorkloadSource source, WizardModuleRegistry 
         return workloads
             .Select(w =>
             {
-                var needed = WorkloadCapabilities.Detect(w);
+                var needed = WorkloadCapabilities.DetectBlocking(w);
                 var missing = needed & ~registry.SatisfiedCapabilities;
                 return new GalleryEntry(w, missing == WorkloadCapability.None, missing);
             })

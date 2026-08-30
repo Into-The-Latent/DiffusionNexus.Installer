@@ -106,4 +106,35 @@ public class CapabilityAgreementTests
         plan.AllModules.Select(m => m.Id)
             .Should().BeEquivalentTo("install-folder", "comfy-folders", "shortcuts");
     }
+
+    [Fact]
+    public void A_workload_declaring_custom_nodes_is_still_installable()
+    {
+        // Blank ComfyUI ships ComfyUI-Manager. With no CustomNodes module the pipeline clones every
+        // declared repo, which is exactly right -- the user just cannot deselect any.
+        var blankComfy = Workload(RepositoryType.ComfyUI);
+        blankComfy.GitRepositories.Add(new GitRepository());
+
+        Registry().IsInstallable(blankComfy).Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_workload_declaring_accelerators_is_still_installable()
+    {
+        // AI-Toolkit sets installTriton. The Triton step runs off the workload's own flag, not off
+        // an option, so no module is needed for a correct install.
+        var toolkit = Workload(RepositoryType.AIToolkit);
+        toolkit.Python.InstallTriton = true;
+
+        Registry().IsInstallable(toolkit).Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_workload_needing_a_vram_tier_is_not_installable()
+    {
+        var pack = Workload(RepositoryType.ComfyUI);
+        pack.Vram.VramProfiles = "8,12,16,24,32";
+
+        Registry().IsInstallable(pack).Should().BeFalse();
+    }
 }
