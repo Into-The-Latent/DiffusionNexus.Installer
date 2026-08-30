@@ -1857,6 +1857,7 @@ git commit -m "feat(wizard): module registry, stage composition and installabili
 **Files:**
 - Create: `DiffusionNexus.Installer.Core/Install/InstallPhase.cs`
 - Create: `DiffusionNexus.Installer.Core/Install/InstallLogLine.cs`
+- Create: `DiffusionNexus.Installer.Core/Install/InlineProgress.cs`
 - Create: `DiffusionNexus.Installer.Core/Install/IInstallSession.cs`
 - Create: `DiffusionNexus.Installer.Core/Install/InstallSession.cs`
 - Test: `DiffusionNexus.Installer.Tests/Install/InstallSessionTests.cs`
@@ -2098,6 +2099,27 @@ namespace DiffusionNexus.Installer.Core.Install;
 public sealed record InstallLogLine(DateTimeOffset Timestamp, string Message, SdkLogLevel Level);
 ```
 
+Create `DiffusionNexus.Installer.Core/Install/InlineProgress.cs`:
+
+```csharp
+namespace DiffusionNexus.Installer.Core.Install;
+
+/// <summary>
+/// An <see cref="IProgress{T}"/> that invokes its handler inline, on the reporting thread.
+/// <para>
+/// <see cref="Progress{T}"/> is deliberately NOT used: it hops through the captured
+/// SynchronizationContext, or the thread pool when there is none, so the session's state would lag
+/// the reports it was given and a caller that awaited the install could observe a half-filled log.
+/// The session does its own coalescing and marshals to the UI itself, so it wants the callback
+/// inline and synchronous.
+/// </para>
+/// </summary>
+internal sealed class InlineProgress<T>(Action<T> handler) : IProgress<T>
+{
+    public void Report(T value) => handler(value);
+}
+```
+
 Create `DiffusionNexus.Installer.Core/Install/IInstallSession.cs`:
 
 ```csharp
@@ -2205,9 +2227,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
                 plan.Selection.Workload,
                 plan.Selection.TargetFolder,
                 plan.ToOptions(),
-                new Progress<InstallLogEntry>(OnLog),
-                new Progress<InstallationProgress>(OnStep),
-                new Progress<DownloadProgress>(OnDownload),
+                new InlineProgress<InstallLogEntry>(OnLog),
+                new InlineProgress<InstallationProgress>(OnStep),
+                new InlineProgress<DownloadProgress>(OnDownload),
                 () => _skipDownloadCts!.Token,
                 _cts.Token).ConfigureAwait(false);
 
