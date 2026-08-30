@@ -189,4 +189,36 @@ public class InstallSessionTests
         session.Phase.Should().Be(InstallPhase.Completed);
         notifications.Should().Be(0);
     }
+
+    [Fact]
+    public async Task Skipping_a_download_hands_the_orchestrator_a_fresh_token_for_the_next_file()
+    {
+        Func<CancellationToken>? provider = null;
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((InstallationConfiguration _, string _, InstallationOptions _,
+                      IProgress<InstallLogEntry>? _, IProgress<InstallationProgress>? _,
+                      IProgress<DownloadProgress>? _, Func<CancellationToken>? skip, CancellationToken _) =>
+            {
+                provider = skip;
+                return Task.FromResult(InstallationResult.Success("done"));
+            });
+
+        using var session = new InstallSession(orchestrator.Object);
+        await session.StartAsync(await PlanAsync());
+
+        // The token handed out before any skip is live; after a skip the CURRENT download's token is
+        // cancelled but the provider must already be handing out a fresh, uncancelled one for the next.
+        provider.Should().NotBeNull();
+        provider!().IsCancellationRequested.Should().BeFalse();
+
+        session.SkipCurrentDownload();
+
+        provider!().IsCancellationRequested.Should().BeFalse();
+    }
 }

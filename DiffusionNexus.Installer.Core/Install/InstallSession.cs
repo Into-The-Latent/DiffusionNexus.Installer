@@ -59,13 +59,14 @@ public sealed class InstallSession : IInstallSession, IDisposable
             _log.Clear();
         }
 
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _skipDownloadCts = new CancellationTokenSource();
-        NotifyNow();
-        _flushTimer.Change(_flushInterval, _flushInterval);
-
         try
         {
+            // Inside the try: a throw here used to escape uncaught and wedge Phase at Running.
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            lock (_gate) _skipDownloadCts = new CancellationTokenSource();
+            NotifyNow();
+            _flushTimer.Change(_flushInterval, _flushInterval);
+
             var result = await _orchestrator.InstallAsync(
                 plan.Selection.Workload,
                 plan.Selection.TargetFolder,
@@ -73,7 +74,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
                 new InlineProgress<InstallLogEntry>(OnLog),
                 new InlineProgress<InstallationProgress>(OnStep),
                 new InlineProgress<DownloadProgress>(OnDownload),
-                () => _skipDownloadCts!.Token,
+                GetSkipDownloadToken,
                 _cts.Token).ConfigureAwait(false);
 
             Result = result;
@@ -96,21 +97,42 @@ public sealed class InstallSession : IInstallSession, IDisposable
         finally
         {
             // Stop coalescing before the final notification, so the terminal state is never left
-            // sitting in the buffer waiting for a tick that no longer comes.
-            _flushTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            // sitting in the buffer waiting for a tick that no longer comes. Guarded because a
+            // concurrent Dispose may already have torn the timer down.
+            try { _flushTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan); }
+            catch (ObjectDisposedException) { }
+
             NotifyNow();
         }
     }
 
     public void Cancel() => _cts?.Cancel();
 
+    /// <summary>
+    /// Hands the orchestrator the current skip token. Read under the lock because
+    /// <see cref="SkipCurrentDownload"/> swaps the source, and an unsynchronized read can observe
+    /// the just-cancelled one and skip the next download too.
+    /// </summary>
+    private CancellationToken GetSkipDownloadToken()
+    {
+        lock (_gate) return _skipDownloadCts?.Token ?? CancellationToken.None;
+    }
+
     public void SkipCurrentDownload()
     {
-        var cts = _skipDownloadCts;
-        if (cts is null || cts.IsCancellationRequested) return;
+        CancellationTokenSource toCancel;
 
-        cts.Cancel();
-        _skipDownloadCts = new CancellationTokenSource();
+        lock (_gate)
+        {
+            if (_skipDownloadCts is null || _skipDownloadCts.IsCancellationRequested) return;
+
+            toCancel = _skipDownloadCts;
+            _skipDownloadCts = new CancellationTokenSource();
+        }
+
+        // Cancelled outside the lock on purpose: Cancel runs callbacks registered on the token
+        // inline, and running foreign code while holding our lock is how deadlocks start.
+        toCancel.Cancel();
         NotifyNow();
     }
 
