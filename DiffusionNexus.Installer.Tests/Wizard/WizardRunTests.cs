@@ -20,16 +20,17 @@ public class WizardRunTests
             valid ? ModuleValidation.Ok() : ModuleValidation.Error("not ready");
     }
 
-    private static async Task<WizardRun> RunAsync(params IWizardModule[] modules)
+    private static async Task<WizardPlan> BuildPlanAsync(params IWizardModule[] modules)
     {
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        var plan = await new WizardModuleRegistry(modules)
+        return await new WizardModuleRegistry(modules)
             .BuildPlanAsync(new WizardSelection { Workload = workload });
-
-        return new WizardRun(plan);
     }
+
+    private static async Task<WizardRun> RunAsync(params IWizardModule[] modules) =>
+        new(await BuildPlanAsync(modules));
 
     [Fact]
     public async Task Starts_on_the_first_populated_stage()
@@ -88,6 +89,26 @@ public class WizardRunTests
         run.TryNext();
 
         run.Back();
+
+        run.CurrentStage.Should().Be(WizardStage.Location);
+    }
+
+    [Fact]
+    public async Task Opens_on_the_requested_stage_when_it_is_in_the_plan()
+    {
+        var plan = await BuildPlanAsync(new GateModule(WizardStage.Location, valid: true));
+
+        var run = new WizardRun(plan, WizardStage.Install);
+
+        run.CurrentStage.Should().Be(WizardStage.Install);
+    }
+
+    [Fact]
+    public async Task Falls_back_to_the_first_stage_when_the_requested_stage_is_not_in_the_plan()
+    {
+        var plan = await BuildPlanAsync(new GateModule(WizardStage.Location, valid: true));
+
+        var run = new WizardRun(plan, WizardStage.System);
 
         run.CurrentStage.Should().Be(WizardStage.Location);
     }

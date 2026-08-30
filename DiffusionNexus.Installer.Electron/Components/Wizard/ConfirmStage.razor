@@ -1,5 +1,12 @@
 @using DiffusionNexus.Installer.Core.Wizard
 
+@{
+    // Runs every module's Contribute, which is also what populates Selection.TargetFolder --
+    // so it must run before the summary below reads it, or the folder row renders blank on the
+    // first visit to this screen.
+    var options = Run.Plan.ToOptions();
+}
+
 <section class="panel">
     <h2>Ready to install</h2>
 
@@ -15,10 +22,6 @@
 
         <dt>Python</dt>
         <dd>@Run.Plan.Selection.Workload.Python.PythonVersion</dd>
-
-        @{
-            var options = Run.Plan.ToOptions();
-        }
 
         @if (options.ModelBaseFolder is not null)
         {

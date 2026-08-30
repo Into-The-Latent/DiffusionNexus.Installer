@@ -16,6 +16,13 @@ public interface IInstallSession
     IReadOnlyList<InstallLogLine> LogLines { get; }
     InstallationResult? Result { get; }
 
+    /// <summary>
+    /// The plan of the current or most recent run, or null if nothing has started. Lets the UI tell
+    /// a reconnect apart from a fresh navigation: the same plan instance means this is the run
+    /// already under way, not a new one the user asked for.
+    /// </summary>
+    WizardPlan? Plan { get; }
+
     /// <summary>Raised when any of the above changes. Subscribers re-render; they never own state.</summary>
     event Action? Changed;
 

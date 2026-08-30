@@ -1,10 +1,12 @@
 @page "/install/{WorkloadId:guid}"
 @using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Modules
 @using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.Electron.Components.Wizard
 @inject IWorkloadSource Workloads
 @inject WizardModuleRegistry Registry
+@inject IInstallSession Session
 @inject NavigationManager Nav
 
 <PageTitle>Install</PageTitle>
@@ -60,6 +62,17 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // A circuit reconnect rebuilds this component while the install keeps running in the
+        // singleton session. Rejoin that run rather than starting the wizard over, which would
+        // hide the install and reset the answers the user already gave.
+        if (Session.Phase == InstallPhase.Running
+            && Session.Plan is { } running
+            && running.Selection.Workload.Id == WorkloadId)
+        {
+            _run = new WizardRun(running, WizardStage.Install);
+            return;
+        }
+
         var workloads = await Workloads.GetInstallerWorkloadsAsync();
         var workload = workloads.FirstOrDefault(w => w.Id == WorkloadId);
 

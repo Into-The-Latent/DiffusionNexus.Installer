@@ -43,6 +43,27 @@ public class InstallSessionTests
     }
 
     [Fact]
+    public async Task Plan_is_null_until_a_run_starts_then_reflects_it()
+    {
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(InstallationResult.Success("done"));
+
+        var session = new InstallSession(orchestrator.Object);
+        session.Plan.Should().BeNull();
+
+        var plan = await PlanAsync();
+        await session.StartAsync(plan);
+
+        session.Plan.Should().BeSameAs(plan);
+    }
+
+    [Fact]
     public async Task A_second_start_while_running_is_refused()
     {
         var gate = new TaskCompletionSource();

@@ -35,6 +35,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
     public InstallationProgress? Progress { get; private set; }
     public DownloadProgress? CurrentDownload { get; private set; }
     public InstallationResult? Result { get; private set; }
+    public WizardPlan? Plan { get; private set; }
 
     public IReadOnlyList<InstallLogLine> LogLines
     {
@@ -53,6 +54,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
                 throw new InvalidOperationException("An installation is already running.");
 
             Phase = InstallPhase.Running;
+            Plan = plan;
             Result = null;
             Progress = null;
             CurrentDownload = null;

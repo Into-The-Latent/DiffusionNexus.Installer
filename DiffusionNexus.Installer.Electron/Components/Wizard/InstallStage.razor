@@ -60,9 +60,11 @@
     {
         Session.Changed += OnChanged;
 
-        // Fire and forget: awaiting here would block the render, and the session -- not this
-        // component -- owns the running install. A reconnect re-renders from session state.
-        if (Session.Phase != InstallPhase.Running)
+        // Start only a run the session is not already carrying. Reference identity distinguishes a
+        // reconnect (same plan instance, already running or finished) from a deliberate re-install
+        // (a freshly built plan), and a bare "phase is not Running" check would restart a completed
+        // install on every reconnect.
+        if (Session.Phase != InstallPhase.Running && !ReferenceEquals(Session.Plan, Run.Plan))
             _ = Session.StartAsync(Run.Plan);
 
         await Task.CompletedTask;
