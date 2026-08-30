@@ -1,0 +1,88 @@
+@page "/install/{WorkloadId:guid}"
+@using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Modules
+@using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.Electron.Components.Wizard
+@inject IWorkloadSource Workloads
+@inject WizardModuleRegistry Registry
+@inject NavigationManager Nav
+
+<PageTitle>Install</PageTitle>
+
+@if (_run is null)
+{
+    <p>Preparing...</p>
+}
+else
+{
+    <h1>@_run.Plan.Selection.Workload.Name</h1>
+    <ol class="stage-strip">
+        @foreach (var stage in _run.Plan.Stages)
+        {
+            <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@stage</li>
+        }
+    </ol>
+
+    @if (_run.CurrentStage == WizardStage.Confirm)
+    {
+        <ConfirmStage Run="_run" />
+    }
+    else if (_run.CurrentStage == WizardStage.Install)
+    {
+        <InstallStage Run="_run" />
+    }
+    else
+    {
+        @foreach (var module in _run.CurrentModules)
+        {
+            @RenderModule(module)
+        }
+    }
+
+    @if (_run.CurrentStage != WizardStage.Install)
+    {
+        <div class="wizard-actions">
+            <button class="btn-secondary" disabled="@(!_run.CanGoBack)" @onclick="Back">Back</button>
+            <button class="btn-primary" disabled="@(!_run.CanGoNext)" @onclick="Next">Next</button>
+        </div>
+
+        @foreach (var error in _run.ValidationErrors)
+        {
+            <p class="validation-error">@error</p>
+        }
+    }
+}
+
+@code {
+    [Parameter] public Guid WorkloadId { get; set; }
+
+    private WizardRun? _run;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var workloads = await Workloads.GetInstallerWorkloadsAsync();
+        var workload = workloads.FirstOrDefault(w => w.Id == WorkloadId);
+
+        if (workload is null)
+        {
+            Nav.NavigateTo("/");
+            return;
+        }
+
+        var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload });
+        _run = new WizardRun(plan);
+    }
+
+    private void Next() => _run!.TryNext();
+
+    private void Back() => _run!.Back();
+
+    private RenderFragment RenderModule(IWizardModule module) => module switch
+    {
+        InstallFolderModule m => @<InstallFolderPanel Module="m" />,
+        ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" />,
+        GpuPreflightModule m => @<GpuPreflightPanel Module="m" />,
+        ShortcutsModule m => @<ShortcutsPanel Module="m" />,
+        _ => @<p>Unknown module: @module.Id</p>
+    };
+}

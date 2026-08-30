@@ -1,0 +1,74 @@
+@using DiffusionNexus.Installer.Core.Install
+@using DiffusionNexus.Installer.Core.Wizard
+@implements IDisposable
+@inject IInstallSession Session
+
+<section class="panel">
+    <h2>Installing</h2>
+
+    @if (Session.Progress is { } progress)
+    {
+        <p>Step @(progress.StepIndex + 1) of @progress.TotalSteps — @progress.CurrentStep</p>
+        <progress max="100" value="@progress.ProgressPercentage"></progress>
+    }
+
+    @if (Session.CurrentDownload is { IsActive: true } download)
+    {
+        <p class="download">
+            @download.DownloadedSizeText of @download.TotalSizeText at @download.SpeedText
+            <button class="btn-secondary" @onclick="() => Session.SkipCurrentDownload()">Skip this file</button>
+        </p>
+    }
+
+    <pre class="install-log">@string.Join('\n', Session.LogLines.Select(l => $"[{l.Level}] {l.Message}"))</pre>
+
+    @if (Session.Phase == InstallPhase.Running)
+    {
+        <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
+    }
+
+    @if (Session.Result is { } result)
+    {
+        <div class="@(result.IsSuccess ? "result-ok" : "result-bad")">
+            <h3>@(result.IsSuccess ? "Installation complete" : result.IsCancelled ? "Cancelled" : "Installation failed")</h3>
+            <p>@result.Message</p>
+
+            @if (result.Report.Count > 0)
+            {
+                <table class="report">
+                    <thead><tr><th>Planned operation</th><th>Result</th><th>Comment</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in result.Report)
+                        {
+                            <tr class="@(row.IsWarning ? "report-warning" : null)">
+                                <td>@row.PlannedOperation</td>
+                                <td>@row.Outcome</td>
+                                <td>@row.Comment</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnChanged;
+
+        // Fire and forget: awaiting here would block the render, and the session -- not this
+        // component -- owns the running install. A reconnect re-renders from session state.
+        if (Session.Phase != InstallPhase.Running)
+            _ = Session.StartAsync(Run.Plan);
+
+        await Task.CompletedTask;
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Session.Changed -= OnChanged;
+}

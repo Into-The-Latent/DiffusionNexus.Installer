@@ -1,0 +1,53 @@
+@using DiffusionNexus.Installer.Core.Wizard
+
+<section class="panel">
+    <h2>Ready to install</h2>
+
+    <dl class="summary">
+        <dt>Workload</dt>
+        <dd>@Run.Plan.Selection.Workload.Name</dd>
+
+        <dt>Software</dt>
+        <dd>@Run.Plan.Selection.Workload.Repository.Type</dd>
+
+        <dt>Install folder</dt>
+        <dd>@Run.Plan.Selection.TargetFolder</dd>
+
+        <dt>Python</dt>
+        <dd>@Run.Plan.Selection.Workload.Python.PythonVersion</dd>
+
+        @{
+            var options = Run.Plan.ToOptions();
+        }
+
+        @if (options.ModelBaseFolder is not null)
+        {
+            <dt>Model library</dt>
+            <dd>@options.ModelBaseFolder</dd>
+        }
+
+        @if (options.OutputFolder is not null)
+        {
+            <dt>Output folder</dt>
+            <dd>@options.OutputFolder</dd>
+        }
+
+        @if (options.CpuTorch)
+        {
+            <dt>Torch</dt>
+            <dd>CPU-only build</dd>
+        }
+
+        <dt>Shortcuts</dt>
+        <dd>
+            @(options.CreateDesktopShortcut ? "Desktop" : null)
+            @(options.CreateDesktopShortcut && options.CreateStartMenuShortcut ? " + " : null)
+            @(options.CreateStartMenuShortcut ? "Start Menu" : null)
+            @(!options.CreateDesktopShortcut && !options.CreateStartMenuShortcut ? "None" : null)
+        </dd>
+    </dl>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
+}
