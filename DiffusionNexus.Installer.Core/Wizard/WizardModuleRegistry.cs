@@ -59,8 +59,10 @@ public sealed class WizardModuleRegistry(IEnumerable<IWizardModule> modules)
                 g => (IReadOnlyList<IWizardModule>)g.OrderBy(m => m.Order).ToList());
 
         // Confirm and Install always run: they are the summary and the install itself, not modules.
-        byStage[WizardStage.Confirm] = [];
-        byStage[WizardStage.Install] = [];
+        // TryAdd, not indexer assignment: a future module actually targeting one of those stages
+        // would otherwise have its whole entry silently overwritten with an empty list here.
+        byStage.TryAdd(WizardStage.Confirm, []);
+        byStage.TryAdd(WizardStage.Install, []);
 
         return new WizardPlan(selection, byStage);
     }

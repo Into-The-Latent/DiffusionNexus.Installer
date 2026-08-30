@@ -62,6 +62,21 @@ public class WizardModuleRegistryTests
     }
 
     [Fact]
+    public async Task A_module_targeting_Confirm_or_Install_is_not_silently_discarded()
+    {
+        // BuildPlanAsync always gives Confirm and Install an empty-list entry so those stages are
+        // never skipped -- that must not stomp a future module that actually targets one of them.
+        var confirmModule = new StubModule("confirm-summary", WizardStage.Confirm, 0, WorkloadCapability.None, applies: true);
+        var installModule = new StubModule("install-report", WizardStage.Install, 0, WorkloadCapability.None, applies: true);
+        var registry = new WizardModuleRegistry([confirmModule, installModule]);
+
+        var plan = await registry.BuildPlanAsync(Selection());
+
+        plan.Modules(WizardStage.Confirm).Should().ContainSingle().Which.Id.Should().Be("confirm-summary");
+        plan.Modules(WizardStage.Install).Should().ContainSingle().Which.Id.Should().Be("install-report");
+    }
+
+    [Fact]
     public async Task Modules_render_in_order_within_a_stage()
     {
         var second = new StubModule("second", WizardStage.Location, 10, WorkloadCapability.None, applies: true);
