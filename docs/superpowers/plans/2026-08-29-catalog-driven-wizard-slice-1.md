@@ -3218,7 +3218,7 @@ git commit -m "feat(wizard): stage navigation and the wizard host page"
 
 **Interfaces:**
 - Consumes: the four slice-1 modules from Tasks 5-7, `IFolderPicker` from Task 10.
-- Produces: components named in Task 13's `RenderModule` switch.
+- Produces: components named in Task 15's `RenderModule` switch (the host page moved there, see Task 13's scope note).
 
 These are thin views over module state — the logic already has tests, so these carry none of their own.
 
