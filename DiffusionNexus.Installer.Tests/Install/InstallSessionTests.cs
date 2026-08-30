@@ -191,8 +191,12 @@ public class InstallSessionTests
     }
 
     [Fact]
-    public async Task Skipping_a_download_hands_the_orchestrator_a_fresh_token_for_the_next_file()
+    public async Task Skipping_cancels_the_current_download_token_and_hands_out_a_fresh_one()
     {
+        // Sequential contract test, not a race test: it pins that a skip both cancels the token the
+        // orchestrator is currently holding AND leaves a fresh, uncancelled one in place for the next
+        // file. It would fail if either half of the swap were dropped. The race itself is guarded by
+        // the lock in SkipCurrentDownload/GetSkipDownloadToken, not by this test.
         Func<CancellationToken>? provider = null;
         var orchestrator = new Mock<IInstallationOrchestrator>();
         orchestrator
@@ -212,13 +216,15 @@ public class InstallSessionTests
         using var session = new InstallSession(orchestrator.Object);
         await session.StartAsync(await PlanAsync());
 
-        // The token handed out before any skip is live; after a skip the CURRENT download's token is
-        // cancelled but the provider must already be handing out a fresh, uncancelled one for the next.
         provider.Should().NotBeNull();
-        provider!().IsCancellationRequested.Should().BeFalse();
+
+        // The token the orchestrator would be carrying for the file in flight.
+        var tokenBeforeSkip = provider!();
+        tokenBeforeSkip.IsCancellationRequested.Should().BeFalse();
 
         session.SkipCurrentDownload();
 
-        provider!().IsCancellationRequested.Should().BeFalse();
+        tokenBeforeSkip.IsCancellationRequested.Should().BeTrue("the in-flight download is the one being skipped");
+        provider!().IsCancellationRequested.Should().BeFalse("the next file must start with a live token");
     }
 }
