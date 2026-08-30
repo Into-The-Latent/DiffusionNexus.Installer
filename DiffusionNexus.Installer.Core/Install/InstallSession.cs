@@ -69,10 +69,16 @@ public sealed class InstallSession : IInstallSession, IDisposable
             NotifyNow();
             _flushTimer.Change(_flushInterval, _flushInterval);
 
+            // ToOptions runs every module's Contribute, which is also what writes the chosen folder
+            // into the selection -- so it must run before the folder is read, not as an argument
+            // beside it. Argument evaluation order made this work only by accident.
+            var options = plan.ToOptions();
+            var targetDirectory = plan.Selection.TargetFolder;
+
             var result = await _orchestrator.InstallAsync(
                 plan.Selection.Workload,
-                plan.Selection.TargetFolder,
-                plan.ToOptions(),
+                targetDirectory,
+                options,
                 new InlineProgress<InstallLogEntry>(OnLog),
                 new InlineProgress<InstallationProgress>(OnStep),
                 new InlineProgress<DownloadProgress>(OnDownload),

@@ -1,11 +1,16 @@
 using DiffusionNexus.Installer.Core.Install;
+using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Settings;
 using FluentAssertions;
 using Moq;
 using Xunit;
 using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
+// The SDK has two InstallationOptions types (Models.Installation and Services); this file uses
+// the Services one everywhere, so only UserSettings is aliased in rather than the whole namespace.
+using UserSettings = DiffusionNexus.Installer.SDK.Models.Installation.UserSettings;
 
 namespace DiffusionNexus.Installer.Tests.Install;
 
@@ -61,6 +66,49 @@ public class InstallSessionTests
         await session.StartAsync(plan);
 
         session.Plan.Should().BeSameAs(plan);
+    }
+
+    [Fact]
+    public async Task The_orchestrator_receives_the_folder_the_module_set_even_without_a_prior_ToOptions_call()
+    {
+        // Regression test for an argument-evaluation-order bug: plan.Selection.TargetFolder was
+        // passed as an argument alongside plan.ToOptions(), and C# evaluates arguments left to
+        // right -- so the folder was read before ToOptions() ran Contribute, which is what writes
+        // the module's answer into the selection. It only worked before because some other render
+        // path (ConfirmStage) happened to call ToOptions() first, as a side effect.
+        var settings = new Mock<IUserSettingsRepository>();
+        settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSettings());
+        var folderModule = new InstallFolderModule(settings.Object);
+
+        var workload = new InstallationConfiguration { Name = "Fooocus" };
+        workload.Repository.Type = RepositoryType.Fooocus;
+
+        var registry = new WizardModuleRegistry([folderModule]);
+        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
+
+        // The module has an answer, but nothing has called ToOptions() yet.
+        folderModule.TargetFolder = @"C:\Installs\Fooocus";
+        plan.Selection.TargetFolder.Should().BeEmpty("Contribute has not run yet");
+
+        string? receivedTargetDirectory = null;
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<InstallationConfiguration, string, InstallationOptions, IProgress<InstallLogEntry>,
+                      IProgress<InstallationProgress>, IProgress<DownloadProgress>, Func<CancellationToken>, CancellationToken>(
+                (_, targetDirectory, _, _, _, _, _, _) => receivedTargetDirectory = targetDirectory)
+            .ReturnsAsync(InstallationResult.Success("done"));
+
+        var session = new InstallSession(orchestrator.Object);
+
+        await session.StartAsync(plan);
+
+        receivedTargetDirectory.Should().Be(@"C:\Installs\Fooocus");
     }
 
     [Fact]
