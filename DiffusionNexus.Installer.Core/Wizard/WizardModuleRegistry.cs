@@ -7,8 +7,8 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 /// offer a workload whose every <em>blocking</em> detected capability has a registered module behind it.
 /// The gate considers only <see cref="WorkloadCapabilities.Blocking"/> — non-blocking capabilities
 /// like CustomNodes, Workflows, and Accelerators are correct without a module, since the catalog's own
-/// declarations (gitRepositories, workflows, installTriton) handle them. Only VramProfile and ModelDownloads
-/// block an install if missing.
+/// declarations (gitRepositories, workflows, installTriton) handle them. Only VramProfile, ModelDownloads,
+/// and LlamaCpp block an install if missing.
 /// <para>
 /// Exactly one plan may be in flight at a time. The registry hands out its own long-lived module
 /// instances and modules hold per-run state, so a second <see cref="BuildPlanAsync"/> re-initializes

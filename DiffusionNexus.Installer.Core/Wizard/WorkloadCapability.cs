@@ -15,4 +15,5 @@ public enum WorkloadCapability
     CustomNodes    = 1 << 3,
     Workflows      = 1 << 4,
     Accelerators   = 1 << 5,
+    LlamaCpp       = 1 << 6,
 }

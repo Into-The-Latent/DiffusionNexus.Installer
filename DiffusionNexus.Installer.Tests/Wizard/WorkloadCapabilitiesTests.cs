@@ -109,4 +109,34 @@ public class WorkloadCapabilitiesTests
 
         WorkloadCapabilities.Detect(w).Should().Be(WorkloadCapability.None);
     }
+
+    [Fact]
+    public void LlamaCpp_capability_is_detected_from_InstallLamaCpp()
+    {
+        var w = new InstallationConfiguration();
+        w.InstallLamaCpp = true;
+
+        WorkloadCapabilities.Detect(w).Should().HaveFlag(WorkloadCapability.LlamaCpp);
+    }
+
+    [Fact]
+    public void LlamaCpp_is_not_detected_when_the_flag_is_off()
+    {
+        var w = new InstallationConfiguration();
+
+        WorkloadCapabilities.Detect(w).Should().NotHaveFlag(WorkloadCapability.LlamaCpp);
+    }
+
+    [Fact]
+    public void LlamaCpp_is_a_blocking_capability()
+    {
+        // Same standard as VRAM and model downloads: with InstallLamaCpp set and no module to
+        // narrow/configure it, the pipeline still reaches LlamaCppInstallStepHandler and fails
+        // there with a null wheel URL, rather than the workload being kept off the gallery.
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.Fooocus; // keep ComfyFolders out of the way
+        w.InstallLamaCpp = true;
+
+        WorkloadCapabilities.DetectBlocking(w).Should().Be(WorkloadCapability.LlamaCpp);
+    }
 }

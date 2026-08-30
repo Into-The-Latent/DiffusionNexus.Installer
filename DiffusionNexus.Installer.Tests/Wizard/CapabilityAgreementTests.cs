@@ -137,4 +137,15 @@ public class CapabilityAgreementTests
 
         Registry().IsInstallable(pack).Should().BeFalse();
     }
+
+    [Fact]
+    public void A_workload_needing_LlamaCpp_is_not_installable()
+    {
+        // No slice-1 module satisfies WorkloadCapability.LlamaCpp, so without this gate a workload
+        // with InstallLamaCpp set would reach LlamaCppInstallStepHandler with no resolved wheel.
+        var workload = Workload(RepositoryType.ComfyUI);
+        workload.InstallLamaCpp = true;
+
+        Registry().IsInstallable(workload).Should().BeFalse();
+    }
 }

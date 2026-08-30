@@ -12,11 +12,14 @@ public static class WorkloadCapabilities
     /// module, every declared custom node is cloned, every declared workflow is exported, and the
     /// accelerator steps run off the workload's own flags. Those are correct defaults.
     /// VRAM and model selection are different: without them a tiered pack downloads every tier's
-    /// variant at no tier, which is a wrong install, not an unrefined one.
+    /// variant at no tier, which is a wrong install, not an unrefined one. LlamaCpp is the same
+    /// shape of trap: with InstallLamaCpp set and no resolved wheel, the pipeline still reaches
+    /// LlamaCppInstallStepHandler and fails there with a null wheel URL instead of being kept off
+    /// the gallery up front.
     /// </para>
     /// </summary>
     public const WorkloadCapability Blocking =
-        WorkloadCapability.VramProfile | WorkloadCapability.ModelDownloads;
+        WorkloadCapability.VramProfile | WorkloadCapability.ModelDownloads | WorkloadCapability.LlamaCpp;
 
     /// <summary>Pure function of the workload. No module involvement — see WorkloadCapability.</summary>
     public static WorkloadCapability Detect(InstallationConfiguration workload)
@@ -44,6 +47,9 @@ public static class WorkloadCapabilities
 
         if (workload.Python.InstallTriton || workload.Python.InstallSageAttention)
             caps |= WorkloadCapability.Accelerators;
+
+        if (workload.InstallLamaCpp)
+            caps |= WorkloadCapability.LlamaCpp;
 
         return caps;
     }
