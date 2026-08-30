@@ -1,0 +1,85 @@
+@page "/"
+@using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.SDK.Models.Configuration
+@using DiffusionNexus.Installer.SDK.Models.Enums
+@inject GalleryBuilder Builder
+@inject NavigationManager Nav
+
+<PageTitle>Choose a workload</PageTitle>
+
+<h1>Choose a workload</h1>
+
+@if (_entries is null)
+{
+    <p>Loading the catalog...</p>
+}
+else if (_entries.Count == 0)
+{
+    <p>No workloads are available. The catalog could not be read.</p>
+}
+else
+{
+    <div class="filters">
+        <span class="filter-label">Type</span>
+        <button class="@TypeClass(null)" @onclick="() => _type = null">All</button>
+        @foreach (var type in Enum.GetValues<WorkflowType>())
+        {
+            <button class="@TypeClass(type)" @onclick="() => _type = type">@type</button>
+        }
+    </div>
+
+    <div class="filters">
+        <span class="filter-label">Software</span>
+        <button class="@SoftwareClass(null)" @onclick="() => _software = null">All</button>
+        @foreach (var software in AvailableSoftware())
+        {
+            <button class="@SoftwareClass(software)" @onclick="() => _software = software">@software</button>
+        }
+    </div>
+
+    <div class="gallery">
+        @foreach (var entry in Filtered())
+        {
+            <div class="card @(entry.IsInstallable ? "" : "card-disabled")">
+                <h2>@entry.Workload.Name</h2>
+                <p class="card-software">@entry.Workload.Repository.Type — @entry.Workload.WorkflowType</p>
+                <p class="card-description">@entry.Workload.Description</p>
+
+                @if (entry.IsInstallable)
+                {
+                    <button class="btn-primary" @onclick="() => Install(entry)">Install</button>
+                }
+                else
+                {
+                    <p class="card-unavailable">Coming soon — needs @entry.MissingCapabilities</p>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<GalleryEntry>? _entries;
+    private WorkflowType? _type;
+    private RepositoryType? _software;
+
+    protected override async Task OnInitializedAsync() => _entries = await Builder.BuildAsync();
+
+    private IEnumerable<GalleryEntry> Filtered() => _entries!
+        .Where(e => _type is null || e.Workload.WorkflowType == _type)
+        .Where(e => _software is null || e.Workload.Repository.Type == _software);
+
+    // Driven by what the catalog actually contains, not by every value the enum can hold, so an
+    // unused software never shows an empty filter.
+    private IEnumerable<RepositoryType> AvailableSoftware() => _entries!
+        .Select(e => e.Workload.Repository.Type)
+        .Distinct()
+        .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
+
+    private string TypeClass(WorkflowType? type) => _type == type ? "filter-active" : "filter";
+
+    private string SoftwareClass(RepositoryType? software) =>
+        _software == software ? "filter-active" : "filter";
+
+    private void Install(GalleryEntry entry) => Nav.NavigateTo($"/install/{entry.Workload.Id}");
+}

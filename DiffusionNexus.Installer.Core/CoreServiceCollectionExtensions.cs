@@ -26,6 +26,7 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IWizardModule, GpuPreflightModule>();
         services.AddSingleton<IWizardModule, ShortcutsModule>();
 
+        services.AddSingleton<Gallery.GalleryBuilder>();
         services.AddSingleton(sp => new WizardModuleRegistry(sp.GetServices<IWizardModule>()));
 
         return services;
