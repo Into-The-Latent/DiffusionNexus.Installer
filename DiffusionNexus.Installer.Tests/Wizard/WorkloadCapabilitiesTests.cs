@@ -43,19 +43,49 @@ public class WorkloadCapabilitiesTests
         WorkloadCapabilities.Detect(w).Should().NotHaveFlag(WorkloadCapability.VramProfile);
     }
 
+    // Split from a single Content_capabilities_come_from_collection_counts test that populated all
+    // three collections together, so a copy-paste swap between the three .Count > 0 checks inside
+    // Detect (e.g. GitRepositories.Count > 0 setting Workflows instead of CustomNodes) would still
+    // have passed. Each fact here populates exactly one collection and checks the other two
+    // capabilities stay unset, which a swap would break.
+
     [Fact]
-    public void Content_capabilities_come_from_collection_counts()
+    public void ModelDownloads_capability_comes_from_the_ModelDownloads_collection()
     {
         var w = new InstallationConfiguration();
         w.ModelDownloads.Add(new ModelDownload());
-        w.GitRepositories.Add(new GitRepository());
-        w.Workflows.Add(new ComfUIWorkflow());
 
         var caps = WorkloadCapabilities.Detect(w);
 
         caps.Should().HaveFlag(WorkloadCapability.ModelDownloads);
+        caps.Should().NotHaveFlag(WorkloadCapability.CustomNodes);
+        caps.Should().NotHaveFlag(WorkloadCapability.Workflows);
+    }
+
+    [Fact]
+    public void CustomNodes_capability_comes_from_the_GitRepositories_collection()
+    {
+        var w = new InstallationConfiguration();
+        w.GitRepositories.Add(new GitRepository());
+
+        var caps = WorkloadCapabilities.Detect(w);
+
         caps.Should().HaveFlag(WorkloadCapability.CustomNodes);
+        caps.Should().NotHaveFlag(WorkloadCapability.ModelDownloads);
+        caps.Should().NotHaveFlag(WorkloadCapability.Workflows);
+    }
+
+    [Fact]
+    public void Workflows_capability_comes_from_the_Workflows_collection()
+    {
+        var w = new InstallationConfiguration();
+        w.Workflows.Add(new ComfUIWorkflow());
+
+        var caps = WorkloadCapabilities.Detect(w);
+
         caps.Should().HaveFlag(WorkloadCapability.Workflows);
+        caps.Should().NotHaveFlag(WorkloadCapability.ModelDownloads);
+        caps.Should().NotHaveFlag(WorkloadCapability.CustomNodes);
     }
 
     [Fact]
