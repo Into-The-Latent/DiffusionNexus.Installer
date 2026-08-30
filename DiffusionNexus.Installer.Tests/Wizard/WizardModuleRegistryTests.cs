@@ -9,7 +9,8 @@ namespace DiffusionNexus.Installer.Tests.Wizard;
 public class WizardModuleRegistryTests
 {
     private sealed class StubModule(
-        string id, WizardStage stage, int order, WorkloadCapability satisfies, bool applies) : IWizardModule
+        string id, WizardStage stage, int order, WorkloadCapability satisfies, bool applies,
+        List<string>? recordInitializationInto = null) : IWizardModule
     {
         public string Id => id;
         public WizardStage Stage => stage;
@@ -26,6 +27,7 @@ public class WizardModuleRegistryTests
         public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
         {
             InitializeCount++;
+            recordInitializationInto?.Add(id);
             return Task.CompletedTask;
         }
         public void Contribute(InstallationOptionsDraft draft) { }
@@ -69,6 +71,26 @@ public class WizardModuleRegistryTests
         var plan = await registry.BuildPlanAsync(Selection());
 
         plan.Modules(WizardStage.Location).Select(m => m.Id).Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task Modules_initialize_in_stage_then_order_sequence_not_registration_order()
+    {
+        // Registered deliberately out of Stage/Order sequence. Contribute already runs in
+        // Stage-then-Order via WizardPlan.ToOptions, and InitializeAsync must match it: a
+        // downstream module can depend on an upstream module's InitializeAsync-produced answer
+        // (the spec's VRAM -> ModelSelection example), which only holds if initialization runs in
+        // that same sequence rather than whatever order the modules happened to be registered in.
+        var sequence = new List<string>();
+        var system = new StubModule("system", WizardStage.System, 0, WorkloadCapability.None, applies: true, sequence);
+        var locationLate = new StubModule("location-late", WizardStage.Location, 10, WorkloadCapability.None, applies: true, sequence);
+        var locationEarly = new StubModule("location-early", WizardStage.Location, 0, WorkloadCapability.None, applies: true, sequence);
+
+        var registry = new WizardModuleRegistry([system, locationLate, locationEarly]);
+
+        await registry.BuildPlanAsync(Selection());
+
+        sequence.Should().Equal("location-early", "location-late", "system");
     }
 
     [Fact]

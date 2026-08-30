@@ -44,7 +44,11 @@ public sealed class WizardModuleRegistry(IEnumerable<IWizardModule> modules)
     {
         ArgumentNullException.ThrowIfNull(selection);
 
-        foreach (var module in _modules)
+        // Same Stage-then-Order sequence WizardPlan.ToOptions uses for Contribute, not registration
+        // order: a downstream module's InitializeAsync can depend on an upstream module's answer
+        // (the spec's VRAM -> ModelSelection example), and that dependency is only honoured if
+        // initialization runs in the same order the modules are meant to be sequenced in.
+        foreach (var module in _modules.OrderBy(m => (int)m.Stage).ThenBy(m => m.Order))
             await module.InitializeAsync(selection, ct).ConfigureAwait(false);
 
         var byStage = _modules
