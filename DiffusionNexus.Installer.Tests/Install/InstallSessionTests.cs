@@ -196,8 +196,11 @@ public class InstallSessionTests
     }
 
     [Fact]
-    public async Task Cancellation_lands_as_the_cancelled_phase()
+    public async Task A_cancelled_result_from_the_orchestrator_lands_as_the_cancelled_phase()
     {
+        // Renamed from Cancellation_lands_as_the_cancelled_phase: this only pins the result-mapping
+        // switch in StartAsync's catch/completion logic. It never calls session.Cancel() and proves
+        // nothing about that path -- see Cancel_cancels_the_token_the_orchestrator_was_handed below.
         var orchestrator = new Mock<IInstallationOrchestrator>();
         orchestrator
             .Setup(o => o.InstallAsync(
@@ -212,6 +215,46 @@ public class InstallSessionTests
         await session.StartAsync(await PlanAsync());
 
         session.Phase.Should().Be(InstallPhase.Cancelled);
+    }
+
+    [Fact]
+    public async Task Cancel_cancels_the_token_the_orchestrator_was_handed()
+    {
+        // _cts used to be assigned outside the lock that flips Phase to Running, so a Cancel()
+        // landing in that window read a null field and was silently dropped -- the user pressed
+        // Cancel and nothing happened. This drives an install partway in, captures the token the
+        // orchestrator actually received, and proves Cancel() reaches that exact instance.
+        var gate = new TaskCompletionSource();
+        CancellationToken? capturedToken = null;
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (InstallationConfiguration _, string _, InstallationOptions _,
+                            IProgress<InstallLogEntry>? _, IProgress<InstallationProgress>? _,
+                            IProgress<DownloadProgress>? _, Func<CancellationToken>? _, CancellationToken token) =>
+            {
+                capturedToken = token;
+                await gate.Task;
+                return InstallationResult.Success("done");
+            });
+
+        var session = new InstallSession(orchestrator.Object);
+
+        // Synchronous up to the orchestrator's own first await (matching the pattern the
+        // second-start test above relies on), so capturedToken is already set once this returns.
+        var run = session.StartAsync(await PlanAsync());
+
+        session.Cancel();
+
+        capturedToken.Should().NotBeNull();
+        capturedToken!.Value.IsCancellationRequested.Should().BeTrue();
+
+        gate.SetResult();
+        await run;
     }
 
     [Fact]

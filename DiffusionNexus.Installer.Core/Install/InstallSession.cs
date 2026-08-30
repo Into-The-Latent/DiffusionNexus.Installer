@@ -64,7 +64,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
         try
         {
             // Inside the try: a throw here used to escape uncaught and wedge Phase at Running.
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            // Locked, like _skipDownloadCts below, so Cancel() reading _cts under the same gate can
+            // never observe a torn or stale value -- see Cancel().
+            lock (_gate) _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             lock (_gate) _skipDownloadCts = new CancellationTokenSource();
             NotifyNow();
             _flushTimer.Change(_flushInterval, _flushInterval);
@@ -114,7 +116,12 @@ public sealed class InstallSession : IInstallSession, IDisposable
         }
     }
 
-    public void Cancel() => _cts?.Cancel();
+    public void Cancel()
+    {
+        CancellationTokenSource? cts;
+        lock (_gate) cts = _cts;
+        cts?.Cancel();
+    }
 
     /// <summary>
     /// Hands the orchestrator the current skip token. Read under the lock because
