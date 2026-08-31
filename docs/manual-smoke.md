@@ -3,6 +3,13 @@
 Automated tests cover the module logic, the gate and the session. These are the things only a
 real run can prove. Use a scratch install folder, never a real one.
 
+## 0. Before anything else
+
+1. **Expect:** the gallery is *styled* — dark background, teal accents, cards in a grid.
+   If it renders as plain serif text on white, static web assets are not being served: check the
+   console for `StaticAssetsInvoker` warnings. That failure also kills `blazor.web.js`, so no
+   button on any page will respond — the app looks alive but is completely inert.
+
 ## 1. Gallery
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).

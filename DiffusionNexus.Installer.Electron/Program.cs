@@ -14,6 +14,17 @@ using BlazorApp = DiffusionNexus.Installer.Electron.Components.App;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Static web assets -- app.css, the scoped-CSS bundle, and blazor.web.js itself -- live in the
+// build manifest, not physically under wwwroot. ASP.NET loads that manifest automatically ONLY in
+// the Development environment, and this project sets NoDefaultLaunchSettingsFile, so there is no
+// launchSettings.json to set ASPNETCORE_ENVIRONMENT and the app always starts in Production.
+// Without this call every static asset 404s when running from build output: the UI renders
+// completely unstyled AND blazor.web.js never loads, so the circuit never starts and not a single
+// button works. It only looked fine in a published build, where publish copies the assets into
+// wwwroot for real. Safe to call unconditionally -- it is a no-op when the manifest is absent,
+// which is exactly the published case.
+builder.WebHost.UseStaticWebAssets();
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddElectron();
