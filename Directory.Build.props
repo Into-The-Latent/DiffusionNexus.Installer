@@ -21,4 +21,22 @@
     <RepositoryUrl>https://github.com/Into-The-Latent/DiffusionNexus.Installer</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Solution-wide default for the local-SDK redirect in (untracked) Directory.Build.targets.
+      That file auto-detects UseLocalSDK=true whenever the sibling SDK repo
+      (..\DiffusionNexus.Installer.SDK) exists on disk - the standard developer layout - which
+      would otherwise redirect every project's SDK PackageReferences to local ProjectReferences
+      at whatever version is currently on disk there, conflicting with the pinned NuGet package
+      versions elsewhere in the graph (NU1605 downgrade errors). Setting the default here, in
+      this TRACKED file, means a plain build/test uses the published NuGet packages
+      solution-wide, while both documented opt-ins keep working: the `UseLocalSDK` environment
+      variable (this only seeds the property, so the Condition below leaves it alone) and
+      `-p:UseLocalSDK=true` on the command line (a locked global property that no in-project
+      assignment can overwrite). New projects added by later tasks inherit this policy for free
+      instead of needing their own copy of this PropertyGroup.
+    -->
+    <UseLocalSDK Condition="'$(UseLocalSDK)' == ''">false</UseLocalSDK>
+  </PropertyGroup>
 </Project>

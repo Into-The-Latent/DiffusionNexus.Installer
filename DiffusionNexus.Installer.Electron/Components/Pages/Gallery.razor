@@ -1,0 +1,164 @@
+@page "/"
+@using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.SDK.Catalog
+@using DiffusionNexus.Installer.SDK.Models.Configuration
+@using DiffusionNexus.Installer.SDK.Models.Enums
+@inject GalleryBuilder Builder
+@inject IWorkloadSource Workloads
+@inject NavigationManager Nav
+
+<PageTitle>Choose a workload</PageTitle>
+
+<h1>Choose a workload</h1>
+
+@if (_entries is null)
+{
+    <p>Loading the catalog...</p>
+}
+else if (_loadError is not null)
+{
+    <p class="gallery-error">The catalog could not be read: @_loadError</p>
+}
+else if (_entries.Count == 0)
+{
+    @* Diagnostics before the bland empty message. The SDK reports a missing or unreadable catalog
+       as Error diagnostics on a successfully-returned empty snapshot -- never as an exception -- so
+       without this a hard failure on a cold start is indistinguishable from "nothing to install". *@
+    @if (_errors.Count > 0)
+    {
+        <p class="gallery-error">The catalog could not be loaded:</p>
+        <ul class="gallery-error">
+            @foreach (var diagnostic in _errors)
+            {
+                <li>@diagnostic.Code: @diagnostic.Message</li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p>No workloads are available.</p>
+    }
+}
+else
+{
+    <div class="filters">
+        <span class="filter-label">Type</span>
+        <button class="@TypeClass(null)" @onclick="() => _type = null">All</button>
+        @foreach (var type in AvailableTypes())
+        {
+            <button class="@TypeClass(type)" @onclick="() => _type = type">@type</button>
+        }
+    </div>
+
+    <div class="filters">
+        <span class="filter-label">Software</span>
+        <button class="@SoftwareClass(null)" @onclick="() => _software = null">All</button>
+        @foreach (var software in AvailableSoftware())
+        {
+            <button class="@SoftwareClass(software)" @onclick="() => _software = software">@software</button>
+        }
+    </div>
+
+    var shown = Filtered().ToList();
+
+    @if (shown.Count == 0)
+    {
+        <p class="gallery-empty">No workloads match these filters.</p>
+    }
+    else
+    {
+        <div class="gallery">
+            @foreach (var entry in shown)
+            {
+                <div class="card @(entry.IsInstallable ? "" : "card-disabled")">
+                    <h2>@entry.Workload.Name</h2>
+                    <p class="card-software">@entry.Workload.Repository.Type — @entry.Workload.WorkflowType</p>
+                    <p class="card-description">@entry.Workload.Description</p>
+
+                    @if (entry.IsInstallable)
+                    {
+                        <button class="btn-primary" @onclick="() => Install(entry)">Install</button>
+                    }
+                    else
+                    {
+                        <p class="card-unavailable">@entry.UnavailableReason</p>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <p class="gallery-footer">
+        <a href="/updates">Version and updates</a>
+        @if (ShowDeveloperTools)
+        {
+            <span> | </span>
+            <a href="/debug">Developer tools</a>
+        }
+    </p>
+}
+
+@code {
+    /// <summary>
+    /// The developer tools page is compiled out of Release builds entirely (see the csproj), so the
+    /// link has to disappear with it. A #if in Razor MARKUP is not a thing — preprocessor
+    /// directives are only legal inside the @code block, so the flag lives here.
+    /// </summary>
+    private const bool ShowDeveloperTools =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    private IReadOnlyList<GalleryEntry>? _entries;
+    private IReadOnlyList<CatalogDiagnostic> _errors = [];
+    private string? _loadError;
+    private WorkflowType? _type;
+    private RepositoryType? _software;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _entries = await Builder.BuildAsync();
+
+            // Read after the build: the catalog populates diagnostics during the load the build
+            // triggers, so asking earlier reports on a catalog that has not been resolved yet.
+            _errors = Workloads.Diagnostics.Where(d => d.IsError).ToList();
+        }
+        catch (Exception ex)
+        {
+            // This is the first screen; it must say why it is empty rather than take the app down
+            // with an unhandled exception out of the component lifecycle.
+            _loadError = ex.Message;
+            _entries = [];
+        }
+    }
+
+    private IEnumerable<GalleryEntry> Filtered() => _entries!
+        .Where(e => _type is null || e.Workload.WorkflowType == _type)
+        .Where(e => _software is null || e.Workload.Repository.Type == _software);
+
+    // Driven by what the catalog actually contains, not by every value the enum can hold, so an
+    // unused software never shows an empty filter.
+    private IEnumerable<RepositoryType> AvailableSoftware() => _entries!
+        .Select(e => e.Workload.Repository.Type)
+        .Distinct()
+        .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
+
+    // Catalog-derived for the same reason AvailableSoftware is: a filter that can only ever return
+    // nothing is a dead control.
+    private IEnumerable<WorkflowType> AvailableTypes() => _entries!
+        .Select(e => e.Workload.WorkflowType)
+        .Distinct()
+        .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
+
+    private string TypeClass(WorkflowType? type) => _type == type ? "filter-active" : "filter";
+
+    private string SoftwareClass(RepositoryType? software) =>
+        _software == software ? "filter-active" : "filter";
+
+    private void Install(GalleryEntry entry) => Nav.NavigateTo($"/install/{entry.Workload.Id}");
+}

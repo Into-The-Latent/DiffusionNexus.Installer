@@ -11,18 +11,6 @@
 
   <PropertyGroup>
     <!--
-      Directory.Build.targets attaches ProjectReferences to all five SDK projects to every
-      project in this repo when the SDK source is present. This shell does not use the SDK
-      yet, and pulling in EF Core + SQLite + the catalog DB would bloat the artifact that
-      the auto-update round-trip is being measured against. Remove this line when the SDK
-      is actually wired in.
-    -->
-    <UseLocalSDK>false</UseLocalSDK>
-  </PropertyGroup>
-
-
-  <PropertyGroup>
-    <!--
       ElectronNET.Core 0.5.2 DEFAULTS to Electron 30.4.0, which is end-of-life and ships an
       unpatched Chromium. Electron supports only the newest three majors (41/42/43 as of
       2026-08). 42.4.1 is the highest version 0.5.2's curated list offers and is inside that
@@ -80,6 +68,30 @@
   <ItemGroup>
     <PackageReference Include="ElectronNET.Core" Version="0.5.2" />
     <PackageReference Include="ElectronNET.Core.AspNet" Version="0.5.2" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Models" Version="2.0.0-preview.4" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Shared" Version="2.0.0-preview.4" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Services" Version="2.0.0-preview.4" />
+    <PackageReference Include="DiffusionNexus.Installer.SDK.Catalog" Version="2.0.0-preview.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiffusionNexus.Installer.Core\DiffusionNexus.Installer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Catalog\catalog.zip" LogicalName="catalog.zip" />
+    <EmbeddedResource Include="Assets\Catalog\manifest.json" LogicalName="manifest.json" />
+  </ItemGroup>
+
+  <!--
+    Developer tools are a Debug-only affordance, like the Avalonia installer's orange
+    "Developer Menu" card. Removing the .razor file from the Release compilation removes the
+    /debug ROUTE with it: a Blazor page component that is compiled in stays routable however
+    the markup around it is guarded.
+  -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Content Remove="Components\Pages\DebugTools.razor" />
+    <None Include="Components\Pages\DebugTools.razor" />
   </ItemGroup>
 
 </Project>

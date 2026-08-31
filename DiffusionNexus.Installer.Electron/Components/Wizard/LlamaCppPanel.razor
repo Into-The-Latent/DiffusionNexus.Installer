@@ -1,0 +1,21 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel @(Module.WheelUrl is null ? "panel-warning" : null)">
+    <h2>llama.cpp</h2>
+
+    @if (Module.WheelUrl is null)
+    {
+        <p>
+            This workload asks for a llama.cpp wheel that is not in the catalog, so it cannot be
+            installed. The catalog entry needs fixing.
+        </p>
+    }
+    else
+    {
+        <p class="panel-hint">Installing the <strong>@Module.WheelName</strong> wheel.</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public LlamaCppModule Module { get; set; } = default!;
+}

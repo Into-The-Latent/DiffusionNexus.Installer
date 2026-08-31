@@ -1,0 +1,116 @@
+@using DiffusionNexus.Installer.Core.Install
+@using DiffusionNexus.Installer.Core.Wizard
+@implements IDisposable
+@inject IInstallSession Session
+
+<section class="panel">
+    <h2>Installing</h2>
+
+    @if (_startError is not null)
+    {
+        <p class="validation-error">This installation could not be started: @_startError</p>
+    }
+
+    @if (Session.Progress is { } progress)
+    {
+        <p>Step @(progress.StepIndex + 1) of @progress.TotalSteps — @progress.CurrentStep</p>
+        <progress max="100" value="@progress.ProgressPercentage"></progress>
+    }
+
+    @if (Session.CurrentDownload is { IsActive: true } download)
+    {
+        <p class="download">
+            @download.DownloadedSizeText of @download.TotalSizeText at @download.SpeedText
+            <button class="btn-secondary" @onclick="() => Session.SkipCurrentDownload()">Skip this file</button>
+        </p>
+    }
+
+    @* Tail, not the whole 5000-line buffer. Changes coalesce every 100ms, so rendering the full log
+       re-copied it under the lock OnLog needs, re-interpolated every line, and shipped a ~475KB
+       string over the SignalR circuit ten times a second to show one new line. *@
+    <pre class="install-log">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
+
+    <div class="wizard-actions">
+        @if (Session.Phase == InstallPhase.Running)
+        {
+            <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
+        }
+        else
+        {
+            @* The only way out of a finished install. Without it an Electron user -- no address
+               bar, no menu -- has to kill the process to install a second workload. It lives here
+               rather than on the page because this component subscribes to Session.Changed and so
+               actually re-renders when the run ends. *@
+            <button class="btn-primary" @onclick="Done">Back to workloads</button>
+        }
+    </div>
+
+    @if (Session.Result is { } result)
+    {
+        <div class="@(result.IsSuccess ? "result-ok" : "result-bad")">
+            <h3>@(result.IsSuccess ? "Installation complete" : result.IsCancelled ? "Cancelled" : "Installation failed")</h3>
+            <p>@result.Message</p>
+
+            @if (result.Report.Count > 0)
+            {
+                <table class="report">
+                    <thead><tr><th>Planned operation</th><th>Result</th><th>Comment</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in result.Report)
+                        {
+                            <tr class="@(row.IsWarning ? "report-warning" : null)">
+                                <td>@row.PlannedOperation</td>
+                                <td>@row.Outcome</td>
+                                <td>@row.Comment</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    /// <summary>
+    /// How much scrollback the live view keeps. Enough to see what a failing step printed, small
+    /// enough that a render stays cheap; the completion report is what matters afterwards.
+    /// </summary>
+    private const int VisibleLogLines = 300;
+
+    private string? _startError;
+
+    [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
+
+    /// <summary>Raised when the user is finished with the result and wants the gallery back.</summary>
+    [Parameter] public EventCallback Done { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnChanged;
+
+        // Start only a run the session is not already carrying. Reference identity distinguishes a
+        // reconnect (same plan instance, already running or finished) from a deliberate re-install
+        // (a freshly built plan), and a bare "phase is not Running" check would restart a completed
+        // install on every reconnect.
+        if (Session.Phase == InstallPhase.Running || ReferenceEquals(Session.Plan, Run.Plan))
+            return;
+
+        // Awaited, not fire-and-forget. StartAsync throws OUTSIDE its own try/catch when a run is
+        // already in flight, so discarding the Task turned that into an unobserved exception and
+        // the page went on rendering the other install's progress as if it were this one's.
+        // Install.razor refuses that case before we get here, so reaching it means a genuine bug.
+        try
+        {
+            await Session.StartAsync(Run.Plan);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _startError = ex.Message;
+        }
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Session.Changed -= OnChanged;
+}

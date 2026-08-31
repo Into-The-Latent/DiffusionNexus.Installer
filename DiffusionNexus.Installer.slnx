@@ -8,4 +8,6 @@
     the full project graph when Directory.Build.targets redirects to ProjectReferences.
   -->
   <Project Path="DiffusionNexus.Installer.Electron\DiffusionNexus.Installer.Electron.csproj" />
+  <Project Path="DiffusionNexus.Installer.Core\DiffusionNexus.Installer.Core.csproj" />
+  <Project Path="DiffusionNexus.Installer.Tests\DiffusionNexus.Installer.Tests.csproj" />
 </Solution>

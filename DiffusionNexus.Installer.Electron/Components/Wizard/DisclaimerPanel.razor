@@ -1,0 +1,22 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel panel-warning">
+    <h2>Software disclaimer</h2>
+    <p class="disclaimer-text">@DisclaimerModule.Text</p>
+    <label class="checkbox">
+        <input type="checkbox" checked="@Module.Accepted" @onchange="OnAcceptedChanged" />
+        I have read and accept this disclaimer
+    </label>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public DisclaimerModule Module { get; set; } = default!;
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnAcceptedChanged(ChangeEventArgs e)
+    {
+        Module.Accepted = (bool)(e.Value ?? false);
+        await Changed.InvokeAsync();
+    }
+}

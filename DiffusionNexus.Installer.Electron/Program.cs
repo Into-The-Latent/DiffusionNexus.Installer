@@ -1,4 +1,10 @@
+using DiffusionNexus.Installer.Core;
+using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Electron.Services;
+using DiffusionNexus.Installer.SDK.Catalog;
+using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Installation;
+using DiffusionNexus.Installer.SDK.Services.Settings;
 using ElectronNET.API;
 using ElectronNET.API.Entities;
 
@@ -8,10 +14,48 @@ using BlazorApp = DiffusionNexus.Installer.Electron.Components.App;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Static web assets -- app.css, the scoped-CSS bundle, and blazor.web.js itself -- live in the
+// build manifest, not physically under wwwroot. ASP.NET loads that manifest automatically ONLY in
+// the Development environment, and this project sets NoDefaultLaunchSettingsFile, so there is no
+// launchSettings.json to set ASPNETCORE_ENVIRONMENT and the app always starts in Production.
+// Without this call every static asset 404s when running from build output: the UI renders
+// completely unstyled AND blazor.web.js never loads, so the circuit never starts and not a single
+// button works. It only looked fine in a published build, where publish copies the assets into
+// wwwroot for real. Safe to call unconditionally -- it is a no-op when the manifest is absent,
+// which is exactly the published case.
+builder.WebHost.UseStaticWebAssets();
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddElectron();
 builder.Services.AddSingleton<UpdaterLog>();
+
+// SDK core services. IGitService/IPythonService/IProcessRunner are not registered by
+// AddInstallationServices -- the host owns them, exactly as the 2.x app does.
+builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+builder.Services.AddSingleton<IGitService, GitService>();
+builder.Services.AddSingleton<IPythonService, PythonService>();
+builder.Services.AddInstallationServices();
+builder.Services.AddSingleton<IInstallationOrchestrator, InstallationOrchestrator>();
+builder.Services.AddDiffusionNexusUserSettings();
+
+builder.Services.AddDiffusionNexusCatalog(options =>
+{
+    // The installer ships the catalog it was built against, so a machine with no catalog yet
+    // still has a full workload list before it ever reaches the network.
+    var assembly = typeof(Program).Assembly;
+    options.EmbeddedArchive = () => assembly.GetManifestResourceStream("catalog.zip")!;
+    options.EmbeddedManifest = () => assembly.GetManifestResourceStream("manifest.json")!;
+
+    // Point at a catalog checkout to test content changes before publishing them. A missing
+    // path warns and falls back rather than failing to start.
+    options.LocalOverridePath = Environment.GetEnvironmentVariable("DIFFUSIONNEXUS_CATALOG_PATH");
+});
+
+builder.Services.AddInstallerCore();
+builder.Services.AddSingleton<ModalPromptService>();
+builder.Services.AddSingleton<IUserPrompt>(sp => sp.GetRequiredService<ModalPromptService>());
+builder.Services.AddSingleton<IFolderPicker, ElectronFolderPicker>();
 
 // The Electron shell is only spun up when the app is launched through Electron; running the
 // project directly still serves the Blazor UI in a browser, which keeps plain `dotnet run`

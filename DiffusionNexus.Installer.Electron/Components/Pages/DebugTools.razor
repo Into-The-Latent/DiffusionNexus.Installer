@@ -1,0 +1,140 @@
+@page "/debug"
+@using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.DevTools
+@using DiffusionNexus.Installer.Core.Host
+@inject IWorkloadSource Workloads
+@inject IFolderPicker FolderPicker
+@inject LauncherScriptPreview Preview
+@inject NavigationManager Nav
+
+<PageTitle>Developer tools</PageTitle>
+
+<h1>Developer tools</h1>
+<p class="panel-hint">Debug builds only. Not present in a Release build.</p>
+
+<section class="panel panel-warning">
+    <h2>Export launcher scripts</h2>
+    <p>
+        Writes the <code>.bat</code> / <code>.sh</code> launchers a workload would get, without
+        running an install, and reports the line endings that actually reached disk.
+    </p>
+    <p class="panel-hint">
+        A preview, not a promise: the authoritative per-workload mapping lives in the SDK's install
+        step handlers and this mirrors it. It is exact for everything shared by all scripts — the
+        branding header, line endings, cmd escaping — which is what generation bugs have hit.
+    </p>
+
+    <div class="wizard-actions">
+        <button class="btn-primary" disabled="@_busy" @onclick="ExportSelected">
+            Export @(_selected?.Name ?? "…")
+        </button>
+        <button class="btn-secondary" disabled="@_busy" @onclick="ExportAll">
+            Export all (@_workloads.Count)
+        </button>
+        <button class="btn-secondary" @onclick="@(() => Nav.NavigateTo("/"))">Back to workloads</button>
+    </div>
+
+    @if (_workloads.Count > 0)
+    {
+        <label>Workload</label>
+        <select class="path-row" @onchange="OnWorkloadChanged">
+            @foreach (var w in _workloads)
+            {
+                <option value="@w.Id" selected="@(w.Id == _selected?.Id)">@w.Name (@w.Repository.Type)</option>
+            }
+        </select>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="validation-error">@_error</p>
+    }
+</section>
+
+@if (_results.Count > 0)
+{
+    <section class="panel">
+        <h2>@_results.Count file(s) written to @_folder</h2>
+
+        @if (_results.Any(r => !r.IsCorrect))
+        {
+            <p class="validation-error">
+                @_results.Count(r => !r.IsCorrect) file(s) have the wrong line endings — a batch file
+                must be CRLF or cmd.exe mis-parses it; a shell script must be LF or bash fails.
+            </p>
+        }
+
+        <table class="report">
+            <thead><tr><th>Workload</th><th>File</th><th>Bytes</th><th>Line endings</th></tr></thead>
+            <tbody>
+                @foreach (var r in _results)
+                {
+                    <tr class="@(r.IsCorrect ? null : "report-warning")">
+                        <td>@r.WorkloadName</td>
+                        <td>@r.FileName</td>
+                        <td>@r.Bytes</td>
+                        <td>@r.LineEnding @(r.IsCorrect ? "OK" : "WRONG")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<SDK.Models.Configuration.InstallationConfiguration> _workloads = [];
+    private SDK.Models.Configuration.InstallationConfiguration? _selected;
+    private List<ExportedScript> _results = [];
+    private string? _folder;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _workloads = await Workloads.GetInstallerWorkloadsAsync();
+        _selected = _workloads.FirstOrDefault();
+    }
+
+    private void OnWorkloadChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+            _selected = _workloads.FirstOrDefault(w => w.Id == id);
+    }
+
+    private Task ExportSelected() =>
+        Run(_selected is null ? [] : [_selected]);
+
+    private Task ExportAll() => Run(_workloads);
+
+    private async Task Run(IReadOnlyList<SDK.Models.Configuration.InstallationConfiguration> workloads)
+    {
+        _error = null;
+
+        if (workloads.Count == 0)
+        {
+            _error = "No workload selected.";
+            return;
+        }
+
+        var folder = await FolderPicker.PickFolderAsync("Export launcher scripts to...");
+        if (folder is null) return;   // dismissed — leave the previous results on screen
+
+        _busy = true;
+        _results = [];
+        _folder = folder;
+
+        try
+        {
+            foreach (var workload in workloads)
+                _results.AddRange(Preview.Export(workload, folder));
+        }
+        catch (Exception ex)
+        {
+            _error = $"Export failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
