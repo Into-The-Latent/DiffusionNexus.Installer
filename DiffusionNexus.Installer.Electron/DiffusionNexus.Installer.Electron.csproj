@@ -83,4 +83,15 @@
     <EmbeddedResource Include="Assets\Catalog\manifest.json" LogicalName="manifest.json" />
   </ItemGroup>
 
+  <!--
+    Developer tools are a Debug-only affordance, like the Avalonia installer's orange
+    "Developer Menu" card. Removing the .razor file from the Release compilation removes the
+    /debug ROUTE with it: a Blazor page component that is compiled in stays routable however
+    the markup around it is guarded.
+  -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Content Remove="Components\Pages\DebugTools.razor" />
+    <None Include="Components\Pages\DebugTools.razor" />
+  </ItemGroup>
+
 </Project>

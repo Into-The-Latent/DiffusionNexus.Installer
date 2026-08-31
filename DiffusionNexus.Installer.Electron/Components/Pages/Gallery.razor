@@ -89,10 +89,29 @@ else
         </div>
     }
 
-    <p class="gallery-footer"><a href="/updates">Version and updates</a></p>
+    <p class="gallery-footer">
+        <a href="/updates">Version and updates</a>
+        @if (ShowDeveloperTools)
+        {
+            <span> | </span>
+            <a href="/debug">Developer tools</a>
+        }
+    </p>
 }
 
 @code {
+    /// <summary>
+    /// The developer tools page is compiled out of Release builds entirely (see the csproj), so the
+    /// link has to disappear with it. A #if in Razor MARKUP is not a thing — preprocessor
+    /// directives are only legal inside the @code block, so the flag lives here.
+    /// </summary>
+    private const bool ShowDeveloperTools =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
     private IReadOnlyList<GalleryEntry>? _entries;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
