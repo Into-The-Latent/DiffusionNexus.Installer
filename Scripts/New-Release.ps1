@@ -56,22 +56,48 @@ $props = Get-Content $propsPath -Raw
 $props = $props -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$Version</Version>"
 Set-Content $propsPath $props -NoNewline
 
-Write-Host "Step 1/3: dotnet publish" -ForegroundColor Cyan
-dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -c Release --nologo
+# A release must be built from the PUBLISHED SDK packages, never from a local checkout.
+# Directory.Build.targets auto-enables UseLocalSDK whenever E:\Repos\DiffusionNexus.Installer.SDK
+# exists - and it exists on every dev machine here - so without this pin a release silently embeds
+# whatever branch the SDK repo happens to have checked out, and cannot be reproduced from a clean
+# clone. Pinned explicitly rather than left to the environment, because a User-scope
+# UseLocalSDK=true survives shells and would otherwise win.
+if (-not $env:GITHUB_PACKAGES_TOKEN) {
+    throw "GITHUB_PACKAGES_TOKEN is not set. The release build restores the SDK from GitHub Packages (see nuget.config) and would fail the restore."
+}
+
+Write-Host "Step 1/3: dotnet publish (SDK from NuGet, not the local checkout)" -ForegroundColor Cyan
+dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -c Release --nologo -p:UseLocalSDK=false
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
-Copy-Item (Join-Path $project 'Properties\electron-builder.json') (Join-Path $publish 'electron-builder.json') -Force
+
+# The settings below are written INTO a generated config rather than passed as electron-builder's
+# `-c.some.path value` overrides, because those overrides do not survive PowerShell.
+#
+# ElectronNET's MSBuild target passes them that way and it works - but MSBuild's Exec runs the
+# command through cmd.exe. Run the identical argument list from PowerShell and yargs fails to bind
+# any of the pairs, reporting every VALUE as an unknown positional argument; switch them to `=`
+# form and it is worse but quieter, as `-c.directories.app=app` binds to `-c` (the alias for
+# --config) and silently replaces the config path, so the build dies looking for a file called
+# `.directories.app=app`. A generated config has no such ambiguity and behaves the same in
+# every shell.
+$builderConfig = Get-Content (Join-Path $project 'Properties\electron-builder.json') -Raw |
+    ConvertFrom-Json -AsHashtable
+$builderConfig.electronVersion = $electronVersion
+$builderConfig.appId           = 'diffusion-nexus-installer'
+$builderConfig.buildVersion    = $Version
+$builderConfig.copyright       = "Copyright $([char]0x00A9) Into The Latent"
+$builderConfig.extraResources  = 'bin/**/*'
+# app.asar is built from the 'app' subfolder only, keeping the .NET output under bin/ outside it.
+$builderConfig.directories     = @{ app = 'app'; output = $publish }
+
+$generatedConfig = Join-Path $publish 'electron-builder.publish.json'
+$builderConfig | ConvertTo-Json -Depth 10 | Set-Content $generatedConfig -Encoding utf8
+
 Push-Location $publish
 try {
-    npx electron-builder --config=./electron-builder.json --publish never `
-        -c.electronVersion=$electronVersion `
-        -c.directories.output "$publish" `
-        -c.appId "diffusion-nexus-installer" `
-        -c.buildVersion "$Version" `
-        -c.copyright "Copyright © Into The Latent" `
-        -c.extraResources "bin/**/*" `
-        -c.directories.app "app"
+    npx electron-builder --config=./electron-builder.publish.json --publish never
     if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
 } finally { Pop-Location }
 
