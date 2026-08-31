@@ -41,6 +41,12 @@ public sealed class GpuPreflightModule(IGpuDetectionService gpuDetection) : IWiz
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
+        // AcceptCpuOnly is reset FIRST and unconditionally. Modules are registered as singletons,
+        // so consent given for one workload would otherwise still be set when the next plan is
+        // built: Validate() returns Ok before the user has seen the panel, and Contribute silently
+        // puts the CPU torch wheel on a workload nobody agreed to install that way.
+        AcceptCpuOnly = false;
+
         var result = await gpuDetection.DetectAsync(ct).ConfigureAwait(false);
         _state = result.State;
         GpuName = result.GpuName;

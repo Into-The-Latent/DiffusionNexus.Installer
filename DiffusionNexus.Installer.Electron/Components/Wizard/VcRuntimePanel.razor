@@ -1,0 +1,46 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel panel-warning">
+    <h2>Visual C++ runtime @(Module.IsOutdated ? "is out of date" : "is missing")</h2>
+
+    <p>
+        @if (Module.IsOutdated)
+        {
+            @($"This machine has version {Module.InstalledVersion?.ToString() ?? "(unknown)"}, which is older than Triton needs. ")
+        }
+        Triton and SageAttention load the Microsoft Visual C++ 2015-2022 x64 runtime to compile CUDA
+        kernels. Without it they install successfully but fail on your first generation.
+    </p>
+
+    <label class="checkbox">
+        <input type="checkbox" checked="@Module.InstallRuntime" @onchange="OnInstallRuntimeChanged" />
+        Install it during setup
+    </label>
+
+    @if (Module.InstallRuntime)
+    {
+        <p class="panel-hint">
+            Windows will show one administrator prompt for this. It is the only one — the runtime is
+            machine-wide and has no per-user variant.
+        </p>
+    }
+    else
+    {
+        <p class="panel-hint">
+            Setup will continue and report this as a warning. Triton and SageAttention will not work
+            until you install the runtime yourself.
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public VcRuntimeModule Module { get; set; } = default!;
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnInstallRuntimeChanged(ChangeEventArgs e)
+    {
+        Module.InstallRuntime = (bool)(e.Value ?? false);
+        await Changed.InvokeAsync();
+    }
+}

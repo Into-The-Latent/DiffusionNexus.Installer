@@ -111,16 +111,32 @@ public class WorkloadCapabilitiesTests
     }
 
     [Fact]
-    public void LlamaCpp_capability_is_detected_from_InstallLamaCpp()
+    public void LlamaCpp_capability_is_detected_from_the_selected_wheel_id()
     {
+        // The wheel id, not InstallLamaCpp. ComfyUIInstallationFlow schedules InstallLlamaCpp when
+        // SelectedLamaCppWheelId.HasValue and LlamaCppInstallStepHandler.ShouldExecute reads the
+        // same field; InstallLamaCpp is never consulted at install time.
         var w = new InstallationConfiguration();
-        w.InstallLamaCpp = true;
+        w.Repository.Type = RepositoryType.Fooocus; // keep ComfyFolders out of the way
+        w.SelectedLamaCppWheelId = Guid.NewGuid();
 
         WorkloadCapabilities.Detect(w).Should().HaveFlag(WorkloadCapability.LlamaCpp);
     }
 
     [Fact]
-    public void LlamaCpp_is_not_detected_when_the_flag_is_off()
+    public void LlamaCpp_is_not_detected_from_the_inert_InstallLamaCpp_flag()
+    {
+        // The mirror of the bug: keying on this flag hid a workload from the gallery that the SDK
+        // would never have scheduled the step for.
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.Fooocus;
+        w.InstallLamaCpp = true;
+
+        WorkloadCapabilities.Detect(w).Should().NotHaveFlag(WorkloadCapability.LlamaCpp);
+    }
+
+    [Fact]
+    public void LlamaCpp_is_not_detected_when_no_wheel_is_selected()
     {
         var w = new InstallationConfiguration();
 
@@ -130,13 +146,49 @@ public class WorkloadCapabilitiesTests
     [Fact]
     public void LlamaCpp_is_a_blocking_capability()
     {
-        // Same standard as VRAM and model downloads: with InstallLamaCpp set and no module to
-        // narrow/configure it, the pipeline still reaches LlamaCppInstallStepHandler and fails
-        // there with a null wheel URL, rather than the workload being kept off the gallery.
+        // Same standard as VRAM and model downloads: with a wheel id and nothing to resolve it,
+        // the pipeline reaches LlamaCppInstallStepHandler and fails there on a null wheel URL.
         var w = new InstallationConfiguration();
-        w.Repository.Type = RepositoryType.Fooocus; // keep ComfyFolders out of the way
-        w.InstallLamaCpp = true;
+        w.Repository.Type = RepositoryType.Fooocus;
+        w.SelectedLamaCppWheelId = Guid.NewGuid();
 
         WorkloadCapabilities.DetectBlocking(w).Should().Be(WorkloadCapability.LlamaCpp);
+    }
+
+    [Fact]
+    public void An_impossible_torch_cuda_pairing_is_an_incompatibility()
+    {
+        // Torch 2.8.0 ships no CUDA 13.0 wheel. InstallationPipeline refuses this before step 1,
+        // so offering the card means the user fills in the wizard for a guaranteed failure.
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.ComfyUI;
+        w.Torch.TorchVersion = "2.8.0";
+        w.Torch.CudaVersion = "13.0";
+
+        WorkloadCapabilities.DetectIncompatibility(w).Should().Contain("13.0");
+    }
+
+    [Fact]
+    public void A_supported_torch_cuda_pairing_is_not_an_incompatibility()
+    {
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.ComfyUI;
+        w.Torch.TorchVersion = "2.8.0";
+        w.Torch.CudaVersion = "12.8";
+
+        WorkloadCapabilities.DetectIncompatibility(w).Should().BeNull();
+    }
+
+    [Fact]
+    public void A_workload_that_does_not_author_torch_settings_is_never_incompatible()
+    {
+        // Only ComfyUI authors its own torch settings; TorchSettingsPolicy pins the rest, and
+        // InstallationPipeline skips the check for them -- so the gate must skip it too.
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.AceStep;
+        w.Torch.TorchVersion = "2.8.0";
+        w.Torch.CudaVersion = "13.0";
+
+        WorkloadCapabilities.DetectIncompatibility(w).Should().BeNull();
     }
 }

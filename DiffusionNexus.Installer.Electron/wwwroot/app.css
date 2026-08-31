@@ -144,3 +144,418 @@ html, body {
     color: var(--muted);
     font-size: .85rem;
 }
+
+/* ---------------------------------------------------------------------------
+   Wizard, gallery and modal (slice 1)
+
+   Every class below is used by the gallery/wizard markup and none of them had a
+   definition anywhere. That was not merely cosmetic: with no position or
+   z-index, PromptModal rendered as plain text at the very BOTTOM of the
+   document, below an unbounded <pre> holding thousands of pip lines, so a
+   mid-install shortcut conflict parked the pipeline on a question the user
+   could not see, let alone answer. The install simply looked hung.
+   --------------------------------------------------------------------------- */
+
+h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 0 0 1.25rem;
+}
+
+h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 .6rem;
+}
+
+/* MainLayout wraps @Body in this. Without a wrapper every page rendered flush
+   against the window edge, because body's own margin is zeroed above. */
+.page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 2rem 2rem 3rem;
+}
+
+/* The updates page brings its own width and padding; don't apply them twice. */
+.page .shell {
+    padding: 0;
+}
+
+/* --- buttons ------------------------------------------------------------- */
+
+.btn-primary,
+.btn-secondary {
+    border-radius: 6px;
+    padding: .55rem 1.1rem;
+    font-size: .92rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #06231f;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+/* --- gallery ------------------------------------------------------------- */
+
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+    margin-bottom: .6rem;
+}
+
+.filter-label {
+    color: var(--muted);
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 600;
+    min-width: 5rem;
+}
+
+.filter,
+.filter-active {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    padding: .25rem .8rem;
+    font-size: .82rem;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.filter:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.filter-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06231f;
+    font-weight: 600;
+}
+
+.gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.1rem 1.1rem;
+}
+
+.card h2 {
+    font-size: 1rem;
+    margin: 0 0 .25rem;
+}
+
+/* Muted, not hidden: the catalog contains these workloads and showing them
+   greyed is more honest than an inexplicably short list. */
+.card-disabled {
+    opacity: .55;
+    border-style: dashed;
+}
+
+.card-software {
+    margin: 0 0 .5rem;
+    color: var(--accent);
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-weight: 600;
+}
+
+.card-description {
+    margin: 0 0 1rem;
+    color: var(--muted);
+    font-size: .87rem;
+    line-height: 1.5;
+    flex: 1;
+}
+
+.card-unavailable {
+    margin: 0;
+    color: var(--muted);
+    font-size: .82rem;
+    font-style: italic;
+}
+
+.card .btn-primary {
+    align-self: flex-start;
+}
+
+.gallery-empty,
+.gallery-footer {
+    color: var(--muted);
+    font-size: .88rem;
+}
+
+.gallery-error {
+    color: #ff8f8f;
+    font-size: .9rem;
+}
+
+.gallery-footer a {
+    color: var(--muted);
+}
+
+/* --- wizard -------------------------------------------------------------- */
+
+.stage-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    list-style: none;
+    margin: 0 0 1.5rem;
+    padding: 0;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 600;
+}
+
+.stage,
+.stage-current {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: .25rem .85rem;
+    color: var(--muted);
+}
+
+.stage-current {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06231f;
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.panel-warning {
+    border-color: #6b5a1f;
+    background: #221e12;
+}
+
+.panel-hint {
+    margin: 0 0 .75rem;
+    color: var(--muted);
+    font-size: .85rem;
+}
+
+.disclaimer-text {
+    color: var(--muted);
+    font-size: .85rem;
+    line-height: 1.6;
+}
+
+.path-row {
+    display: flex;
+    gap: .5rem;
+}
+
+.path-row input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: .5rem .7rem;
+    font-family: inherit;
+    font-size: .9rem;
+}
+
+.path-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.checkbox {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .9rem;
+    cursor: pointer;
+    margin-top: .5rem;
+}
+
+.checkbox input {
+    accent-color: var(--accent);
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+}
+
+.summary {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: .4rem 1.25rem;
+    margin: 0;
+    font-size: .9rem;
+}
+
+.summary dt {
+    color: var(--muted);
+}
+
+.summary dd {
+    margin: 0;
+    word-break: break-word;
+}
+
+.wizard-actions {
+    display: flex;
+    gap: .6rem;
+    margin: 1.25rem 0 .5rem;
+}
+
+.validation-error {
+    color: #ff8f8f;
+    font-size: .87rem;
+    margin: .25rem 0;
+}
+
+/* --- install ------------------------------------------------------------- */
+
+progress {
+    width: 100%;
+    height: .5rem;
+    accent-color: var(--accent);
+}
+
+.download {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    font-size: .87rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Bounded and scrollable. Unbounded, this element grew the page until anything
+   rendered after it sat thousands of pixels below the fold. */
+.install-log {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .75rem .9rem;
+    margin: 1rem 0;
+    max-height: 22rem;
+    overflow: auto;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: .8rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.report {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: .75rem;
+    font-size: .85rem;
+}
+
+.report th,
+.report td {
+    text-align: left;
+    padding: .4rem .6rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.report th {
+    color: var(--muted);
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.report-warning {
+    color: #e8c67a;
+}
+
+.result-ok h3 {
+    color: var(--accent);
+}
+
+.result-bad h3 {
+    color: #ff8f8f;
+}
+
+/* --- modal --------------------------------------------------------------- */
+
+/* Fixed and above everything else. This is the whole reason a mid-install
+   question is answerable at all. */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, .65);
+    padding: 1.5rem;
+}
+
+.modal-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.4rem 1.5rem;
+    max-width: 32rem;
+    width: 100%;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+}
+
+.modal-card h2 {
+    margin-top: 0;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .6rem;
+    margin-top: 1.25rem;
+}

@@ -1,4 +1,6 @@
+using DiffusionNexus.Installer.SDK.Services;
 using System.IO.Compression;
+using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Services;
@@ -25,9 +27,13 @@ namespace DiffusionNexus.Installer.Tests.Wizard;
 /// </summary>
 public sealed class RealCatalogInstallabilityTests : IDisposable
 {
-    // The exact ten names manual-smoke.md documents as enabled in slice 1 (Fix 8 keeps that
-    // document in sync with this list). Everything else among the installer-targeted workloads
-    // must be blocked -- that is what the second half of the Fact below checks.
+    // The exact names manual-smoke.md documents as enabled in slice 1. Everything else among the
+    // installer-targeted workloads must be blocked -- that is what the second half of the Fact
+    // below checks.
+    //
+    // Config535 is NOT here even though every capability it needs is covered: it pairs torch 2.8.0
+    // with CUDA 13.0, for which no wheel exists, so InstallationPipeline refuses it before step 1.
+    // See Config535_is_blocked_for_an_impossible_torch_pairing below.
     private static readonly string[] ExpectedInstallableNames =
     [
         "Stable Diffusion web UI",
@@ -38,7 +44,6 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
         "Blanck-ComfyUI",
         "Base-install-Triton-SageAttention-Manager",
         "ComfyUI Llama Cpp test",
-        "Config535",
         "FlashVSR-Video&Image Upscale",
     ];
 
@@ -85,16 +90,39 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
         return gpu.Object;
     }
 
+    private static IVcRuntimeDetectionService VcRuntime()
+    {
+        var vc = new Mock<IVcRuntimeDetectionService>();
+        vc.Setup(v => v.Detect()).Returns(new VcRuntimeDetectionResult(VcRuntimeState.Present));
+        return vc.Object;
+    }
+
+    /// <summary>
+    /// Resolves whatever wheel it is asked for. The gate only cares that SOME module satisfies the
+    /// LlamaCpp capability; whether a specific id resolves is the module's own validation, covered
+    /// in CapabilityAgreementTests.
+    /// </summary>
+    private IWorkloadSource Wheels()
+    {
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetLamaCppWheelsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        return source.Object;
+    }
+
     /// <summary>
     /// Mirrors CoreServiceCollectionExtensions.AddInstallerCore's slice-1 module set exactly, so
     /// the gate under test is the one the app actually registers, not an arbitrary stand-in.
     /// </summary>
-    private static WizardModuleRegistry ProductionRegistry() => new(
+    private WizardModuleRegistry ProductionRegistry() => new(
     [
-        new InstallFolderModule(Settings()),
+        new InstallFolderModule(Settings(), new PreInstallationService()),
         new ComfyFoldersModule(Settings()),
         new GpuPreflightModule(Gpu()),
+        new VcRuntimeModule(VcRuntime()),
+        new LlamaCppModule(Wheels()),
         new ShortcutsModule(),
+        new DisclaimerModule(),
     ]);
 
     [Fact]
@@ -114,6 +142,42 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
             "these are the only workloads slice 1's registered modules cover");
         blocked.Should().BeEquivalentTo(workloads.Select(w => w.Name).Except(ExpectedInstallableNames),
             "every installer-targeted workload not in the installable list must be blocked, not silently allowed");
+    }
+
+    [Fact]
+    public async Task Config535_is_blocked_for_an_impossible_torch_pairing()
+    {
+        // Named explicitly rather than left implicit in the list above: this is the one workload
+        // whose capabilities are all covered and which is still refused, and the reason is data in
+        // the catalog rather than a missing module. If the catalog entry is corrected to a CUDA
+        // version torch 2.8.0 actually ships (12.6, 12.8 or 12.9), this test is what should fail.
+        var workload = (await ReadCatalogWorkloadsAsync()).Single(w => w.Name == "Config535");
+
+        WorkloadCapabilities.DetectBlocking(workload).Should().Be(WorkloadCapability.None,
+            "every capability Config535 needs has a slice-1 module");
+
+        WorkloadCapabilities.DetectIncompatibility(workload)
+            .Should().Contain("13.0", "torch 2.8.0 ships no CUDA 13.0 wheel");
+
+        ProductionRegistry().IsInstallable(workload).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task No_offered_workload_would_be_refused_by_the_pipeline()
+    {
+        // The general form of the Config535 case: whatever the catalog says tomorrow, nothing the
+        // gallery enables may be a workload InstallationPipeline aborts before step 1.
+        var workloads = (await ReadCatalogWorkloadsAsync())
+            .Where(w => w.WorkloadTarget == WorkloadTargetType.Installer)
+            .ToList();
+
+        var registry = ProductionRegistry();
+
+        foreach (var workload in workloads.Where(w => registry.IsInstallable(w)))
+        {
+            WorkloadCapabilities.DetectIncompatibility(workload).Should().BeNull(
+                $"'{workload.Name}' is offered, so the pipeline must not refuse it outright");
+        }
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
@@ -34,12 +36,31 @@ public class CapabilityAgreementTests
         return gpu.Object;
     }
 
-    private static WizardModuleRegistry Registry() => new(
+    private static IWorkloadSource Wheels(params LamaCppWheel[] wheels)
+    {
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetLamaCppWheelsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(wheels);
+        return source.Object;
+    }
+
+    private static IVcRuntimeDetectionService VcRuntime(
+        VcRuntimeState state = VcRuntimeState.Present)
+    {
+        var vc = new Mock<IVcRuntimeDetectionService>();
+        vc.Setup(v => v.Detect()).Returns(new VcRuntimeDetectionResult(state));
+        return vc.Object;
+    }
+
+    private static WizardModuleRegistry Registry(params LamaCppWheel[] wheels) => new(
     [
-        new InstallFolderModule(Settings()),
+        new InstallFolderModule(Settings(), new PreInstallationService()),
         new ComfyFoldersModule(Settings()),
         new GpuPreflightModule(Gpu()),
+        new VcRuntimeModule(VcRuntime()),
+        new LlamaCppModule(Wheels(wheels)),
         new ShortcutsModule(),
+        new DisclaimerModule(),
     ]);
 
     private static InstallationConfiguration Workload(RepositoryType type)
@@ -94,7 +115,8 @@ public class CapabilityAgreementTests
         var plan = await Registry().BuildPlanAsync(
             new WizardSelection { Workload = Workload(RepositoryType.Fooocus) });
 
-        plan.AllModules.Select(m => m.Id).Should().BeEquivalentTo("install-folder", "shortcuts");
+        plan.AllModules.Select(m => m.Id)
+            .Should().BeEquivalentTo("install-folder", "shortcuts", "disclaimer");
     }
 
     [Fact]
@@ -104,7 +126,7 @@ public class CapabilityAgreementTests
             new WizardSelection { Workload = Workload(RepositoryType.ComfyUI) });
 
         plan.AllModules.Select(m => m.Id)
-            .Should().BeEquivalentTo("install-folder", "comfy-folders", "shortcuts");
+            .Should().BeEquivalentTo("install-folder", "comfy-folders", "shortcuts", "disclaimer");
     }
 
     [Fact]
@@ -139,13 +161,73 @@ public class CapabilityAgreementTests
     }
 
     [Fact]
-    public void A_workload_needing_LlamaCpp_is_not_installable()
+    public void A_workload_needing_LlamaCpp_is_installable_because_a_module_resolves_the_wheel()
     {
-        // No slice-1 module satisfies WorkloadCapability.LlamaCpp, so without this gate a workload
-        // with InstallLamaCpp set would reach LlamaCppInstallStepHandler with no resolved wheel.
         var workload = Workload(RepositoryType.ComfyUI);
-        workload.InstallLamaCpp = true;
+        workload.SelectedLamaCppWheelId = Guid.NewGuid();
+
+        Registry().IsInstallable(workload).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_LlamaCpp_module_contributes_the_resolved_wheel_url()
+    {
+        // The whole point of the module: without ResolvedLlamaCppWheelUrl the step fails, and the
+        // pipeline schedules it off the workload's wheel id whatever the wizard does.
+        var wheelId = Guid.NewGuid();
+        var workload = Workload(RepositoryType.ComfyUI);
+        workload.SelectedLamaCppWheelId = wheelId;
+
+        var wheel = new LamaCppWheel
+        {
+            Id = wheelId,
+            Name = "llama_cpp_python-cu128",
+            Url = "https://example.invalid/llama.whl",
+        };
+
+        var plan = await Registry(wheel).BuildPlanAsync(new WizardSelection { Workload = workload });
+        var options = plan.ToOptions();
+
+        options.ResolvedLlamaCppWheelUrl.Should().Be("https://example.invalid/llama.whl");
+        options.ResolvedLlamaCppWheelName.Should().Be("llama_cpp_python-cu128");
+    }
+
+    [Fact]
+    public async Task A_wheel_id_the_catalog_does_not_have_fails_validation_rather_than_the_install()
+    {
+        var workload = Workload(RepositoryType.ComfyUI);
+        workload.SelectedLamaCppWheelId = Guid.NewGuid();
+
+        // Registry() with no wheels: the id resolves to nothing.
+        var plan = await Registry().BuildPlanAsync(new WizardSelection { Workload = workload });
+
+        // Not ContainSingle: the unaccepted disclaimer is a second, expected failure here.
+        plan.Validate().Select(v => v.ErrorMessage)
+            .Should().ContainSingle(m => m!.Contains("not in the catalog"));
+    }
+
+    [Fact]
+    public void A_workload_the_pipeline_would_refuse_outright_is_not_installable()
+    {
+        // Torch 2.8.0 has no CUDA 13.0 wheel, so InstallationPipeline aborts before step 1 and
+        // stamps every planned step NotRun. Offering the card is offering a guaranteed failure.
+        var workload = Workload(RepositoryType.ComfyUI);
+        workload.Torch.TorchVersion = "2.8.0";
+        workload.Torch.CudaVersion = "13.0";
 
         Registry().IsInstallable(workload).Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_disclaimer_blocks_Next_until_it_is_accepted()
+    {
+        // Confirm has no modules of its own, so without this one ValidationErrors is always empty
+        // there and Next is unconditionally enabled in front of an irreversible install.
+        var module = new DisclaimerModule();
+
+        module.Validate().IsValid.Should().BeFalse();
+
+        module.Accepted = true;
+        module.Validate().IsValid.Should().BeTrue();
     }
 }

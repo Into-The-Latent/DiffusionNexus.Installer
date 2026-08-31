@@ -7,11 +7,14 @@ real run can prove. Use a scratch install folder, never a real one.
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
    **Expect:** the gallery populates from the embedded seed; no error, no empty state.
-2. **Expect:** exactly ten cards are enabled — Stable Diffusion web UI, Stable Diffusion WebUI Forge,
+2. **Expect:** exactly nine cards are enabled — Stable Diffusion web UI, Stable Diffusion WebUI Forge,
    Fooocus, ACE-Step-1.5, AI-Toolkit, Blanck-ComfyUI, Base-install-Triton-SageAttention-Manager,
-   ComfyUI Llama Cpp test, Config535, and FlashVSR-Video&Image Upscale. Every other card is visible
-   but disabled with a "Coming soon" note (all disabled cards need ModelDownloads or VramProfile,
-   which are not in slice 1).
+   ComfyUI Llama Cpp test, and FlashVSR-Video&Image Upscale. Every other card is visible but
+   disabled, most with a "Coming soon" note (they need ModelDownloads or VramProfile, neither of
+   which is in slice 1).
+   **Config535 is the exception:** it is disabled with a torch message, not a "Coming soon" one —
+   its catalog entry pairs torch 2.8.0 with CUDA 13.0, for which no wheel exists, so the pipeline
+   would refuse it before step 1. That is a catalog data fix, not a missing module.
 3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
    Wan 2.2 - GGUF appear (all disabled/"coming soon" — none are in the slice-1 installable set);
    the Image cards do not.

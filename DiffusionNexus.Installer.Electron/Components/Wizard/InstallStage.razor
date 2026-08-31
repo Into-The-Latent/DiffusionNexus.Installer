@@ -6,6 +6,11 @@
 <section class="panel">
     <h2>Installing</h2>
 
+    @if (_startError is not null)
+    {
+        <p class="validation-error">This installation could not be started: @_startError</p>
+    }
+
     @if (Session.Progress is { } progress)
     {
         <p>Step @(progress.StepIndex + 1) of @progress.TotalSteps — @progress.CurrentStep</p>
@@ -20,7 +25,10 @@
         </p>
     }
 
-    <pre class="install-log">@string.Join('\n', Session.LogLines.Select(l => $"[{l.Level}] {l.Message}"))</pre>
+    @* Tail, not the whole 5000-line buffer. Changes coalesce every 100ms, so rendering the full log
+       re-copied it under the lock OnLog needs, re-interpolated every line, and shipped a ~475KB
+       string over the SignalR circuit ten times a second to show one new line. *@
+    <pre class="install-log">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
 
     @if (Session.Phase == InstallPhase.Running)
     {
@@ -54,6 +62,14 @@
 </section>
 
 @code {
+    /// <summary>
+    /// How much scrollback the live view keeps. Enough to see what a failing step printed, small
+    /// enough that a render stays cheap; the completion report is what matters afterwards.
+    /// </summary>
+    private const int VisibleLogLines = 300;
+
+    private string? _startError;
+
     [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
@@ -64,10 +80,21 @@
         // reconnect (same plan instance, already running or finished) from a deliberate re-install
         // (a freshly built plan), and a bare "phase is not Running" check would restart a completed
         // install on every reconnect.
-        if (Session.Phase != InstallPhase.Running && !ReferenceEquals(Session.Plan, Run.Plan))
-            _ = Session.StartAsync(Run.Plan);
+        if (Session.Phase == InstallPhase.Running || ReferenceEquals(Session.Plan, Run.Plan))
+            return;
 
-        await Task.CompletedTask;
+        // Awaited, not fire-and-forget. StartAsync throws OUTSIDE its own try/catch when a run is
+        // already in flight, so discarding the Task turned that into an unobserved exception and
+        // the page went on rendering the other install's progress as if it were this one's.
+        // Install.razor refuses that case before we get here, so reaching it means a genuine bug.
+        try
+        {
+            await Session.StartAsync(Run.Plan);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _startError = ex.Message;
+        }
     }
 
     private void OnChanged() => InvokeAsync(StateHasChanged);

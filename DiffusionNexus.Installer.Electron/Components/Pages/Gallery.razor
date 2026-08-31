@@ -1,8 +1,11 @@
 @page "/"
+@using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.SDK.Catalog
 @using DiffusionNexus.Installer.SDK.Models.Configuration
 @using DiffusionNexus.Installer.SDK.Models.Enums
 @inject GalleryBuilder Builder
+@inject IWorkloadSource Workloads
 @inject NavigationManager Nav
 
 <PageTitle>Choose a workload</PageTitle>
@@ -19,7 +22,23 @@ else if (_loadError is not null)
 }
 else if (_entries.Count == 0)
 {
-    <p>No workloads are available.</p>
+    @* Diagnostics before the bland empty message. The SDK reports a missing or unreadable catalog
+       as Error diagnostics on a successfully-returned empty snapshot -- never as an exception -- so
+       without this a hard failure on a cold start is indistinguishable from "nothing to install". *@
+    @if (_errors.Count > 0)
+    {
+        <p class="gallery-error">The catalog could not be loaded:</p>
+        <ul class="gallery-error">
+            @foreach (var diagnostic in _errors)
+            {
+                <li>@diagnostic.Code: @diagnostic.Message</li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p>No workloads are available.</p>
+    }
 }
 else
 {
@@ -63,7 +82,7 @@ else
                     }
                     else
                     {
-                        <p class="card-unavailable">Coming soon — needs @entry.MissingCapabilities</p>
+                        <p class="card-unavailable">@entry.UnavailableReason</p>
                     }
                 </div>
             }
@@ -75,6 +94,7 @@ else
 
 @code {
     private IReadOnlyList<GalleryEntry>? _entries;
+    private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
     private WorkflowType? _type;
     private RepositoryType? _software;
@@ -84,6 +104,10 @@ else
         try
         {
             _entries = await Builder.BuildAsync();
+
+            // Read after the build: the catalog populates diagnostics during the load the build
+            // triggers, so asking earlier reports on a catalog that has not been resolved yet.
+            _errors = Workloads.Diagnostics.Where(d => d.IsError).ToList();
         }
         catch (Exception ex)
         {

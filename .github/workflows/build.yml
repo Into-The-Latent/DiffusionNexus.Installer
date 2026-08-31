@@ -19,6 +19,21 @@ jobs:
       # The SDK packages live under a different GitHub account, so the default GITHUB_TOKEN
       # cannot read them. UseLocalSDK=false is the point: this job is the gate that proves the
       # package references are complete, which a local build with the SDK checkout cannot.
+      # Without this the restore dies on NuGet.targets(782): "Value cannot be null or empty
+      # string. (Parameter 'password')" -- which says nothing about the actual cause. The SDK
+      # packages live under the Little-God1983 account while this repo is under Into-The-Latent,
+      # so the read is cross-account and the built-in GITHUB_TOKEN cannot do it, whatever
+      # permissions it is granted. Only a PAT with read:packages works.
+      - name: Check the packages token is present
+        shell: pwsh
+        run: |
+          if (-not "${{ secrets.PACKAGES_READ_TOKEN }}") {
+            Write-Host "::error::Repository secret PACKAGES_READ_TOKEN is not set, so the SDK package restore cannot authenticate."
+            Write-Host "::error::Create a PAT (classic) with read:packages on the Little-God1983 account and add it as PACKAGES_READ_TOKEN under Settings > Secrets and variables > Actions."
+            exit 1
+          }
+          Write-Host "PACKAGES_READ_TOKEN is present."
+
       - name: Restore
         run: dotnet restore DiffusionNexus.Installer.slnx -p:UseLocalSDK=false
         env:

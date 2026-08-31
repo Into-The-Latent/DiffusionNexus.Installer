@@ -14,6 +14,21 @@ public interface IInstallSession
     InstallationProgress? Progress { get; }
     DownloadProgress? CurrentDownload { get; }
     IReadOnlyList<InstallLogLine> LogLines { get; }
+
+    /// <summary>
+    /// The last <paramref name="count"/> log lines, newest last. The live view renders this rather
+    /// than <see cref="LogLines"/>: the buffer holds 5000 lines and changes are coalesced ~10x a
+    /// second, so copying and re-joining the whole thing per render ships hundreds of kilobytes
+    /// over the SignalR circuit to display one new line.
+    /// </summary>
+    IReadOnlyList<InstallLogLine> Tail(int count);
+
+    /// <summary>
+    /// A token cancelled when the run ends or is cancelled. Handed to prompts raised on the
+    /// pipeline's behalf so a Cancel can complete a dialog the install is blocked on -- otherwise
+    /// the pipeline thread waits forever on an answer and the only exit is killing the process.
+    /// </summary>
+    CancellationToken RunToken { get; }
     InstallationResult? Result { get; }
 
     /// <summary>

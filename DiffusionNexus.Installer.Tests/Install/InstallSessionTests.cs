@@ -79,7 +79,7 @@ public class InstallSessionTests
         var settings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings());
-        var folderModule = new InstallFolderModule(settings.Object);
+        var folderModule = new InstallFolderModule(settings.Object, new PreInstallationService());
 
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;

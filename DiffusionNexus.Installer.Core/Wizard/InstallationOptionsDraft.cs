@@ -11,6 +11,14 @@ public sealed class InstallationOptionsDraft
 {
     public int SelectedVramProfile { get; set; }
     public bool VerboseLogging { get; set; }
+
+    /// <summary>
+    /// Defaults to true, matching both shipping front-ends. The SDK's own record default is false,
+    /// so omitting it would silently drop every install onto pip -- a different resolver from the
+    /// one the catalog's pins were validated against, and considerably slower.
+    /// </summary>
+    public bool UseUvPackageManager { get; set; } = true;
+
     public bool SkipVcRuntimeProvisioning { get; set; }
     public bool CreateDesktopShortcut { get; set; } = true;
     public bool CreateStartMenuShortcut { get; set; } = true;
@@ -30,11 +38,16 @@ public sealed class InstallationOptionsDraft
     public string? OutputFolder { get; set; }
     public bool CpuTorch { get; set; }
 
+    /// <summary>Resolved from SelectedLamaCppWheelId by LlamaCppModule; the step fails on null.</summary>
+    public string? ResolvedLlamaCppWheelUrl { get; set; }
+    public string? ResolvedLlamaCppWheelName { get; set; }
+
     public SDK.Services.InstallationOptions ToOptions() => new()
     {
         OnlyModelDownload = false,
         SelectedVramProfile = SelectedVramProfile,
         VerboseLogging = VerboseLogging,
+        UseUvPackageManager = UseUvPackageManager,
         SkipVcRuntimeProvisioning = SkipVcRuntimeProvisioning,
         CreateDesktopShortcut = CreateDesktopShortcut,
         CreateStartMenuShortcut = CreateStartMenuShortcut,
@@ -53,5 +66,7 @@ public sealed class InstallationOptionsDraft
         AdditionalFolders = [.. AdditionalFolders],
         OutputFolder = OutputFolder,
         CpuTorch = CpuTorch,
+        ResolvedLlamaCppWheelUrl = ResolvedLlamaCppWheelUrl,
+        ResolvedLlamaCppWheelName = ResolvedLlamaCppWheelName,
     };
 }

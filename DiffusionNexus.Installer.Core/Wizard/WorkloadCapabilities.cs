@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.SDK.Models.Compatibility;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 
 namespace DiffusionNexus.Installer.Core.Wizard;
@@ -13,9 +14,8 @@ public static class WorkloadCapabilities
     /// accelerator steps run off the workload's own flags. Those are correct defaults.
     /// VRAM and model selection are different: without them a tiered pack downloads every tier's
     /// variant at no tier, which is a wrong install, not an unrefined one. LlamaCpp is the same
-    /// shape of trap: with InstallLamaCpp set and no resolved wheel, the pipeline still reaches
-    /// LlamaCppInstallStepHandler and fails there with a null wheel URL instead of being kept off
-    /// the gallery up front.
+    /// shape of trap: the pipeline schedules the step and then fails in the handler on a null
+    /// wheel URL unless something resolves the wheel first.
     /// </para>
     /// </summary>
     public const WorkloadCapability Blocking =
@@ -48,7 +48,12 @@ public static class WorkloadCapabilities
         if (workload.Python.InstallTriton || workload.Python.InstallSageAttention)
             caps |= WorkloadCapability.Accelerators;
 
-        if (workload.InstallLamaCpp)
+        // SelectedLamaCppWheelId, NOT InstallLamaCpp: the wheel id is the field the SDK actually
+        // schedules on -- ComfyUIInstallationFlow adds InstallationStep.InstallLlamaCpp when
+        // SelectedLamaCppWheelId.HasValue, and LlamaCppInstallStepHandler.ShouldExecute reads the
+        // same field. InstallLamaCpp is inert at install time, so keying the gate on it detected
+        // nothing on the one shipped workload that needs the step and blocked nothing on any other.
+        if (workload.SelectedLamaCppWheelId.HasValue)
             caps |= WorkloadCapability.LlamaCpp;
 
         return caps;
@@ -57,4 +62,30 @@ public static class WorkloadCapabilities
     /// <summary>The subset of <see cref="Detect"/> that actually gates installability.</summary>
     public static WorkloadCapability DetectBlocking(InstallationConfiguration workload) =>
         Detect(workload) & Blocking;
+
+    /// <summary>
+    /// Why the pipeline would refuse this workload before running a single step, or null when it
+    /// would not. No module can fix this — it is a property of the catalog entry's own torch/CUDA
+    /// pairing — so it is a separate question from capability coverage.
+    /// <para>
+    /// InstallationPipeline.TryValidateTorchCompatibility runs exactly this check and returns
+    /// Failure with every planned step stamped NotRun. Offering such a workload means the user
+    /// fills in the whole wizard, clicks Install, and gets a wall of "Not run" rows. Mirroring the
+    /// pipeline's own early-outs keeps the two answers identical.
+    /// </para>
+    /// </summary>
+    public static string? DetectIncompatibility(InstallationConfiguration workload)
+    {
+        ArgumentNullException.ThrowIfNull(workload);
+
+        // Only ComfyUI authors its own torch settings; every other workload is pinned by
+        // TorchSettingsPolicy to a pairing the catalog cannot get wrong.
+        if (!TorchSettingsPolicy.AuthorsTorchSettings(workload.Repository.Type))
+            return null;
+
+        var check = TorchCompatibilityCatalog.Check(workload.GetEffectiveTorch(), workload.Python);
+        return check.IsCompatible
+            ? null
+            : string.Join(" ", check.Errors.Select(e => e.Message));
+    }
 }

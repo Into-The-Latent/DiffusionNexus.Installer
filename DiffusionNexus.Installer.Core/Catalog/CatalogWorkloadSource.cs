@@ -19,4 +19,13 @@ public sealed class CatalogWorkloadSource(ICatalog catalog) : IWorkloadSource
 
     public Task<byte[]?> GetThumbnailAsync(Guid workloadId, CancellationToken ct = default)
         => catalog.ReadThumbnailAsync(workloadId, ct);
+
+    public Task<IReadOnlyList<LamaCppWheel>> GetLamaCppWheelsAsync(CancellationToken ct = default)
+        => catalog.GetLamaCppWheelsAsync(ct);
+
+    /// <summary>
+    /// Read after a load, not before: ICatalog populates this during the resolve/load the async
+    /// members above trigger, and hands back the live list rather than a copy.
+    /// </summary>
+    public IReadOnlyList<CatalogDiagnostic> Diagnostics => catalog.Diagnostics;
 }

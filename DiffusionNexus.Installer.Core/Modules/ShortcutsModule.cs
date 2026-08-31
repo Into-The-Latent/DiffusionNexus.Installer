@@ -25,7 +25,20 @@ public sealed class ShortcutsModule : IWizardModule
 
     public bool AppliesTo(WizardSelection selection) => true;
 
-    public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default) => Task.CompletedTask;
+    /// <summary>
+    /// Resets every field this module owns. It has no per-workload state to load, but it is a
+    /// singleton, so "nothing to initialize" is not the same as "nothing to clear": without this a
+    /// second workload inherits the first one's custom shortcut name and checkbox states, and the
+    /// Confirm summary does not show the name, so the user never sees it.
+    /// </summary>
+    public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
+    {
+        CreateDesktopShortcut = true;
+        CreateStartMenuShortcut = true;
+        CustomName = null;
+        OnShortcutConflict = null;
+        return Task.CompletedTask;
+    }
 
     public void Contribute(InstallationOptionsDraft draft)
     {

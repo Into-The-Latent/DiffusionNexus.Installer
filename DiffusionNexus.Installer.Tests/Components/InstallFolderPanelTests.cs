@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.SDK.Services;
 using Bunit;
 using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Modules;
@@ -26,7 +27,7 @@ public class InstallFolderPanelTests : BunitContext
         var settings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings { DefaultTargetInstallFolder = string.Empty });
-        return new InstallFolderModule(settings.Object);
+        return new InstallFolderModule(settings.Object, new PreInstallationService());
     }
 
     [Fact]

@@ -37,7 +37,21 @@ public class DependencyInjectionTests
 
         var registry = provider.GetRequiredService<WizardModuleRegistry>();
 
-        registry.SatisfiedCapabilities.Should().Be(WorkloadCapability.ComfyFolders);
+        registry.SatisfiedCapabilities.Should()
+            .Be(WorkloadCapability.ComfyFolders | WorkloadCapability.LlamaCpp);
+    }
+
+    [Fact]
+    public void Every_registered_module_is_reachable_through_the_registry()
+    {
+        // Resolving the registry alone would not notice a module whose own dependencies cannot be
+        // constructed -- GetServices would simply throw, or the module would be missing. Naming the
+        // ids makes an accidentally-dropped registration a failure rather than a silent absence.
+        using var provider = Build();
+
+        provider.GetServices<IWizardModule>().Select(m => m.Id).Should().BeEquivalentTo(
+            "install-folder", "comfy-folders", "gpu-preflight",
+            "vc-runtime", "llama-cpp", "shortcuts", "disclaimer");
     }
 
     [Fact]

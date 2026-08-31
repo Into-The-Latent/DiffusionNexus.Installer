@@ -34,7 +34,7 @@ public class UnconditionalModuleTests
     [InlineData(RepositoryType.AceStep)]
     public void InstallFolder_applies_to_every_workload(RepositoryType type)
     {
-        var module = new InstallFolderModule(Settings("").Object);
+        var module = new InstallFolderModule(Settings("").Object, new PreInstallationService());
 
         module.AppliesTo(Selection(type)).Should().BeTrue();
         module.Satisfies.Should().Be(WorkloadCapability.None);
@@ -44,7 +44,7 @@ public class UnconditionalModuleTests
     [Fact]
     public async Task InstallFolder_seeds_from_the_remembered_default()
     {
-        var module = new InstallFolderModule(Settings(@"D:\AI").Object);
+        var module = new InstallFolderModule(Settings(@"D:\AI").Object, new PreInstallationService());
         var selection = Selection();
 
         await module.InitializeAsync(selection);
@@ -55,7 +55,7 @@ public class UnconditionalModuleTests
     [Fact]
     public async Task InstallFolder_writes_its_answer_back_to_the_selection()
     {
-        var module = new InstallFolderModule(Settings("").Object);
+        var module = new InstallFolderModule(Settings("").Object, new PreInstallationService());
         var selection = Selection();
         await module.InitializeAsync(selection);
 
@@ -68,7 +68,7 @@ public class UnconditionalModuleTests
     [Fact]
     public async Task InstallFolder_rejects_an_empty_path()
     {
-        var module = new InstallFolderModule(Settings("").Object);
+        var module = new InstallFolderModule(Settings("").Object, new PreInstallationService());
         await module.InitializeAsync(Selection());
 
         module.TargetFolder = "   ";

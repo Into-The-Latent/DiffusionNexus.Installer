@@ -25,14 +25,21 @@ public sealed class WizardModuleRegistry(IEnumerable<IWizardModule> modules)
         _modules.Aggregate(WorkloadCapability.None, (acc, m) => acc | m.Satisfies);
 
     /// <summary>
-    /// A workload is installable when nothing it needs is missing. Deliberately asks
-    /// WorkloadCapabilities.DetectBlocking rather than the modules themselves — a module that is not
-    /// registered cannot be asked whether it applies.
+    /// A workload is installable when nothing it needs is missing AND the pipeline would not refuse
+    /// it outright. Deliberately asks WorkloadCapabilities.DetectBlocking rather than the modules
+    /// themselves — a module that is not registered cannot be asked whether it applies.
+    /// <para>
+    /// The incompatibility half is not a capability question and no module can ever answer it: a
+    /// catalog entry pairing a torch version with a CUDA version that has no wheel is refused by
+    /// InstallationPipeline before step 1. Both halves live here so the gallery and any other
+    /// caller get one answer rather than two that can drift.
+    /// </para>
     /// </summary>
     public bool IsInstallable(InstallationConfiguration workload)
     {
         var needed = WorkloadCapabilities.DetectBlocking(workload);
-        return (needed & ~SatisfiedCapabilities) == WorkloadCapability.None;
+        return (needed & ~SatisfiedCapabilities) == WorkloadCapability.None
+            && WorkloadCapabilities.DetectIncompatibility(workload) is null;
     }
 
     /// <summary>

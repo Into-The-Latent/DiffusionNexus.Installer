@@ -42,6 +42,38 @@ public sealed class InstallSession : IInstallSession, IDisposable
         get { lock (_gate) return [.. _log]; }
     }
 
+    /// <inheritdoc/>
+    public IReadOnlyList<InstallLogLine> Tail(int count)
+    {
+        if (count <= 0) return [];
+
+        lock (_gate)
+        {
+            if (_log.Count <= count) return [.. _log];
+
+            // Skip is O(n) over a Queue either way, but it allocates only the tail -- which is the
+            // point: the whole-buffer copy happened under the same lock OnLog needs, so a fast
+            // renderer back-pressured the installer's own log producer.
+            var tail = new InstallLogLine[count];
+            var i = 0;
+            var skip = _log.Count - count;
+
+            foreach (var line in _log)
+            {
+                if (skip-- > 0) continue;
+                tail[i++] = line;
+            }
+
+            return tail;
+        }
+    }
+
+    /// <inheritdoc/>
+    public CancellationToken RunToken
+    {
+        get { lock (_gate) return _cts?.Token ?? CancellationToken.None; }
+    }
+
     public event Action? Changed;
 
     public async Task StartAsync(WizardPlan plan, CancellationToken ct = default)

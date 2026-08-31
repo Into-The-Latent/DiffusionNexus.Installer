@@ -31,10 +31,16 @@ public sealed class WizardPlan
     public InstallationOptions ToOptions()
     {
         var draft = new InstallationOptionsDraft();
+
+        // Seeded BEFORE the loop, not after it. A module contributes through Contribute -- that is
+        // the whole contract -- so a slice-2 VramProfileModule writing draft.SelectedVramProfile
+        // would be overwritten by this line if it ran last, silently reinstating the exact wrong
+        // install (every tier's variant at no tier) that the VramProfile gate exists to prevent.
+        draft.SelectedVramProfile = Selection.SelectedVramProfile;
+
         foreach (var module in AllModules.OrderBy(m => (int)m.Stage).ThenBy(m => m.Order))
             module.Contribute(draft);
 
-        draft.SelectedVramProfile = Selection.SelectedVramProfile;
         return draft.ToOptions();
     }
 }

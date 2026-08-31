@@ -15,7 +15,21 @@
 
 <PageTitle>Install</PageTitle>
 
-@if (_run is null)
+@if (_busyWith is not null)
+{
+    <section class="panel panel-warning">
+        <h1>Another installation is running</h1>
+        <p>
+            <strong>@_busyWith</strong> is still installing. Only one installation can run at a
+            time, so this one cannot be started yet.
+        </p>
+        <div class="wizard-actions">
+            <button class="btn-secondary" @onclick="GoToGallery">Back to workloads</button>
+            <button class="btn-primary" @onclick="ResumeRunning">Show the running install</button>
+        </div>
+    </section>
+}
+else if (_run is null)
 {
     <p>Preparing...</p>
 }
@@ -29,25 +43,37 @@ else
         }
     </ol>
 
-    @if (_run.CurrentStage == WizardStage.Confirm)
-    {
-        <ConfirmStage Run="_run" />
-    }
-    else if (_run.CurrentStage == WizardStage.Install)
+    @if (_run.CurrentStage == WizardStage.Install)
     {
         <InstallStage Run="_run" />
+
+        @* The only way out of a finished install. Without it an Electron user -- no address bar,
+           no menu -- has to kill the process to install a second workload. *@
+        @if (Session.Phase is not InstallPhase.Running)
+        {
+            <div class="wizard-actions">
+                <button class="btn-primary" @onclick="GoToGallery">Back to workloads</button>
+            </div>
+        }
     }
     else
     {
+        @if (_run.CurrentStage == WizardStage.Confirm)
+        {
+            <ConfirmStage Run="_run" />
+        }
+
+        @* Confirm-stage modules render after the summary: the disclaimer belongs below what it
+           applies to, and nothing else targets that stage today. *@
         @foreach (var module in _run.CurrentModules)
         {
             @RenderModule(module)
         }
-    }
 
-    @if (_run.CurrentStage != WizardStage.Install)
-    {
         <div class="wizard-actions">
+            @* Always available, including at stage 0. A GPU-blocked System stage validates false
+               forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
+            <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
             <button class="btn-secondary" disabled="@(!_run.CanGoBack)" @onclick="Back">Back</button>
             <button class="btn-primary" disabled="@(!_run.CanGoNext)" @onclick="Next">Next</button>
         </div>
@@ -63,6 +89,7 @@ else
     [Parameter] public Guid WorkloadId { get; set; }
 
     private WizardRun? _run;
+    private string? _busyWith;
     private EventCallback _moduleChanged;
 
     protected override async Task OnInitializedAsync()
@@ -72,14 +99,21 @@ else
         // (typing a folder, ticking a checkbox) never refreshes this page's disabled="@(!_run.CanGoNext)".
         _moduleChanged = EventCallback.Factory.Create(this, StateHasChanged);
 
-        // A circuit reconnect rebuilds this component while the install keeps running in the
-        // singleton session. Rejoin that run rather than starting the wizard over, which would
-        // hide the install and reset the answers the user already gave.
-        if (Session.Phase == InstallPhase.Running
-            && Session.Plan is { } running
-            && running.Selection.Workload.Id == WorkloadId)
+        if (Session.Phase == InstallPhase.Running && Session.Plan is { } running)
         {
-            _run = new WizardRun(running, WizardStage.Install);
+            // A circuit reconnect rebuilds this component while the install keeps running in the
+            // singleton session. Rejoin that run rather than starting the wizard over, which would
+            // hide the install and reset the answers the user already gave.
+            if (running.Selection.Workload.Id == WorkloadId)
+            {
+                _run = new WizardRun(running, WizardStage.Install);
+                return;
+            }
+
+            // A DIFFERENT workload is installing. Building a wizard for this one would walk the
+            // user to an Install stage that silently starts nothing and then reports the other
+            // install's progress, log and success banner under this workload's name.
+            _busyWith = running.Selection.Workload.Name;
             return;
         }
 
@@ -101,11 +135,16 @@ else
         {
             shortcuts.OnShortcutConflict = async (name, location) =>
             {
+                // The session's run token, not default: ShortcutManager awaits this callback with
+                // no token of its own, so a Cancel while the dialog is open would otherwise leave
+                // the pipeline thread parked on an answer that can never arrive. Cancelling
+                // completes it false, which maps to "skip the shortcut" -- a safe answer.
                 var overwrite = await Prompt.ConfirmAsync(
                     "Shortcut already exists",
                     $"A shortcut named \"{name}\" already exists in {location}. Replace it?",
                     "Replace",
-                    "Keep the existing one");
+                    "Keep the existing one",
+                    Session.RunToken);
 
                 return new ShortcutConflictResult(
                     overwrite ? ShortcutConflictResolution.Overwrite : ShortcutConflictResolution.Cancel);
@@ -119,12 +158,24 @@ else
 
     private void Back() => _run!.Back();
 
+    private void GoToGallery() => Nav.NavigateTo("/");
+
+    private void ResumeRunning()
+    {
+        if (Session.Plan is not { } running) return;
+
+        Nav.NavigateTo($"/install/{running.Selection.Workload.Id}");
+    }
+
     private RenderFragment RenderModule(IWizardModule module) => module switch
     {
         InstallFolderModule m => @<InstallFolderPanel Module="m" Changed="_moduleChanged" />,
         ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" Changed="_moduleChanged" />,
         GpuPreflightModule m => @<GpuPreflightPanel Module="m" Changed="_moduleChanged" />,
+        VcRuntimeModule m => @<VcRuntimePanel Module="m" Changed="_moduleChanged" />,
+        LlamaCppModule m => @<LlamaCppPanel Module="m" />,
         ShortcutsModule m => @<ShortcutsPanel Module="m" Changed="_moduleChanged" />,
+        DisclaimerModule m => @<DisclaimerPanel Module="m" Changed="_moduleChanged" />,
         _ => @<p>Unknown module: @module.Id</p>
     };
 }
