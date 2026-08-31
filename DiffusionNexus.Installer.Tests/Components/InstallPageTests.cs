@@ -144,6 +144,36 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
+    public async Task A_finished_install_offers_the_gallery_back_and_a_running_one_offers_Cancel()
+    {
+        // The exit from a finished install. It must NOT appear while the run is still going, and
+        // the Cancel button must -- which is why it lives in InstallStage, the component that
+        // subscribes to Session.Changed, rather than on the page, which never re-renders.
+        var workload = Workload();
+        var session = Register(workload);
+
+        var runningPlan = await new WizardModuleRegistry([])
+            .BuildPlanAsync(new WizardSelection { Workload = workload });
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        session.SetupGet(s => s.Plan).Returns(runningPlan);
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Cancel installation");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Back to workloads");
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        session.Raise(s => s.Changed += null);
+
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Back to workloads");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Cancel installation");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Back to workloads").Click();
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/");
+    }
+
+    [Fact]
     public void The_disclaimer_gates_the_confirm_stage()
     {
         // Confirm has no modules but the disclaimer, so without it ValidationErrors is empty there

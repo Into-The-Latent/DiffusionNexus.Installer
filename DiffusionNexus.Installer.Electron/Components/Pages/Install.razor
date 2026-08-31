@@ -45,16 +45,10 @@ else
 
     @if (_run.CurrentStage == WizardStage.Install)
     {
-        <InstallStage Run="_run" />
-
-        @* The only way out of a finished install. Without it an Electron user -- no address bar,
-           no menu -- has to kill the process to install a second workload. *@
-        @if (Session.Phase is not InstallPhase.Running)
-        {
-            <div class="wizard-actions">
-                <button class="btn-primary" @onclick="GoToGallery">Back to workloads</button>
-            </div>
-        }
+        @* Done is rendered by InstallStage, not here: this page does not subscribe to
+           Session.Changed, so a button placed here would be stuck at whatever Phase said during
+           the single render that created the stage -- i.e. visible for the whole install. *@
+        <InstallStage Run="_run" Done="_backToGallery" />
     }
     else
     {
@@ -91,6 +85,7 @@ else
     private WizardRun? _run;
     private string? _busyWith;
     private EventCallback _moduleChanged;
+    private EventCallback _backToGallery;
 
     protected override async Task OnInitializedAsync()
     {
@@ -98,6 +93,7 @@ else
         // component, so without an explicit callback back up to this page, an edit inside a panel
         // (typing a folder, ticking a checkbox) never refreshes this page's disabled="@(!_run.CanGoNext)".
         _moduleChanged = EventCallback.Factory.Create(this, StateHasChanged);
+        _backToGallery = EventCallback.Factory.Create(this, GoToGallery);
 
         if (Session.Phase == InstallPhase.Running && Session.Plan is { } running)
         {

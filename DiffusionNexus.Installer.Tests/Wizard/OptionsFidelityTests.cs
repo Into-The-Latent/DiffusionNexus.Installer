@@ -67,6 +67,31 @@ public class OptionsFidelityTests
     }
 
     [Fact]
+    public async Task Declining_the_saved_folders_sends_only_the_library_folder()
+    {
+        // The opt-out has to actually reach the options, not just the panel: with it unticked the
+        // YAML must be generated from the base path alone.
+        var module = ComfyFolders(new UserSettings
+        {
+            DefaultModelBaseFolder = @"D:\Models",
+            DefaultLorasFolder = @"E:\Loras",
+            additionalFolders = [new AdditionalFolder { BaseName = "extra", MapsTo = @"G:\Extra" }],
+        });
+
+        await module.InitializeAsync(Selection());
+        module.SavedFolderCount.Should().Be(2);
+        module.UseSavedFolderDefaults = false;
+
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        var options = draft.ToOptions();
+
+        options.ModelBaseFolder.Should().Be(@"D:\Models");
+        options.FolderPathOverrides.Should().BeEmpty();
+        options.AdditionalFolders.Should().BeEmpty();
+    }
+
+    [Fact]
     public void The_legacy_singular_folder_setting_is_used_when_the_plural_one_is_empty()
     {
         // An older user's stored folders live in the singular fields. Dropping the fallback would

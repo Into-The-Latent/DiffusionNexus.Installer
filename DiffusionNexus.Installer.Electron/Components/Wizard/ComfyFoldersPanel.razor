@@ -24,6 +24,19 @@
         </label>
     }
 
+    @if (Module.SavedFolderCount > 0)
+    {
+        <label class="checkbox">
+            <input type="checkbox" checked="@Module.UseSavedFolderDefaults" @onchange="OnUseSavedDefaultsChanged" />
+            Use my @Module.SavedFolderCount saved model folder@(Module.SavedFolderCount == 1 ? "" : "s")
+        </label>
+        <p class="panel-hint">
+            Per-type folders you have set before (LoRAs, checkpoints, VAE and so on) are written into
+            extra_model_paths.yaml alongside the library folder above. Untick to use only the library
+            folder.
+        </p>
+    }
+
     @if (Module.SupportsOutputFolder)
     {
         <label>Output folder <span class="panel-hint">(optional)</span></label>
@@ -48,6 +61,12 @@
     private async Task OnModelBaseFolderTyped(ChangeEventArgs e)
     {
         Module.ModelBaseFolder = e.Value?.ToString() ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnUseSavedDefaultsChanged(ChangeEventArgs e)
+    {
+        Module.UseSavedFolderDefaults = (bool)(e.Value ?? false);
         await Changed.InvokeAsync();
     }
 

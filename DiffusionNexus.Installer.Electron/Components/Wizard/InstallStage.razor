@@ -30,10 +30,20 @@
        string over the SignalR circuit ten times a second to show one new line. *@
     <pre class="install-log">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
 
-    @if (Session.Phase == InstallPhase.Running)
-    {
-        <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
-    }
+    <div class="wizard-actions">
+        @if (Session.Phase == InstallPhase.Running)
+        {
+            <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
+        }
+        else
+        {
+            @* The only way out of a finished install. Without it an Electron user -- no address
+               bar, no menu -- has to kill the process to install a second workload. It lives here
+               rather than on the page because this component subscribes to Session.Changed and so
+               actually re-renders when the run ends. *@
+            <button class="btn-primary" @onclick="Done">Back to workloads</button>
+        }
+    </div>
 
     @if (Session.Result is { } result)
     {
@@ -71,6 +81,9 @@
     private string? _startError;
 
     [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
+
+    /// <summary>Raised when the user is finished with the result and wants the gallery back.</summary>
+    [Parameter] public EventCallback Done { get; set; }
 
     protected override async Task OnInitializedAsync()
     {

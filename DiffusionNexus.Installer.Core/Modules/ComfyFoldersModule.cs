@@ -38,6 +38,17 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>Extra roots the user registered. Feeds the same YAML and ModelDestinationResolver.</summary>
     public IReadOnlyList<AdditionalFolder> AdditionalFolders { get; private set; } = [];
 
+    /// <summary>
+    /// Whether the saved per-type folders above are applied. True by default — remembering the
+    /// user's folders is the point — but visible and switchable, because silently repointing
+    /// twenty model folders from settings the user last touched months ago is a decision they
+    /// should get to see. The Avalonia installer had the same opt-out.
+    /// </summary>
+    public bool UseSavedFolderDefaults { get; set; } = true;
+
+    /// <summary>How many saved per-type folders are available, for the panel to report.</summary>
+    public int SavedFolderCount => FolderPathOverrides.Count + AdditionalFolders.Count;
+
     public bool AppliesTo(WizardSelection selection) =>
         selection.Workload.Repository.Type is RepositoryType.ComfyUI or RepositoryType.AIToolkit;
 
@@ -49,6 +60,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // settings: the registry hands out one long-lived instance per module, so anything left
         // unset here carries a previous workload's answer into this one.
         OverwriteExtraModelPaths = false;
+        UseSavedFolderDefaults = true;
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         ModelBaseFolder = user.DefaultModelBaseFolder;
@@ -68,11 +80,15 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         draft.OverwriteExtraModelPaths = model is not null && OverwriteExtraModelPaths;
 
         draft.FolderPathOverrides.Clear();
-        foreach (var (key, value) in FolderPathOverrides)
-            draft.FolderPathOverrides[key] = value;
-
         draft.AdditionalFolders.Clear();
-        draft.AdditionalFolders.AddRange(AdditionalFolders);
+
+        if (UseSavedFolderDefaults)
+        {
+            foreach (var (key, value) in FolderPathOverrides)
+                draft.FolderPathOverrides[key] = value;
+
+            draft.AdditionalFolders.AddRange(AdditionalFolders);
+        }
 
         draft.OutputFolder = SupportsOutputFolder && !string.IsNullOrWhiteSpace(OutputFolder)
             ? OutputFolder
