@@ -1,0 +1,33 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel">
+    <h2>Graphics card memory</h2>
+    <p class="panel-hint">
+        Pick how much VRAM your graphics card has. This workload ships different model variants per
+        tier, and the tier you pick decides which ones are downloaded.
+    </p>
+    <select class="select" value="@Module.SelectedTier" @onchange="OnTierChanged">
+        @foreach (var tier in Module.Tiers)
+        {
+            <option value="@tier">@tier GB</option>
+        }
+    </select>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public VramProfileModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button and the sibling model panel, and
+    /// Blazor re-renders only the component that owns a handler.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnTierChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var tier) && Module.Tiers.Contains(tier))
+            Module.SelectedTier = tier;
+
+        await Changed.InvokeAsync();
+    }
+}
