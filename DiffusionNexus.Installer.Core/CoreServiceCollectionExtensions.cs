@@ -26,19 +26,19 @@ public static class CoreServiceCollectionExtensions
         // registers its own implementation still wins.
         services.TryAddSingleton<IPreInstallationService, PreInstallationService>();
 
-        // Slice 1 modules. Adding a slice-2 module here is the only change needed to make the
-        // workloads that need it installable -- the gallery gate reads the registry.
-        services.AddSingleton<IWizardModule, InstallFolderModule>();
-        services.AddSingleton<IWizardModule, ComfyFoldersModule>();
-        services.AddSingleton<IWizardModule, GpuPreflightModule>();
-        services.AddSingleton<IWizardModule, VcRuntimeModule>();
-        services.AddSingleton<IWizardModule, LlamaCppModule>();
-        services.AddSingleton<IWizardModule, ShortcutsModule>();
-        services.AddSingleton<IWizardModule, DisclaimerModule>();
+        // Transient on purpose: modules hold per-run answers. The registry's factory resolves a
+        // fresh set for every plan, so a workload never sees another workload's answers.
+        services.AddTransient<IWizardModule, InstallFolderModule>();
+        services.AddTransient<IWizardModule, ComfyFoldersModule>();
+        services.AddTransient<IWizardModule, GpuPreflightModule>();
+        services.AddTransient<IWizardModule, VcRuntimeModule>();
+        services.AddTransient<IWizardModule, LlamaCppModule>();
+        services.AddTransient<IWizardModule, ShortcutsModule>();
+        services.AddTransient<IWizardModule, DisclaimerModule>();
 
         services.AddSingleton<DevTools.LauncherScriptPreview>();
         services.AddSingleton<Gallery.GalleryBuilder>();
-        services.AddSingleton(sp => new WizardModuleRegistry(sp.GetServices<IWizardModule>()));
+        services.AddSingleton(sp => new WizardModuleRegistry(() => sp.GetServices<IWizardModule>()));
 
         return services;
     }

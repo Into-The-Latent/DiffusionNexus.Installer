@@ -42,7 +42,7 @@ public class WizardModuleRegistryTests
     {
         var yes = new StubModule("yes", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
         var no = new StubModule("no", WizardStage.Location, 1, WorkloadCapability.None, applies: false);
-        var registry = new WizardModuleRegistry([yes, no]);
+        var registry = new WizardModuleRegistry(() => [yes, no]);
 
         var plan = await registry.BuildPlanAsync(Selection());
 
@@ -53,7 +53,7 @@ public class WizardModuleRegistryTests
     public async Task Empty_stages_are_skipped()
     {
         var location = new StubModule("loc", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
-        var registry = new WizardModuleRegistry([location]);
+        var registry = new WizardModuleRegistry(() => [location]);
 
         var plan = await registry.BuildPlanAsync(Selection());
 
@@ -68,7 +68,7 @@ public class WizardModuleRegistryTests
         // never skipped -- that must not stomp a future module that actually targets one of them.
         var confirmModule = new StubModule("confirm-summary", WizardStage.Confirm, 0, WorkloadCapability.None, applies: true);
         var installModule = new StubModule("install-report", WizardStage.Install, 0, WorkloadCapability.None, applies: true);
-        var registry = new WizardModuleRegistry([confirmModule, installModule]);
+        var registry = new WizardModuleRegistry(() => [confirmModule, installModule]);
 
         var plan = await registry.BuildPlanAsync(Selection());
 
@@ -81,7 +81,7 @@ public class WizardModuleRegistryTests
     {
         var second = new StubModule("second", WizardStage.Location, 10, WorkloadCapability.None, applies: true);
         var first = new StubModule("first", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
-        var registry = new WizardModuleRegistry([second, first]);
+        var registry = new WizardModuleRegistry(() => [second, first]);
 
         var plan = await registry.BuildPlanAsync(Selection());
 
@@ -101,7 +101,7 @@ public class WizardModuleRegistryTests
         var locationLate = new StubModule("location-late", WizardStage.Location, 10, WorkloadCapability.None, applies: true, sequence);
         var locationEarly = new StubModule("location-early", WizardStage.Location, 0, WorkloadCapability.None, applies: true, sequence);
 
-        var registry = new WizardModuleRegistry([system, locationLate, locationEarly]);
+        var registry = new WizardModuleRegistry(() => [system, locationLate, locationEarly]);
 
         await registry.BuildPlanAsync(Selection());
 
@@ -112,7 +112,7 @@ public class WizardModuleRegistryTests
     public async Task Applicability_is_read_only_after_every_module_is_initialized()
     {
         var module = new StubModule("m", WizardStage.System, 0, WorkloadCapability.None, applies: true);
-        var registry = new WizardModuleRegistry([module]);
+        var registry = new WizardModuleRegistry(() => [module]);
 
         var plan = await registry.BuildPlanAsync(Selection());
 
@@ -123,7 +123,7 @@ public class WizardModuleRegistryTests
     [Fact]
     public void A_workload_needing_an_unregistered_capability_is_not_installable()
     {
-        var registry = new WizardModuleRegistry(
+        var registry = new WizardModuleRegistry(() =>
             [new StubModule("folders", WizardStage.Location, 0, WorkloadCapability.ComfyFolders, applies: true)]);
 
         var heavy = new InstallationConfiguration();
@@ -136,7 +136,7 @@ public class WizardModuleRegistryTests
     [Fact]
     public void A_workload_whose_capabilities_are_all_covered_is_installable()
     {
-        var registry = new WizardModuleRegistry(
+        var registry = new WizardModuleRegistry(() =>
             [new StubModule("folders", WizardStage.Location, 0, WorkloadCapability.ComfyFolders, applies: true)]);
 
         var blank = new InstallationConfiguration();
@@ -148,7 +148,7 @@ public class WizardModuleRegistryTests
     [Fact]
     public void A_thin_workload_is_installable_with_no_capability_modules_at_all()
     {
-        var registry = new WizardModuleRegistry([]);
+        var registry = new WizardModuleRegistry(() => []);
 
         var fooocus = new InstallationConfiguration();
         fooocus.Repository.Type = RepositoryType.Fooocus;
@@ -157,17 +157,43 @@ public class WizardModuleRegistryTests
     }
 
     [Fact]
-    public async Task Building_a_second_plan_reinitializes_the_same_module_instances()
+    public async Task Every_plan_gets_the_instances_its_factory_produced_that_time()
     {
-        // Pins the one-plan-at-a-time contract documented on WizardModuleRegistry: the two plans
-        // share module instances, so a future flow that kept both alive would silently share state.
-        var module = new StubModule("m", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
-        var registry = new WizardModuleRegistry([module]);
+        // The whole point of per-run modules: answers from one workload cannot leak into the
+        // next because the next run never sees the first run's objects.
+        var produced = new List<StubModule>();
+        var registry = new WizardModuleRegistry(() =>
+        {
+            var m = new StubModule("m", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
+            produced.Add(m);
+            return [m];
+        });
 
         var first = await registry.BuildPlanAsync(Selection());
         var second = await registry.BuildPlanAsync(Selection());
 
-        module.InitializeCount.Should().Be(2);
-        first.AllModules.Single().Should().BeSameAs(second.AllModules.Single());
+        // produced[0] is the constructor's capability probe; plans get [1] and [2].
+        first.AllModules.Single().Should().BeSameAs(produced[1]);
+        second.AllModules.Single().Should().BeSameAs(produced[2]);
+        first.AllModules.Single().Should().NotBeSameAs(second.AllModules.Single());
+        produced[1].InitializeCount.Should().Be(1, "a fresh instance is initialized exactly once");
+    }
+
+    [Fact]
+    public void Satisfied_capabilities_are_computed_once_at_construction()
+    {
+        // The gallery asks this for every card on every render; it must not build modules to answer.
+        var calls = 0;
+        var registry = new WizardModuleRegistry(() =>
+        {
+            calls++;
+            return [new StubModule("f", WizardStage.Location, 0, WorkloadCapability.ComfyFolders, applies: true)];
+        });
+
+        _ = registry.SatisfiedCapabilities;
+        _ = registry.SatisfiedCapabilities;
+
+        calls.Should().Be(1);
+        registry.SatisfiedCapabilities.Should().Be(WorkloadCapability.ComfyFolders);
     }
 }

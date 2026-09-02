@@ -52,7 +52,7 @@ public class CapabilityAgreementTests
         return vc.Object;
     }
 
-    private static WizardModuleRegistry Registry(params LamaCppWheel[] wheels) => new(
+    private static WizardModuleRegistry Registry(params LamaCppWheel[] wheels) => new(() =>
     [
         new InstallFolderModule(Settings(), new PreInstallationService()),
         new ComfyFoldersModule(Settings()),

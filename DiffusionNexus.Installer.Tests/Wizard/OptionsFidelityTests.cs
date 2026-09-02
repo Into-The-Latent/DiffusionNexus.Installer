@@ -133,7 +133,7 @@ public class OptionsFidelityTests
         var selection = Selection();
         selection.SelectedVramProfile = 0;
 
-        var registry = new WizardModuleRegistry([new VramWritingModule()]);
+        var registry = new WizardModuleRegistry(() => [new VramWritingModule()]);
         var plan = await registry.BuildPlanAsync(selection);
 
         plan.ToOptions().SelectedVramProfile.Should().Be(16);

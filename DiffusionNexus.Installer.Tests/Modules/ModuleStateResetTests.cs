@@ -12,10 +12,8 @@ using Xunit;
 namespace DiffusionNexus.Installer.Tests.Modules;
 
 /// <summary>
-/// Modules are registered as DI singletons, so one instance serves every wizard run the app ever
-/// does. Anything InitializeAsync does not reset is a previous workload's answer silently applied
-/// to the next one — and because the affected fields also drive Validate(), the symptom is a Next
-/// button already enabled before the user has looked at the panel.
+/// Modules are per-run instances since slice 2, but InitializeAsync still resets everything it owns
+/// as a second line of defence; these tests keep that reset honest.
 /// <para>
 /// These tests initialize the same instance twice, which is exactly what
 /// <see cref="WizardModuleRegistry.BuildPlanAsync"/> does on a second run.

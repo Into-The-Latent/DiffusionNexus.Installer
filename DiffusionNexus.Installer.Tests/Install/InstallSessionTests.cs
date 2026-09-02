@@ -21,7 +21,7 @@ public class InstallSessionTests
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        var registry = new WizardModuleRegistry([]);
+        var registry = new WizardModuleRegistry(() => []);
         var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
         plan.Selection.TargetFolder = @"C:\Installs\Fooocus";
         return plan;
@@ -84,7 +84,7 @@ public class InstallSessionTests
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        var registry = new WizardModuleRegistry([folderModule]);
+        var registry = new WizardModuleRegistry(() => [folderModule]);
         var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
 
         // The module has an answer, but nothing has called ToOptions() yet.

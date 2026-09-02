@@ -57,7 +57,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(session.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
-        Services.AddSingleton(new WizardModuleRegistry(
+        Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
             new ShortcutsModule(),
@@ -110,7 +110,7 @@ public class InstallPageTests : BunitContext
         other.Repository.Type = RepositoryType.Fooocus;
 
         var session = Register(Workload("Workload B"));
-        var runningPlan = await new WizardModuleRegistry([])
+        var runningPlan = await new WizardModuleRegistry(() => [])
             .BuildPlanAsync(new WizardSelection { Workload = other });
 
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
@@ -129,7 +129,7 @@ public class InstallPageTests : BunitContext
         var workload = Workload();
         var session = Register(workload);
 
-        var runningPlan = await new WizardModuleRegistry([])
+        var runningPlan = await new WizardModuleRegistry(() => [])
             .BuildPlanAsync(new WizardSelection { Workload = workload });
 
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
@@ -152,7 +152,7 @@ public class InstallPageTests : BunitContext
         var workload = Workload();
         var session = Register(workload);
 
-        var runningPlan = await new WizardModuleRegistry([])
+        var runningPlan = await new WizardModuleRegistry(() => [])
             .BuildPlanAsync(new WizardSelection { Workload = workload });
 
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);

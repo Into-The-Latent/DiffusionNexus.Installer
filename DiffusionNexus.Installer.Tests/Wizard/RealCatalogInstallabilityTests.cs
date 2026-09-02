@@ -114,7 +114,7 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
     /// Mirrors CoreServiceCollectionExtensions.AddInstallerCore's slice-1 module set exactly, so
     /// the gate under test is the one the app actually registers, not an arbitrary stand-in.
     /// </summary>
-    private WizardModuleRegistry ProductionRegistry() => new(
+    private WizardModuleRegistry ProductionRegistry() => new(() =>
     [
         new InstallFolderModule(Settings(), new PreInstallationService()),
         new ComfyFoldersModule(Settings()),

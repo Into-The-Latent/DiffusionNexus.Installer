@@ -4,6 +4,7 @@ using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
+using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -94,5 +95,22 @@ public class DependencyInjectionTests
 
         archive.Should().NotBeNull("Assets/Catalog/catalog.zip must be embedded with LogicalName 'catalog.zip'");
         manifest.Should().NotBeNull("Assets/Catalog/manifest.json must be embedded with LogicalName 'manifest.json'");
+    }
+
+    [Fact]
+    public async Task Two_plans_built_from_the_container_do_not_share_module_instances()
+    {
+        using var provider = Build();
+        var registry = provider.GetRequiredService<WizardModuleRegistry>();
+
+        var workload = new InstallationConfiguration { Name = "Fooocus" };
+        workload.Repository.Type = RepositoryType.Fooocus;
+
+        var first = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
+        var second = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
+
+        first.AllModules.Select(m => m.Id).Should().BeEquivalentTo(second.AllModules.Select(m => m.Id));
+        foreach (var (a, b) in first.AllModules.Zip(second.AllModules))
+            a.Should().NotBeSameAs(b, $"module '{a.Id}' must be a fresh instance per run");
     }
 }
