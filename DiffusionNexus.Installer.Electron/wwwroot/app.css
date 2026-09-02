@@ -443,6 +443,38 @@ h2 {
     cursor: pointer;
 }
 
+.model-group {
+    margin-top: .75rem;
+}
+
+.model-group h3 {
+    margin: 0 0 .25rem;
+    font-size: .8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.tag {
+    margin-left: .5rem;
+    padding: .05rem .45rem;
+    border-radius: 999px;
+    background: #17332f;
+    color: var(--accent);
+    font-size: .72rem;
+    white-space: nowrap;
+}
+
+.disk-space {
+    margin: 1rem 0 0;
+    font-size: .87rem;
+    color: var(--muted);
+}
+
+.disk-space-bad {
+    color: #ff8f8f;
+}
+
 .summary {
     display: grid;
     grid-template-columns: max-content 1fr;
