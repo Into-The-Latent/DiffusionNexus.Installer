@@ -601,6 +601,10 @@ progress {
     margin-top: 0;
 }
 
+.modal-card-wide {
+    max-width: 48rem;
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;
