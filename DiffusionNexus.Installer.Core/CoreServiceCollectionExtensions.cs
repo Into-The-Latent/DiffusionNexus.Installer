@@ -1,8 +1,10 @@
 using DiffusionNexus.Installer.Core.Catalog;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -35,6 +37,17 @@ public static class CoreServiceCollectionExtensions
         services.AddTransient<IWizardModule, LlamaCppModule>();
         services.AddTransient<IWizardModule, ShortcutsModule>();
         services.AddTransient<IWizardModule, DisclaimerModule>();
+
+        // Size lookups get their OWN bounded client, never the container's: AddInstallationServices
+        // registers HttpClient with an infinite timeout on purpose (model downloads run for hours)
+        // and documents that size-resolution consumers must construct their own. A HEAD against a
+        // dead host on the shared client would hang the Content stage with no way out. One
+        // resolver instance so the disk-space estimate and the pre-flight verification share a
+        // size cache -- 1.x learned that a second resolver adds a full HEAD pass after Install.
+        services.AddSingleton(_ => new UrlSizeResolver(new HttpClient { Timeout = TimeSpan.FromSeconds(10) }));
+        services.AddSingleton<IDiskSpaceEstimator, SdkDiskSpaceEstimator>();
+        services.AddSingleton<IExistingModelVerifier, SdkExistingModelVerifier>();
+        services.AddSingleton<IModelPresenceScanner, ModelPresenceScanner>();
 
         services.AddSingleton<DevTools.LauncherScriptPreview>();
         services.AddSingleton<Gallery.GalleryBuilder>();

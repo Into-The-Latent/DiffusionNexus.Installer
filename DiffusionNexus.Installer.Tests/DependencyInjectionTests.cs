@@ -1,4 +1,5 @@
 using DiffusionNexus.Installer.Core;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Wizard;
@@ -7,6 +8,7 @@ using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation;
+using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,5 +114,18 @@ public class DependencyInjectionTests
         first.AllModules.Select(m => m.Id).Should().BeEquivalentTo(second.AllModules.Select(m => m.Id));
         foreach (var (a, b) in first.AllModules.Zip(second.AllModules))
             a.Should().NotBeSameAs(b, $"module '{a.Id}' must be a fresh instance per run");
+    }
+
+    [Fact]
+    public void Content_services_resolve_with_their_own_size_resolver()
+    {
+        using var provider = Build();
+
+        provider.GetRequiredService<IModelPresenceScanner>().Should().NotBeNull();
+        provider.GetRequiredService<IDiskSpaceEstimator>().Should().NotBeNull();
+        provider.GetRequiredService<IExistingModelVerifier>().Should().NotBeNull();
+
+        // One shared cache between the estimate and the pre-flight verification.
+        provider.GetRequiredService<UrlSizeResolver>().Should().BeSameAs(provider.GetRequiredService<UrlSizeResolver>());
     }
 }
