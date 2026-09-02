@@ -6,9 +6,11 @@ Follows `2026-08-29-electron-wizard-slice-1-design.md`, which shipped as v3.0.5.
 ## 1. Context
 
 Slice 1 shipped the catalog-driven gallery and a wizard whose stages are composed from
-capability modules. Nine of the catalog's 25 workloads install today. The other 16 are
-visible but disabled, because the wizard has no way to ask the two questions that make a
-tiered pack install correctly: **how much VRAM** and **which models**.
+capability modules. The catalog holds 25 workloads; 21 target the Installer (the other four
+are `DiffusionNexusCore` workloads the gallery never lists). Nine of those 21 install today.
+The other 12 are visible but disabled — 11 because the wizard has no way to ask the two
+questions that make a tiered pack install correctly, **how much VRAM** and **which models**,
+and one (`Config535`) on catalog data no module can fix.
 
 The gate is deliberately narrow. `WorkloadCapabilities.Blocking` is
 `VramProfile | ModelDownloads | LlamaCpp`, and only those block, because a module never adds
@@ -53,7 +55,9 @@ Every list is small. Nothing here needs virtualization, paging or search.
 4. **Only the tiers the workload declares are offered.** `ideogram-4-0` declares `24,32`, so
    the dropdown offers 24 and 32 — never a padded standard list.
 5. **A workload with no declared tiers filters nothing.** No dropdown renders, the tier stays
-   0, and every declared model downloads. `upscaling-z-image-turbo` (4 models, no tiers) is the
+   0, and every declared model downloads. No Installer-targeted workload in today's catalog has
+   models without tiers (`Upscaling-Z-Image-Turbo` does, but it is a `DiffusionNexusCore`
+   workload the gallery never lists), so the rule is pinned by a unit test rather than a
    shipped example.
 6. **Module state is fixed properly, not patched.** Modules become per-run instances rather
    than app-lifetime singletons — see §4.1.
@@ -312,8 +316,8 @@ three panels — the wiring whose absence made the wizard uncompletable in slice
 
 Registering `VramProfileModule` and `ModelSelectionModule` adds `VramProfile | ModelDownloads`
 to `SatisfiedCapabilities`, which satisfies every blocking capability the catalog declares. The
-installable set goes from 9 to **24 of 25**; `Config535` stays out on
-`DetectIncompatibility`, with its torch message rather than a "coming soon" note.
+installable set goes from 9 to **20 of the 21 Installer-targeted workloads**; `Config535` stays
+out on `DetectIncompatibility`, with its torch message rather than a "coming soon" note.
 
 No gallery code changes. That was the point of the gate design, and this slice is its first
 real test.
@@ -338,8 +342,8 @@ Unit, in `DiffusionNexus.Installer.Tests`:
   Lowest preselected. Selection round-trips into `WizardSelection` and the draft.
 - `Detect`-versus-`AppliesTo` agreement across every catalog workload, which is what the shared
   parser and the `Count > 0` choice above exist to satisfy.
-- `AppliesTo` for all three modules, including the no-tiers-with-models case
-  (`upscaling-z-image-turbo`) and the models-with-tiers case.
+- `AppliesTo` for all three modules, including the no-tiers-with-models case (synthetic; see
+  decision 5) and the models-with-tiers case.
 - Exclusions: unticking contributes exactly those ids; ticking everything contributes an empty
   set; no module contributes 0 to `SelectedVramProfile` for a workload without tiers.
 - **Scanner-versus-pipeline agreement**: for every catalog workload and every tier it declares,
@@ -364,7 +368,7 @@ bUnit:
 
 Real catalog:
 
-- `RealCatalogInstallabilityTests` updates 9 → 24, with `Config535` named as the exclusion and
+- `RealCatalogInstallabilityTests` updates 9 → 20, with `Config535` named as the exclusion and
   its reason asserted. While the file is open, set `InstalledCatalogPath` to a temp path — it
   currently enumerates and deletes `catalog.staging-*` directories under the real
   `%LocalAppData%` despite a comment claiming it touches nothing outside the repo.
@@ -375,7 +379,6 @@ Manual smoke, added to `docs/manual-smoke.md`:
   offers exactly `8,12,16,24,32`, files land in the right folders, and the report has no
   unexplained skips.
 - `ideogram-4-0` — dropdown offers exactly 24 and 32, preselected 24.
-- `upscaling-z-image-turbo` — no dropdown, and all four models download.
 - Re-run one install over an existing folder with a deliberately truncated model file, to see
   the mismatch dialog and both of its answers.
 
