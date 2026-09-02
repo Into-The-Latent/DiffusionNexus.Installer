@@ -1,5 +1,6 @@
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.Core.Catalog;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
@@ -56,6 +57,9 @@ public class CapabilityAgreementTests
     [
         new InstallFolderModule(Settings(), new PreInstallationService()),
         new ComfyFoldersModule(Settings()),
+        new VramProfileModule(),
+        new ModelSelectionModule(new ModelPresenceScanner(), Mock.Of<IDiskSpaceEstimator>()),
+        new WorkflowSelectionModule(),
         new GpuPreflightModule(Gpu()),
         new VcRuntimeModule(VcRuntime()),
         new LlamaCppModule(Wheels(wheels)),
@@ -81,13 +85,13 @@ public class CapabilityAgreementTests
         => Registry().IsInstallable(Workload(type)).Should().BeTrue();
 
     [Fact]
-    public void A_content_heavy_comfyui_pack_is_not_installable_in_slice_one()
+    public void A_content_heavy_comfyui_pack_is_installable_now_that_tier_and_model_modules_exist()
     {
         var pack = Workload(RepositoryType.ComfyUI);
         pack.Vram.VramProfiles = "8,12,16,24,32";
         pack.ModelDownloads.Add(new ModelDownload());
 
-        Registry().IsInstallable(pack).Should().BeFalse();
+        Registry().IsInstallable(pack).Should().BeTrue();
     }
 
     [Theory]
@@ -107,6 +111,31 @@ public class CapabilityAgreementTests
 
         detected.Should().Be(expected);
         rendered.Should().Be(detected);
+    }
+
+    [Theory]
+    [InlineData(WorkloadCapability.VramProfile)]
+    [InlineData(WorkloadCapability.ModelDownloads)]
+    [InlineData(WorkloadCapability.Workflows)]
+    public async Task Detect_and_AppliesTo_agree_on_each_content_capability(WorkloadCapability capability)
+    {
+        var with = Workload(RepositoryType.ComfyUI);
+        var without = Workload(RepositoryType.ComfyUI);
+        switch (capability)
+        {
+            case WorkloadCapability.VramProfile: with.Vram.VramProfiles = "8,12"; without.Vram.VramProfiles = "abc"; break;
+            case WorkloadCapability.ModelDownloads: with.ModelDownloads.Add(new ModelDownload { Enabled = false }); break;
+            case WorkloadCapability.Workflows: with.Workflows.Add(new ComfUIWorkflow()); break;
+        }
+
+        foreach (var workload in new[] { with, without })
+        {
+            var detected = WorkloadCapabilities.Detect(workload).HasFlag(capability);
+            var plan = await Registry().BuildPlanAsync(new WizardSelection { Workload = workload });
+            var rendered = plan.AllModules.Any(m => m.Satisfies == capability);
+
+            rendered.Should().Be(detected, $"{capability}: the gate and the module must agree");
+        }
     }
 
     [Fact]
@@ -152,12 +181,12 @@ public class CapabilityAgreementTests
     }
 
     [Fact]
-    public void A_workload_needing_a_vram_tier_is_not_installable()
+    public void A_workload_needing_a_vram_tier_is_installable()
     {
         var pack = Workload(RepositoryType.ComfyUI);
         pack.Vram.VramProfiles = "8,12,16,24,32";
 
-        Registry().IsInstallable(pack).Should().BeFalse();
+        Registry().IsInstallable(pack).Should().BeTrue();
     }
 
     [Fact]

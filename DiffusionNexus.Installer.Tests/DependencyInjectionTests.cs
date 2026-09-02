@@ -34,14 +34,15 @@ public class DependencyInjectionTests
     }
 
     [Fact]
-    public void All_slice_one_modules_resolve()
+    public void All_modules_resolve()
     {
         using var provider = Build();
 
         var registry = provider.GetRequiredService<WizardModuleRegistry>();
 
-        registry.SatisfiedCapabilities.Should()
-            .Be(WorkloadCapability.ComfyFolders | WorkloadCapability.LlamaCpp);
+        registry.SatisfiedCapabilities.Should().Be(
+            WorkloadCapability.ComfyFolders | WorkloadCapability.LlamaCpp
+            | WorkloadCapability.VramProfile | WorkloadCapability.ModelDownloads | WorkloadCapability.Workflows);
     }
 
     [Fact]
@@ -53,8 +54,8 @@ public class DependencyInjectionTests
         using var provider = Build();
 
         provider.GetServices<IWizardModule>().Select(m => m.Id).Should().BeEquivalentTo(
-            "install-folder", "comfy-folders", "gpu-preflight",
-            "vc-runtime", "llama-cpp", "shortcuts", "disclaimer");
+            "install-folder", "comfy-folders", "vram-profile", "model-selection", "workflow-selection",
+            "gpu-preflight", "vc-runtime", "llama-cpp", "shortcuts", "disclaimer");
     }
 
     [Fact]

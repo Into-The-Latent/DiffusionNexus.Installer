@@ -167,6 +167,9 @@ else
     {
         InstallFolderModule m => @<InstallFolderPanel Module="m" Changed="_moduleChanged" />,
         ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" Changed="_moduleChanged" />,
+        VramProfileModule m => @<VramProfilePanel Module="m" Changed="_moduleChanged" />,
+        ModelSelectionModule m => @<ModelSelectionPanel Module="m" Selection="_run!.Plan.Selection" Changed="_moduleChanged" />,
+        WorkflowSelectionModule m => @<WorkflowSelectionPanel Module="m" Changed="_moduleChanged" />,
         GpuPreflightModule m => @<GpuPreflightPanel Module="m" Changed="_moduleChanged" />,
         VcRuntimeModule m => @<VcRuntimePanel Module="m" Changed="_moduleChanged" />,
         LlamaCppModule m => @<LlamaCppPanel Module="m" />,
