@@ -14,6 +14,7 @@
 
 - Repo: `e:\Repos\DiffusionNexus.Installer`, branch `feature/content-stage` (already created; the spec is committed on it). Commit after every task and push (`git push -u origin feature/content-stage` the first time, `git push` after).
 - Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- Pushing needs the `Into-The-Latent` GitHub account: this repo's `.git/config` routes github.com credentials through `gh`, and the default active account (`Little-God1983`) gets a 403. Run `gh auth switch --user Into-The-Latent` before `git push` / `gh pr create`, and `gh auth switch --user Little-God1983` afterwards so the SDK repo keeps working.
 - Run tests with `dotnet test DiffusionNexus.Installer.Tests --filter "FullyQualifiedName~<ClassName>"` from the repo root; the full suite is `dotnet test DiffusionNexus.Installer.Tests`. 153 tests pass at the start of this plan.
 - Two public classes are named `VramProfileHelper`. Link selection MUST use `DiffusionNexus.Installer.SDK.Services.Installation.Utilities.VramProfileHelper` (the one `ModelDownloadStepHandler` calls). Import it under the alias `PipelineVram`.
 - Two public types are named `InstallationOptions` (`SDK.Models.Installation` class vs `SDK.Services` record). Importing both namespaces is CS0104-ambiguous; the draft uses the `SDK.Services` one.
