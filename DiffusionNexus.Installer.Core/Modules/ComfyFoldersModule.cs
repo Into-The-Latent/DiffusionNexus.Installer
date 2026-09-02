@@ -20,7 +20,19 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     public int Order => 10;
     public WorkloadCapability Satisfies => WorkloadCapability.ComfyFolders;
 
-    public string ModelBaseFolder { get; set; } = string.Empty;
+    private static readonly IReadOnlyDictionary<string, string> NoOverrides =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    private WizardSelection? _selection;
+    private string _modelBaseFolder = string.Empty;
+    private bool _useSavedFolderDefaults = true;
+
+    public string ModelBaseFolder
+    {
+        get => _modelBaseFolder;
+        set { _modelBaseFolder = value; SyncSelection(); }
+    }
+
     public string OutputFolder { get; set; } = string.Empty;
     public bool OverwriteExtraModelPaths { get; set; }
 
@@ -44,7 +56,11 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// twenty model folders from settings the user last touched months ago is a decision they
     /// should get to see. The Avalonia installer had the same opt-out.
     /// </summary>
-    public bool UseSavedFolderDefaults { get; set; } = true;
+    public bool UseSavedFolderDefaults
+    {
+        get => _useSavedFolderDefaults;
+        set { _useSavedFolderDefaults = value; SyncSelection(); }
+    }
 
     /// <summary>How many saved per-type folders are available, for the panel to report.</summary>
     public int SavedFolderCount => FolderPathOverrides.Count + AdditionalFolders.Count;
@@ -54,6 +70,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
+        _selection = selection;
+
         SupportsOutputFolder = selection.Workload.Repository.Type == RepositoryType.ComfyUI;
 
         // Reset everything this module owns, including the fields below that are not read from
@@ -67,6 +85,21 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         OutputFolder = SupportsOutputFolder ? user.OutputFolder : string.Empty;
         FolderPathOverrides = UserModelFolderMap.Build(user);
         AdditionalFolders = user.additionalFolders?.ToList() ?? [];
+
+        SyncSelection();
+    }
+
+    /// <summary>
+    /// Mirrors the answers the Content stage needs onto the selection. Only when this module applies:
+    /// the registry initializes every module, and a saved library pushed into a Fooocus selection
+    /// would make the model scan look in a folder that install never reads.
+    /// </summary>
+    private void SyncSelection()
+    {
+        if (_selection is null || !AppliesTo(_selection)) return;
+
+        _selection.ModelBaseFolder = string.IsNullOrWhiteSpace(_modelBaseFolder) ? null : _modelBaseFolder;
+        _selection.FolderPathOverrides = _useSavedFolderDefaults ? FolderPathOverrides : NoOverrides;
     }
 
     public void Contribute(InstallationOptionsDraft draft)

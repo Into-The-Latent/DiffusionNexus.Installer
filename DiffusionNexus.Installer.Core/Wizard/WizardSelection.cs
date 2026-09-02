@@ -17,5 +17,12 @@ public sealed class WizardSelection
     /// <summary>Chosen VRAM tier in GB, 0 when the workload has no profiles.</summary>
     public int SelectedVramProfile { get; set; }
 
+    /// <summary>Custom model library root, or null for the install's own models folder. Written by ComfyFoldersModule.</summary>
+    public string? ModelBaseFolder { get; set; }
+
+    /// <summary>Per-type folder overrides in effect — empty when the user opted out. Written by ComfyFoldersModule.</summary>
+    public IReadOnlyDictionary<string, string> FolderPathOverrides { get; set; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     public WorkloadCapability Capabilities => WorkloadCapabilities.Detect(Workload);
 }
