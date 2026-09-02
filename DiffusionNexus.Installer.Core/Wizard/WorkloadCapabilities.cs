@@ -33,7 +33,10 @@ public static class WorkloadCapabilities
         if (workload.Repository.Type is RepositoryType.ComfyUI or RepositoryType.AIToolkit)
             caps |= WorkloadCapability.ComfyFolders;
 
-        if (!string.IsNullOrWhiteSpace(workload.Vram.VramProfiles))
+        // The same parser VramProfileModule.AppliesTo uses. A non-blank but unparseable string
+        // must not be gated as "needs a tier" -- the module would decline to render one and the
+        // card could never be installed.
+        if (VramTiers.Parse(workload.Vram.VramProfiles).Count > 0)
             caps |= WorkloadCapability.VramProfile;
 
         if (workload.ModelDownloads.Count > 0)
