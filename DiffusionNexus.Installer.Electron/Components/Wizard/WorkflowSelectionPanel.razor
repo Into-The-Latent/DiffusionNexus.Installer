@@ -1,0 +1,28 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel">
+    <h2>Workflows</h2>
+    <p class="panel-hint">Ready-made ComfyUI workflows for this workload. Untick any you do not want written into the install.</p>
+
+    @foreach (var row in Module.Rows)
+    {
+        <label class="checkbox">
+            <input type="checkbox" checked="@row.IsSelected" @onchange="e => OnRowChanged(row, e)" />
+            <span>@row.Name</span>
+            <span class="panel-hint" style="margin:0">@row.Version</span>
+        </label>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WorkflowSelectionModule Module { get; set; } = default!;
+
+    /// <summary>Raised after any edit so the parent, which owns Next, re-renders.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnRowChanged(WorkflowRow row, ChangeEventArgs e)
+    {
+        Module.SetSelected(row.Id, (bool)(e.Value ?? false));
+        await Changed.InvokeAsync();
+    }
+}
