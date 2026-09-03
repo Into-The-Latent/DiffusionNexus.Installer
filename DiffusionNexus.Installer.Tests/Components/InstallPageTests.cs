@@ -1,10 +1,13 @@
 using Bunit;
 using DiffusionNexus.Installer.Core.Catalog;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.Electron.Components.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -207,5 +210,133 @@ public class InstallPageTests : BunitContext
 
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
             .HasAttribute("disabled").Should().BeFalse();
+    }
+
+    private static InstallationConfiguration ContentWorkload()
+    {
+        var w = new InstallationConfiguration { Id = WorkloadId, Name = "Krea-2-Turbo" };
+        w.Repository.Type = RepositoryType.ComfyUI;
+        w.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        w.Vram.VramProfiles = "8,12,16";
+        w.ModelDownloads.Add(new ModelDownload { Name = "VAE", Destination = @"models\vae", Url = "https://h.invalid/ae.safetensors" });
+        w.Workflows.Add(new ComfUIWorkflow { Name = "1.Text2Image" });
+        return w;
+    }
+
+    /// <summary>Registers the content workload with a registry that mirrors production's Content stage.</summary>
+    private Mock<IInstallSession> RegisterContent(Mock<IModelPresenceScanner> scanner)
+    {
+        var workload = ContentWorkload();
+        var settings = new Mock<IUserSettingsRepository>();
+        settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSettings { DefaultTargetInstallFolder = @"C:\Installs" });
+
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([workload]);
+        source.Setup(s => s.GetLamaCppWheelsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+
+        var session = new Mock<IInstallSession>();
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
+        session.SetupGet(s => s.LogLines).Returns([]);
+        session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
+
+        var preflight = new Mock<IModelPreflight>();
+        preflight.Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PreflightResult(true, null));
+
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiskSpaceEstimate(1, 2, true, []));
+
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(session.Object);
+        Services.AddSingleton(preflight.Object);
+        Services.AddSingleton(Mock.Of<IUserPrompt>());
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        Services.AddSingleton(new WizardModuleRegistry(() =>
+        [
+            new InstallFolderModule(settings.Object, new PreInstallationService()),
+            new ComfyFoldersModule(settings.Object),
+            new VramProfileModule(),
+            new ModelSelectionModule(scanner.Object, estimator.Object),
+            new WorkflowSelectionModule(),
+            new ShortcutsModule(),
+            new DisclaimerModule(),
+        ]));
+
+        return session;
+    }
+
+    private static Mock<IModelPresenceScanner> EmptyScanner()
+    {
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns([]);
+        return scanner;
+    }
+
+    [Fact]
+    public void The_content_stage_renders_its_three_panels_with_the_Changed_callback_wired()
+    {
+        // Ruling 31 from slice 1: the Changed wiring in RenderModule is what lets a panel edit
+        // re-render this page. Deleting any of these three lines leaves every panel test green.
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        // Location (folder pre-filled from settings) -> Content.
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        page.FindComponent<VramProfilePanel>().Instance.Changed.HasDelegate.Should().BeTrue();
+        page.FindComponent<ModelSelectionPanel>().Instance.Changed.HasDelegate.Should().BeTrue();
+        page.FindComponent<WorkflowSelectionPanel>().Instance.Changed.HasDelegate.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Changing_the_tier_rescans_the_models_through_the_page()
+    {
+        // End to end: VRAM panel -> Changed -> page re-render -> ModelSelectionPanel notices -> rescan.
+        var scanner = EmptyScanner();
+        RegisterContent(scanner);
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        var scansBefore = scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan));
+
+        page.Find("select").Change("16");
+
+        page.FindComponent<ModelSelectionPanel>().Instance.Module.LastScannedTier.Should().Be(16);
+        scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().BeGreaterThan(scansBefore);
+    }
+
+    [Fact]
+    public async Task A_dismissed_preflight_keeps_the_user_on_Confirm()
+    {
+        RegisterContent(EmptyScanner());
+        Services.AddSingleton(Mock.Of<IMismatchedFilePrompt>());
+        var preflight = Services.GetRequiredService<IModelPreflight>();
+        Mock.Get(preflight).Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PreflightResult(false, null));
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        // Location -> Content -> System -> Confirm.
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".checkbox input").Change(true); // disclaimer
+
+        await page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").ClickAsync(new MouseEventArgs());
+
+        page.Markup.Should().Contain("Ready to install", "a dismissed dialog must not advance");
+        page.Markup.Should().Contain("not started");
+        page.Markup.Should().NotContain("Installing");
+    }
+
+    [Fact]
+    public void The_confirm_summary_reports_tier_models_and_workflows()
+    {
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        page.Markup.Should().Contain("8 GB").And.Contain("1 of 1 selected");
     }
 }
