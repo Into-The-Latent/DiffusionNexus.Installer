@@ -356,9 +356,9 @@ Unit, in `DiffusionNexus.Installer.Tests`:
   input. This is the test that stops the display and the install from drifting apart.
 - Presence: temp directories covering exact hit, nested hit, missing part of a multi-link
   model, unreadable directory.
-- `ModelPreflight`: no mismatches starts the session; mismatches prompt and apply the sets to
-  the module before `StartAsync`; dismissal starts nothing and returns false; a throwing
-  verifier still starts.
+- `ModelPreflight`: no mismatches proceeds; mismatches prompt once and apply the URL sets to
+  the module; dismissal does not proceed (`Proceed = false`) and applies nothing; a throwing
+  verifier proceeds with a warning; a plan without a model module proceeds untouched.
 - Per-run lifetime: two consecutive `BuildPlanAsync` calls for different workloads yield
   different module instances, and the second plan carries none of the first's answers.
 
