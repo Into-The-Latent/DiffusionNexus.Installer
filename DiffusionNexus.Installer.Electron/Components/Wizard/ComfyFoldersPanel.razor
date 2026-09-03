@@ -5,23 +5,13 @@
 <section class="panel">
     <h2>Model and output folders</h2>
 
-    <label>Model library folder <span class="panel-hint">(optional)</span></label>
-    <p class="panel-hint">
-        Point this at an existing model library and the installer writes an
-        <code>extra_model_paths.yaml</code> so the workload reads from it instead of duplicating
-        downloads.
-    </p>
-    <div class="path-row">
-        <input type="text" value="@Module.ModelBaseFolder" @oninput="OnModelBaseFolderTyped" />
-        <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
-    </div>
-
     @if (Module.SupportsOutputFolder)
     {
         <label>Output folder <span class="panel-hint">(optional)</span></label>
-        <p class="panel-hint">Generated images and videos are written here instead of inside the install.</p>
+        <p class="panel-hint">Leave empty to keep generated images and videos inside the install.</p>
         <div class="path-row">
-            <input type="text" value="@Module.OutputFolder" @oninput="OnOutputFolderTyped" />
+            <input type="text" data-role="output" value="@Module.OutputFolder"
+                   placeholder="@Module.DefaultOutputFolder" @oninput="OnOutputFolderTyped" />
             <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
         </div>
     }
@@ -39,10 +29,22 @@
     {
         <div class="advanced">
             <p class="panel-hint">
-                Only needed if your library uses different folder names than ComfyUI's standard ones,
-                or has extra folders ComfyUI should know about. Everything here is remembered for your
+                Only needed if you keep models outside the install, or your library uses different
+                folder names than ComfyUI's standard ones. Everything here is remembered for your
                 next install.
             </p>
+
+            <label>Model library folder <span class="panel-hint">(optional)</span></label>
+            <p class="panel-hint">
+                Leave empty to keep models inside the install. Point it at an existing library and the
+                installer writes an <code>extra_model_paths.yaml</code> so the software reads from it
+                instead of downloading again.
+            </p>
+            <div class="path-row">
+                <input type="text" data-role="library" value="@Module.ModelBaseFolder"
+                       placeholder="@Module.DefaultModelsFolder" @oninput="OnModelBaseFolderTyped" />
+                <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
+            </div>
 
             @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
             {

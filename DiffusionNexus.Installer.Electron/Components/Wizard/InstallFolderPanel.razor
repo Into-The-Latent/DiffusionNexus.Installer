@@ -4,11 +4,15 @@
 
 <section class="panel">
     <h2>Install location</h2>
-    <p class="panel-hint">Where the workload gets installed.</p>
+    <p class="panel-hint">Where the software gets installed.</p>
     <div class="path-row">
         <input type="text" value="@Module.TargetFolder" @oninput="OnFolderTyped" />
         <button class="btn-secondary" @onclick="Browse">Browse...</button>
     </div>
+    @if (Module.DestinationFolder is { } destination)
+    {
+        <p class="destination">Will be created: <code>@destination</code></p>
+    }
 </section>
 
 @code {

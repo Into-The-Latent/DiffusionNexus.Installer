@@ -15,8 +15,8 @@ using Xunit;
 namespace DiffusionNexus.Installer.Tests.Components;
 
 /// <summary>
-/// The folders page shows only the library and output folders; everything per-type lives behind
-/// an "Advanced" toggle that is closed by default.
+/// The folders page shows only the output folder; the model library and everything per-type live
+/// behind an "Advanced" toggle that is closed by default.
 /// </summary>
 public class ComfyFoldersPanelTests : BunitContext
 {
@@ -30,7 +30,8 @@ public class ComfyFoldersPanelTests : BunitContext
         var module = new ComfyFoldersModule(repo.Object);
         var w = new InstallationConfiguration();
         w.Repository.Type = RepositoryType.ComfyUI;
-        await module.InitializeAsync(new WizardSelection { Workload = w });
+        w.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(new WizardSelection { Workload = w, TargetFolder = @"E:\Installer\9" });
         return module;
     }
 
@@ -40,15 +41,26 @@ public class ComfyFoldersPanelTests : BunitContext
             .Add(x => x.Changed, EventCallback.Factory.Create(this, () => changed?.Invoke())));
 
     [Fact]
-    public async Task Only_the_library_and_output_folders_show_until_advanced_is_opened()
+    public async Task Only_the_output_folder_shows_until_advanced_is_opened()
     {
         var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" }));
 
         cut.Markup.Should().NotContain("saved model folder");
         cut.FindAll("[data-folder-key]").Should().BeEmpty("the per-type list is advanced");
+        cut.FindAll("[data-role='library']").Should().BeEmpty("the model library moved into advanced");
         cut.FindAll(".checkbox").Should().BeEmpty("the overwrite choice is advanced too");
-        cut.FindAll(".path-row input").Should().HaveCount(2, "library + output");
+        cut.FindAll(".path-row input").Should().ContainSingle("output only");
         cut.Find(".advanced-toggle").TextContent.Should().Contain("Advanced");
+    }
+
+    [Fact]
+    public async Task The_output_box_shows_the_install_default_as_grey_text()
+    {
+        var cut = RenderPanel(await Module());
+
+        var output = cut.Find("[data-role='output']");
+        output.GetAttribute("value").Should().BeNullOrEmpty();
+        output.GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\output");
     }
 
     [Fact]
@@ -59,6 +71,27 @@ public class ComfyFoldersPanelTests : BunitContext
 
         var custom = RenderPanel(await Module(new UserSettings { DefaultLorasFolder = "Lora" }));
         custom.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
+
+        var library = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
+        library.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
+    }
+
+    [Fact]
+    public async Task The_library_box_is_first_in_advanced_and_shows_the_install_default_as_grey_text()
+    {
+        var module = await Module();
+        var changed = false;
+        var cut = RenderPanel(module, () => changed = true);
+        cut.Find(".advanced-toggle").Click();
+
+        var library = cut.Find(".advanced input");
+        library.GetAttribute("data-role").Should().Be("library");
+        library.GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\models");
+
+        library.Input(@"D:\Models");
+
+        module.ModelBaseFolder.Should().Be(@"D:\Models");
+        changed.Should().BeTrue();
     }
 
     [Fact]

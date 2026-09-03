@@ -148,6 +148,41 @@ public class ComfyFoldersAdvancedTests
     }
 
     [Fact]
+    public async Task The_default_models_and_output_folders_follow_the_install_folder()
+    {
+        // Shown as grey placeholder text: an empty box means "inside the install", and this is
+        // where the SDK actually puts them (ModelDestinationResolver / ComfyUI's own default).
+        var (module, _) = Module();
+        var selection = Selection();
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+
+        selection.TargetFolder = @"E:\Installer\9";
+
+        module.DefaultModelsFolder.Should().Be(@"E:\Installer\9\ComfyUI\models");
+        module.DefaultOutputFolder.Should().Be(@"E:\Installer\9\ComfyUI\output");
+    }
+
+    [Fact]
+    public async Task The_defaults_are_empty_until_an_install_folder_is_chosen()
+    {
+        var (module, _) = Module();
+        await module.InitializeAsync(Selection());
+
+        module.DefaultModelsFolder.Should().BeEmpty();
+        module.DefaultOutputFolder.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_library_folder_counts_as_custom_because_it_now_lives_in_the_advanced_section()
+    {
+        var (module, _) = Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
+        await module.InitializeAsync(Selection());
+
+        module.HasCustomFolders.Should().BeTrue("a saved library applied out of sight must still be flagged");
+    }
+
+    [Fact]
     public async Task Persist_writes_the_folders_back_to_settings_without_touching_other_fields()
     {
         var stored = new UserSettings

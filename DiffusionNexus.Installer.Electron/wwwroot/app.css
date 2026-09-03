@@ -708,3 +708,14 @@ progress {
 .additional-folder {
     margin-top: .5rem;
 }
+
+/* Install location: the folder the install will actually create. */
+.destination {
+    margin: .5rem 0 0;
+    color: var(--muted);
+    font-size: .85rem;
+}
+
+.destination code {
+    color: var(--text);
+}

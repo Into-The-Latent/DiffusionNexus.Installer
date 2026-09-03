@@ -39,15 +39,18 @@ real run can prove. Use a scratch install folder, never a real one.
 
 1. Pick Fooocus. **Expect:** Location → System → Confirm → Install. No Content screen (VRAM,
    models, workflows) appears.
-2. Pick Blanck-ComfyUI. **Expect:** the Location stage also shows the model-library and output
-   folder fields, and below them a closed "Advanced: custom model folders" line. No
-   "saved model folders" checkbox. Click the line. **Expect:** it opens to the overwrite
-   checkbox (only when a library is set), 21 folder-name boxes prefilled with ComfyUI's standard
-   names (or your saved custom ones), "Reset to standard", and an empty "Additional folders" list
-   with "+ Add folder". Type `MyLoras` into LoRAs, press Next, then Back. **Expect:** the closed
-   line now says "custom folders in use". Cancel the wizard and pick Blanck-ComfyUI again.
-   **Expect:** LoRAs still reads `MyLoras` (saved on Next). Reset to standard and press Next to
-   clean up.
+2. Pick Blanck-ComfyUI. **Expect:** the Install location panel says "Where the software gets
+   installed" and, once a folder is typed, a grey "Will be created: <folder>\ComfyUI" line under
+   the box. The folders panel shows only the Output folder box, empty, with grey
+   `<folder>\ComfyUI\output` text inside, and below it a closed "Advanced: custom model folders"
+   line. No "saved model folders" checkbox, no library box outside Advanced. Click the line.
+   **Expect:** it opens with the Model library folder box first (grey `<folder>\ComfyUI\models`
+   inside when empty), the overwrite checkbox (only when a library is set), 21 folder-name boxes
+   prefilled with ComfyUI's standard names (or your saved custom ones), "Reset to standard", and
+   an empty "Additional folders" list with "+ Add folder". Type `MyLoras` into LoRAs, press Next,
+   then Back. **Expect:** the closed line now says "custom folders in use". Cancel the wizard and
+   pick Blanck-ComfyUI again. **Expect:** LoRAs still reads `MyLoras` (saved on Next). Reset to
+   standard and press Next to clean up.
 3. Pick AI-Toolkit. **Expect:** the model-library field is present, the output folder field is not.
 4. Clear the install folder. **Expect:** Next is disabled and the validation message shows.
 5. Click Browse. **Expect:** a native folder dialog opens. Dismiss it. **Expect:** the field is

@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Installation;
@@ -111,9 +112,31 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>Extra roots the user registered. Feeds the same YAML and ModelDestinationResolver.</summary>
     public IReadOnlyList<AdditionalFolderRow> AdditionalFolders => _additionalFolders;
 
-    /// <summary>Whether anything in the advanced section changes the install; the panel flags it on the closed toggle.</summary>
+    /// <summary>
+    /// Whether anything in the advanced section changes the install; the panel flags it on the
+    /// closed toggle. The library folder lives in that section too, so a saved library applied out
+    /// of sight counts.
+    /// </summary>
     public bool HasCustomFolders =>
-        _folderTypes.Any(r => r.Override is not null) || _additionalFolders.Any(r => r.IsComplete);
+        !string.IsNullOrWhiteSpace(ModelBaseFolder)
+        || _folderTypes.Any(r => r.Override is not null)
+        || _additionalFolders.Any(r => r.IsComplete);
+
+    /// <summary>
+    /// Where models land when the library box is left empty: the repository's own models folder,
+    /// which is what ModelDestinationResolver falls back to. Empty until an install folder is chosen.
+    /// Shown as grey placeholder text.
+    /// </summary>
+    public string DefaultModelsFolder => InstallSubfolder("models");
+
+    /// <summary>ComfyUI's own output folder, the fallback when the output box is left empty.</summary>
+    public string DefaultOutputFolder => InstallSubfolder("output");
+
+    private string InstallSubfolder(string name)
+    {
+        if (_selection is null || string.IsNullOrWhiteSpace(_selection.TargetFolder)) return string.Empty;
+        return Path.Combine(RepositoryPaths.Resolve(_selection.Workload, _selection.TargetFolder.Trim()), name);
+    }
 
     public bool AppliesTo(WizardSelection selection) =>
         selection.Workload.Repository.Type is RepositoryType.ComfyUI or RepositoryType.AIToolkit;

@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
@@ -47,6 +48,16 @@ public sealed class InstallFolderModule(
             if (_selection is not null) _selection.TargetFolder = value;
         }
     }
+
+    /// <summary>
+    /// The folder the install will actually create: the chosen folder plus the repository's own
+    /// folder name, derived the way the pipeline derives it. Null while no folder is chosen. Shown
+    /// under the box so the user sees "E:\Installer\9\ComfyUI" before Next, not from an error.
+    /// </summary>
+    public string? DestinationFolder =>
+        _selection is null || string.IsNullOrWhiteSpace(TargetFolder)
+            ? null
+            : RepositoryPaths.Resolve(_selection.Workload, TargetFolder.Trim());
 
     public bool AppliesTo(WizardSelection selection) => true;
 
