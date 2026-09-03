@@ -14,11 +14,8 @@ real run can prove. Use a scratch install folder, never a real one.
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
    **Expect:** the gallery populates from the embedded seed; no error, no empty state.
-2. **Expect:** exactly nine cards are enabled — Stable Diffusion web UI, Stable Diffusion WebUI Forge,
-   Fooocus, ACE-Step-1.5, AI-Toolkit, Blanck-ComfyUI, Base-install-Triton-SageAttention-Manager,
-   ComfyUI Llama Cpp test, and FlashVSR-Video&Image Upscale. Every other card is visible but
-   disabled, most with a "Coming soon" note (they need ModelDownloads or VramProfile, neither of
-   which is in slice 1).
+2. **Expect:** every card is enabled except Config535 — 20 of 21. The DiffusionNexusCore
+   workloads (Captioning, Inpainting, Outpainting, Upscaling-Z-Image-Turbo) are not listed at all.
    **Config535 is the exception:** it is disabled with a torch message, not a "Coming soon" one —
    its catalog entry pairs torch 2.8.0 with CUDA 13.0, for which no wheel exists, so the pipeline
    would refuse it before step 1. That is a catalog data fix, not a missing module.
@@ -40,14 +37,21 @@ real run can prove. Use a scratch install folder, never a real one.
 
 ## 2. Wizard stages
 
-1. Pick Fooocus. **Expect:** Location → System → Confirm → Install. No model, VRAM,
-   workflow or accelerator screen appears.
+1. Pick Fooocus. **Expect:** Location → System → Confirm → Install. No Content screen (VRAM,
+   models, workflows) appears.
 2. Pick Blanck-ComfyUI. **Expect:** the Location stage also shows the model-library and output
    folder fields.
 3. Pick AI-Toolkit. **Expect:** the model-library field is present, the output folder field is not.
 4. Clear the install folder. **Expect:** Next is disabled and the validation message shows.
 5. Click Browse. **Expect:** a native folder dialog opens. Dismiss it. **Expect:** the field is
    unchanged and nothing crashes.
+6. Pick Krea-2-Turbo. **Expect:** after Location comes a Content screen with a VRAM dropdown
+   offering exactly 8, 12, 16, 24, 32 GB with 8 preselected, every model ticked and grouped by
+   folder, every workflow ticked, and a disk-space line that updates when you untick a model or
+   change the tier.
+7. Pick Ideogram-4.0. **Expect:** the dropdown offers exactly 24 and 32 GB, 24 preselected.
+8. On the Content screen, point the install folder (Back, then edit) at a folder that already
+   holds one of the listed models. **Expect:** that row shows "already downloaded".
 
 ## 3. A real install
 
@@ -65,6 +69,12 @@ real run can prove. Use a scratch install folder, never a real one.
    back, then opening the wizard again. **Expect:** the wizard restarts from the first screen,
    not the finished report. The install itself never runs again. This is a known limitation:
    reconnecting after an install has completed returns to the wizard's start, not the result.
+6. Install Wan 2.2 - GGUF at tier 8 into a scratch folder — the heaviest case, 10 models and 26
+   links. **Expect:** files land under the right `models\...` folders, the report shows no
+   unexplained skips, and no row says "Requires more VRAM" for a model you expected.
+7. Re-run the same install over that folder after truncating one downloaded model file to a few
+   bytes. **Expect:** pressing Next on Confirm shows ONE dialog listing that file; Continue with it
+   ticked re-downloads it; Cancel installation leaves you on Confirm with a notice.
 
 ## 4. Known limitations
 
