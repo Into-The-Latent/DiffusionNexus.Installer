@@ -93,9 +93,14 @@ else
             <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">Next</button>
         </div>
 
-        @foreach (var error in _run.ValidationErrors)
+        @* The install-folder panel shows its own message right under its box; listing it here
+           too would put the same sentence on the page twice. *@
+        @foreach (var module in _run.CurrentModules.Where(m => m is not InstallFolderModule))
         {
-            <p class="validation-error">@error</p>
+            @if (module.Validate() is { IsValid: false, ErrorMessage: { } error })
+            {
+                <p class="validation-error">@error</p>
+            }
         }
     }
 }

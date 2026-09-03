@@ -58,6 +58,23 @@ public class InstallFolderPanelTests : BunitContext
     }
 
     [Fact]
+    public async Task The_validation_message_sits_directly_under_the_hint_line()
+    {
+        // The page used to list every message under the buttons, far from the box it is about.
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        var module = await InitializedModule();
+        var cut = Render<InstallFolderPanel>(p => p.Add(x => x.Module, module));
+
+        var error = cut.Find(".panel .validation-error");
+        error.TextContent.Should().Contain("Choose a folder");
+
+        var hintEnd = cut.Markup.IndexOf("Where the software gets installed", StringComparison.Ordinal);
+        var errorAt = cut.Markup.IndexOf("Choose a folder", StringComparison.Ordinal);
+        var inputAt = cut.Markup.IndexOf("<input", StringComparison.Ordinal);
+        errorAt.Should().BeGreaterThan(hintEnd).And.BeLessThan(inputAt);
+    }
+
+    [Fact]
     public void Typing_a_folder_raises_Changed_and_updates_the_module()
     {
         Services.AddSingleton(Mock.Of<IFolderPicker>());

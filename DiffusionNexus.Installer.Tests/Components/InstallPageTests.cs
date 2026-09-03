@@ -331,6 +331,20 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
+    public void The_install_folder_message_is_shown_once_inside_its_panel_not_under_the_buttons()
+    {
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.Find("input").Input("");
+
+        var errors = page.FindAll(".validation-error");
+        errors.Should().ContainSingle().Which.TextContent.Should().Contain("Choose a folder");
+        page.FindAll(".panel .validation-error").Should().ContainSingle();
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
     public void Changing_the_tier_rescans_the_models_through_the_page()
     {
         // End to end: VRAM panel -> Changed -> page re-render -> ModelSelectionPanel notices -> rescan.
