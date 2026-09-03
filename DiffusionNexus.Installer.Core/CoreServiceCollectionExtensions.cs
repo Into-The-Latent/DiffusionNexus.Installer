@@ -22,6 +22,7 @@ public static class CoreServiceCollectionExtensions
 
         services.AddSingleton<IWorkloadSource, CatalogWorkloadSource>();
         services.AddSingleton<IInstallSession, InstallSession>();
+        services.AddSingleton<IModelPreflight, ModelPreflight>();
 
         // The SDK's own AddInstallationServices does not register this one — both Avalonia apps
         // construct it by hand — but the install-folder pre-flight needs it. TryAdd so a host that

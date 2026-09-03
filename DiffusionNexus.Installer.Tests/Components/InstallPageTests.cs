@@ -10,6 +10,7 @@ using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
@@ -55,6 +56,12 @@ public class InstallPageTests : BunitContext
 
         Services.AddSingleton(source.Object);
         Services.AddSingleton(session.Object);
+
+        var preflight = new Mock<IModelPreflight>();
+        preflight.Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PreflightResult(true, null));
+        Services.AddSingleton(preflight.Object);
+
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
         Services.AddSingleton(new WizardModuleRegistry(() =>

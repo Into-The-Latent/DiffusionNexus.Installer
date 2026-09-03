@@ -29,6 +29,7 @@ public class DependencyInjectionTests
         services.AddDiffusionNexusUserSettings(Path.Combine(Path.GetTempPath(), $"dn-{Guid.NewGuid():N}.json"));
         services.AddDiffusionNexusCatalog(o =>
             o.InstalledCatalogPath = Path.Combine(Path.GetTempPath(), $"dn-catalog-{Guid.NewGuid():N}"));
+        services.AddSingleton<Core.Host.IMismatchedFilePrompt>(new Core.Host.MismatchPromptService());
         services.AddInstallerCore();
         return services.BuildServiceProvider();
     }
@@ -128,5 +129,12 @@ public class DependencyInjectionTests
 
         // One shared cache between the estimate and the pre-flight verification.
         provider.GetRequiredService<UrlSizeResolver>().Should().BeSameAs(provider.GetRequiredService<UrlSizeResolver>());
+    }
+
+    [Fact]
+    public void The_model_preflight_resolves()
+    {
+        using var provider = Build();
+        provider.GetRequiredService<Core.Install.IModelPreflight>().Should().NotBeNull();
     }
 }

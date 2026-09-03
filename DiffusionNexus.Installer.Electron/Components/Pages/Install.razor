@@ -1,4 +1,5 @@
 @page "/install/{WorkloadId:guid}"
+@implements IDisposable
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
@@ -11,6 +12,7 @@
 @inject WizardModuleRegistry Registry
 @inject IInstallSession Session
 @inject IUserPrompt Prompt
+@inject IModelPreflight Preflight
 @inject NavigationManager Nav
 
 <PageTitle>Install</PageTitle>
@@ -48,6 +50,10 @@ else
         @* Done is rendered by InstallStage, not here: this page does not subscribe to
            Session.Changed, so a button placed here would be stuck at whatever Phase said during
            the single render that created the stage -- i.e. visible for the whole install. *@
+        @if (_preflightWarning is not null)
+        {
+            <p class="validation-error">@_preflightWarning</p>
+        }
         <InstallStage Run="_run" Done="_backToGallery" />
     }
     else
@@ -64,12 +70,22 @@ else
             @RenderModule(module)
         }
 
+        @if (_preflightBusy)
+        {
+            <p class="panel-hint">Verifying existing model files...</p>
+        }
+
+        @if (_preflightNotice is not null)
+        {
+            <p class="validation-error">@_preflightNotice</p>
+        }
+
         <div class="wizard-actions">
             @* Always available, including at stage 0. A GPU-blocked System stage validates false
                forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
             <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
-            <button class="btn-secondary" disabled="@(!_run.CanGoBack)" @onclick="Back">Back</button>
-            <button class="btn-primary" disabled="@(!_run.CanGoNext)" @onclick="Next">Next</button>
+            <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy)" @onclick="Back">Back</button>
+            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy)" @onclick="Next">Next</button>
         </div>
 
         @foreach (var error in _run.ValidationErrors)
@@ -86,6 +102,10 @@ else
     private string? _busyWith;
     private EventCallback _moduleChanged;
     private EventCallback _backToGallery;
+    private readonly CancellationTokenSource _pageCts = new();
+    private bool _preflightBusy;
+    private string? _preflightNotice;
+    private string? _preflightWarning;
 
     protected override async Task OnInitializedAsync()
     {
@@ -150,7 +170,44 @@ else
         _run = new WizardRun(plan);
     }
 
-    private void Next() => _run!.TryNext();
+    private async Task Next()
+    {
+        if (_run!.CurrentStage == WizardStage.Confirm)
+        {
+            // 1.x checks already-present files when Install is pressed. Here that is Confirm's
+            // Next: WizardRun cannot go back from the Install stage, so a dismissed dialog must
+            // stop the user HERE rather than strand them on an install that never started.
+            _preflightBusy = true;
+            _preflightNotice = null;
+            try
+            {
+                var result = await Preflight.RunAsync(_run.Plan, _pageCts.Token);
+                _preflightWarning = result.Warning;
+                if (!result.Proceed)
+                {
+                    _preflightNotice = "Installation not started: the mismatched model files were not resolved.";
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            finally
+            {
+                _preflightBusy = false;
+            }
+        }
+
+        _run.TryNext();
+    }
+
+    public void Dispose()
+    {
+        // Navigating away while the mismatch dialog is open releases it as a dismissal.
+        _pageCts.Cancel();
+        _pageCts.Dispose();
+    }
 
     private void Back() => _run!.Back();
 

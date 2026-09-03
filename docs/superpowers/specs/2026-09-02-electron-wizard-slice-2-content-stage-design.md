@@ -259,20 +259,25 @@ shared between the estimate and the verification.
 4. Dismissing the dialog cancels the install before anything starts.
 5. Verification itself failing (offline, timeout) is a warning line, not a stop.
 
-This runs in a new `InstallLauncher` in `Core`, not in `Install.razor`:
+This runs in a new `ModelPreflight` in `Core`, invoked from `Install.razor` when the user presses
+Next on Confirm — the moment 1.x calls "pressing Install":
 
 ```csharp
-public interface IInstallLauncher
+public sealed record PreflightResult(bool Proceed, string? Warning);
+
+public interface IModelPreflight
 {
-    /// Returns false when the user dismissed the mismatch dialog and nothing was started.
-    Task<bool> LaunchAsync(WizardPlan plan, CancellationToken ct = default);
+    Task<PreflightResult> RunAsync(WizardPlan plan, CancellationToken ct = default);
 }
 ```
 
-It verifies, prompts, hands the resulting URL sets to the plan's `ModelSelectionModule`
+It verifies, prompts, and hands the resulting URL sets to the plan's `ModelSelectionModule`
 (`plan.AllModules.OfType<ModelSelectionModule>().FirstOrDefault()`, the pattern `Install.razor`
-already uses for `ShortcutsModule`), then calls `IInstallSession.StartAsync`. Order matters:
-`StartAsync` calls `ToOptions()`, so the sets must be on the module before it starts.
+already uses for `ShortcutsModule`). Only when it proceeds does the wizard advance to the Install
+stage, where `InstallStage` starts the session exactly as in slice 1. Confirm rather than Install
+because `WizardRun` cannot go back from the Install stage: a dismissed dialog has to leave the
+user on Confirm, not on an install screen that never started. The dialog's cancellation token is
+the page's own, disposed when the user navigates away.
 
 The dialog needs a list-with-choices modal, which `IUserPrompt` (yes/no only) cannot express:
 
@@ -287,7 +292,7 @@ public interface IMismatchedFilePrompt
 ```
 
 Implemented in the Electron project beside `ModalPromptService`, rendered by a new modal
-component, and given `IInstallSession.RunToken` so a cancel can release it. Decisions are keyed
+component, and given the page's cancellation token so navigating away releases it. Decisions are keyed
 by **URL**, never by model id — `ExistingModelMismatch` documents why: a model can have several
 links and only some of them mismatch.
 
@@ -332,7 +337,7 @@ real test.
 | Size lookups fail | Partial estimate, named in `UnknownSizeModels`; install proceeds. |
 | Verification throws | Warning line; install proceeds without redownload decisions — a file the user was never asked about is left alone. |
 | Mismatch dialog dismissed | Install does not start; the wizard stays on Confirm with a log line saying so. |
-| Cancel while the dialog is open | `RunToken` releases it; treated as dismissal. |
+| Cancel while the dialog is open | The page's cancellation token releases it; treated as dismissal. |
 
 ## 7. Testing
 
@@ -351,7 +356,7 @@ Unit, in `DiffusionNexus.Installer.Tests`:
   input. This is the test that stops the display and the install from drifting apart.
 - Presence: temp directories covering exact hit, nested hit, missing part of a multi-link
   model, unreadable directory.
-- `InstallLauncher`: no mismatches starts the session; mismatches prompt and apply the sets to
+- `ModelPreflight`: no mismatches starts the session; mismatches prompt and apply the sets to
   the module before `StartAsync`; dismissal starts nothing and returns false; a throwing
   verifier still starts.
 - Per-run lifetime: two consecutive `BuildPlanAsync` calls for different workloads yield
