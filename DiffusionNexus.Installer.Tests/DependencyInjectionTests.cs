@@ -2,10 +2,12 @@ using DiffusionNexus.Installer.Core;
 using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Install;
+using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
@@ -107,8 +109,20 @@ public class DependencyInjectionTests
         using var provider = Build();
         var registry = provider.GetRequiredService<WizardModuleRegistry>();
 
-        var workload = new InstallationConfiguration { Name = "Fooocus" };
-        workload.Repository.Type = RepositoryType.Fooocus;
+        // A ComfyUI workload with one enabled model: identity alone does not prove per-run
+        // isolation, since a fresh instance can still leak state if the container reused any
+        // captured reference. An actual answer given on the first plan must not be visible on the
+        // second.
+        var modelId = Guid.NewGuid();
+        var workload = new InstallationConfiguration { Name = "ComfyUI" };
+        workload.Repository.Type = RepositoryType.ComfyUI;
+        workload.ModelDownloads.Add(new ModelDownload
+        {
+            Id = modelId,
+            Name = "VAE",
+            Destination = @"models\vae",
+            Url = "https://host.invalid/ae.safetensors",
+        });
 
         var first = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
         var second = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
@@ -116,6 +130,14 @@ public class DependencyInjectionTests
         first.AllModules.Select(m => m.Id).Should().BeEquivalentTo(second.AllModules.Select(m => m.Id));
         foreach (var (a, b) in first.AllModules.Zip(second.AllModules))
             a.Should().NotBeSameAs(b, $"module '{a.Id}' must be a fresh instance per run");
+
+        first.AllModules.OfType<ModelSelectionModule>().Single().SetSelected(modelId, false);
+
+        var secondModelModule = second.AllModules.OfType<ModelSelectionModule>().Single();
+        secondModelModule.Rows.Single(r => r.Id == modelId).IsSelected.Should().BeTrue(
+            "unticking a model on the first plan must not leak onto the second plan's module");
+        second.ToOptions().ExcludedModelIds.Should().BeEmpty(
+            "the second plan carries none of the first plan's answers");
     }
 
     [Fact]

@@ -172,6 +172,11 @@ else
 
     private async Task Next()
     {
+        // A second click landing before the disabled="@_preflightBusy" render commits would
+        // otherwise dispatch a second preflight run while one is already in flight -- and the
+        // prompt service throws opening a second mismatch dialog on top of the first.
+        if (_preflightBusy) return;
+
         if (_run!.CurrentStage == WizardStage.Confirm)
         {
             // 1.x checks already-present files when Install is pressed. Here that is Confirm's
@@ -209,7 +214,13 @@ else
         _pageCts.Dispose();
     }
 
-    private void Back() => _run!.Back();
+    private void Back()
+    {
+        // Otherwise a "not started" notice from a dismissed Confirm preflight would keep showing
+        // on the System stage, where it no longer applies.
+        _preflightNotice = null;
+        _run!.Back();
+    }
 
     private void GoToGallery() => Nav.NavigateTo("/");
 

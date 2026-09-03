@@ -171,6 +171,61 @@ public sealed class ModelPresenceScannerTests : IDisposable
         _scanner.Scan(Request(Workload(model))).Single().Targets.Should().BeEmpty();
     }
 
+    [Fact]
+    public void A_query_string_filename_is_honoured_like_the_downloader_does()
+    {
+        // Matches FileDownloader.GetFileNameFromUrl: no dotted filename in the path falls back to
+        // a "filename=" query parameter.
+        var model = Model("Query", @"models\x", Link("https://host.invalid/download?filename=model.safetensors"));
+
+        _scanner.Scan(Request(Workload(model))).Single().Targets.Single().FileName.Should().Be("model.safetensors");
+    }
+
+    [Fact]
+    public void A_url_without_a_dotted_filename_yields_no_target()
+    {
+        // A real catalog link (Krea 2 Identity Edit): the path segment is a numeric id, and there is
+        // no "filename=" query either -- the real name only arrives with the server's
+        // Content-Disposition header at download time, so this must not produce an unmatchable target.
+        var model = Model("Civitai", @"models\x", Link("https://civitai.com/api/download/models/3139172?fileId=3019297"));
+
+        var presence = _scanner.Scan(Request(Workload(model))).Single();
+
+        presence.Targets.Should().BeEmpty();
+        presence.AllPartsPresent.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_filename_with_wildcard_characters_does_not_match_other_files()
+    {
+        // Directory.GetFiles(dir, pattern, ...) treats '*'/'?' in the pattern as wildcards; matching
+        // by plain name equality means a URL-decoded '*' in a filename can never match another file.
+        Touch(@"models\x\real.bin");
+        var model = Model("Wildcard", @"models\x", Link("https://host.invalid/%2A.bin"));
+
+        _scanner.Scan(Request(Workload(model))).Single().Targets.Single().ExistingPath.Should().BeNull();
+    }
+
+    [Fact]
+    public void The_scanner_lists_each_destination_directory_once_per_scan()
+    {
+        // Cannot assert on the number of Directory.GetFiles calls from here (nothing to intercept
+        // the real filesystem), so this pins the *behaviour* the per-scan directory cache must
+        // preserve: three link-less models sharing one destination, none of the files present,
+        // still resolve independently and correctly to three absent targets.
+        var models = new[]
+        {
+            new ModelDownload { Name = "A", Destination = @"models\shared", Url = "https://host.invalid/a.bin" },
+            new ModelDownload { Name = "B", Destination = @"models\shared", Url = "https://host.invalid/b.bin" },
+            new ModelDownload { Name = "C", Destination = @"models\shared", Url = "https://host.invalid/c.bin" },
+        };
+
+        var presences = _scanner.Scan(Request(Workload(models)));
+
+        presences.Should().HaveCount(3);
+        presences.Should().OnlyContain(p => !p.AllPartsPresent && p.Targets.Single().ExistingPath == null);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_repo, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }

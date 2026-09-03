@@ -206,11 +206,15 @@ Per model, mirroring the pipeline exactly:
    `model.Url`, and drop the model when `selectedVramGb > 0` and
    `VramProfileHelper.VramProfileFitsSelection(model.VramProfile, selectedVramGb)` is false.
    With links, `VramProfileHelper.SelectBestMatchingLinks(enabled, selectedVramGb, null, name)`.
-3. Filename: `Path.GetFileName(uri.LocalPath)` for an absolute URI, else the model is skipped
-   rather than probed under 1.x's `"unknown_file"` placeholder.
-4. Existing path: exact `Path.Combine(dir, fileName)` first, then
-   `Directory.GetFiles(dir, fileName, SearchOption.AllDirectories)` — models are commonly
-   filed into subfolders. Permission and IO errors yield "not found", never a throw.
+3. Filename: `FileDownloader.GetFileNameFromUrl` over the normalized URL — the SDK's own rule,
+   including the `filename=` query form. A name with no extension means the real name only
+   arrives with the server's Content-Disposition at download time; the model yields no target and
+   its row carries no marker, so it is never verified before download.
+4. Existing path: exact `Path.Combine(dir, fileName)` first, then a match by plain filename
+   equality (not a search pattern) against one recursive `Directory.GetFiles(dir, "*", ...)`
+   listing cached per destination directory for the whole scan — models are commonly filed into
+   subfolders, and a large model library must not be walked once per link. Permission and IO
+   errors yield "not found", never a throw.
 5. `AllPartsPresent` is true only when every selected link's file is present, matching 1.x:
    a half-downloaded multi-part model is not "already downloaded".
 
@@ -338,6 +342,7 @@ real test.
 | Verification throws | Warning line; install proceeds without redownload decisions — a file the user was never asked about is left alone. |
 | Mismatch dialog dismissed | Install does not start; the wizard stays on Confirm with a log line saying so. |
 | Cancel while the dialog is open | The page's cancellation token releases it; treated as dismissal. |
+| Link whose filename only comes from Content-Disposition (e.g. a Civitai `/api/download/models/<id>` URL) | No presence marker, not size-verified before install; the SDK re-checks by the served name at download time. |
 
 ## 7. Testing
 
@@ -353,7 +358,8 @@ Unit, in `DiffusionNexus.Installer.Tests`:
   set; no module contributes 0 to `SelectedVramProfile` for a workload without tiers.
 - **Scanner-versus-pipeline agreement**: for every catalog workload and every tier it declares,
   the scanner's chosen links equal `VramProfileHelper.SelectBestMatchingLinks` on the same
-  input. This is the test that stops the display and the install from drifting apart.
+  input, and the same filenames. This is the test that stops the display and the install from
+  drifting apart.
 - Presence: temp directories covering exact hit, nested hit, missing part of a multi-link
   model, unreadable directory.
 - `ModelPreflight`: no mismatches proceeds; mismatches prompt once and apply the URL sets to

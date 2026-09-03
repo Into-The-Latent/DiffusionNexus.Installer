@@ -229,7 +229,14 @@ public class InstallPageTests : BunitContext
         var workload = ContentWorkload();
         var settings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserSettings { DefaultTargetInstallFolder = @"C:\Installs" });
+            .ReturnsAsync(new UserSettings
+            {
+                // The real PreInstallationService validates this path against the filesystem
+                // (InstallFolderModule.CheckTargetFolder) -- a hard-coded "C:\Installs" fails on a
+                // developer machine that already has a non-empty folder there. A fresh per-test temp
+                // folder is always empty and never collides across parallel test runs.
+                DefaultTargetInstallFolder = Path.Combine(Path.GetTempPath(), $"dn-page-{Guid.NewGuid():N}")
+            });
 
         var source = new Mock<IWorkloadSource>();
         source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([workload]);
@@ -326,6 +333,37 @@ public class InstallPageTests : BunitContext
         page.Markup.Should().Contain("Ready to install", "a dismissed dialog must not advance");
         page.Markup.Should().Contain("not started");
         page.Markup.Should().NotContain("Installing");
+    }
+
+    [Fact]
+    public async Task A_second_Next_while_the_preflight_is_running_is_ignored()
+    {
+        // A second click landing before the disabled="@_preflightBusy" render commits must not
+        // dispatch a second preflight run -- the prompt service throws opening a second mismatch
+        // dialog on top of the first.
+        RegisterContent(EmptyScanner());
+        Services.AddSingleton(Mock.Of<IMismatchedFilePrompt>());
+        var preflightTcs = new TaskCompletionSource<PreflightResult>();
+        var preflight = Services.GetRequiredService<IModelPreflight>();
+        Mock.Get(preflight).Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .Returns(preflightTcs.Task);
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        // Location -> Content -> System -> Confirm.
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".checkbox input").Change(true); // disclaimer
+
+        var next = page.FindAll("button").Single(b => b.TextContent.Trim() == "Next");
+        var first = next.ClickAsync(new MouseEventArgs());
+        var second = next.ClickAsync(new MouseEventArgs());
+
+        preflightTcs.SetResult(new PreflightResult(true, null));
+        await first;
+        await second;
+
+        Mock.Get(preflight).Verify(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()), Times.Once);
+        page.Markup.Should().Contain("Installing");
     }
 
     [Fact]

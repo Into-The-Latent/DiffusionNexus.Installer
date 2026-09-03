@@ -20,8 +20,8 @@ real run can prove. Use a scratch install folder, never a real one.
    its catalog entry pairs torch 2.8.0 with CUDA 13.0, for which no wheel exists, so the pipeline
    would refuse it before step 1. That is a catalog data fix, not a missing module.
 3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
-   Wan 2.2 - GGUF appear (all disabled/"coming soon" — none are in the slice-1 installable set);
-   the Image cards do not.
+   Wan 2.2 - GGUF appear (all enabled now — LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3 and
+   Wan 2.2 - GGUF are Content-stage workloads); the Image cards do not.
    Note: the embedded seed predates the catalog's Audio workflow type, so no workload in it is
    tagged Audio yet (ACE-Step-1.5 is still `Image` in this snapshot) and no Audio filter button
    renders. Re-check this step once an Audio-tagged workload ships in the embedded catalog.
@@ -72,9 +72,10 @@ real run can prove. Use a scratch install folder, never a real one.
 6. Install Wan 2.2 - GGUF at tier 8 into a scratch folder — the heaviest case, 10 models and 26
    links. **Expect:** files land under the right `models\...` folders, the report shows no
    unexplained skips, and no row says "Requires more VRAM" for a model you expected.
-7. Re-run the same install over that folder after truncating one downloaded model file to a few
-   bytes. **Expect:** pressing Next on Confirm shows ONE dialog listing that file; Continue with it
-   ticked re-downloads it; Cancel installation leaves you on Confirm with a notice.
+7. Re-run the same install over that folder after truncating one downloaded Hugging Face model
+   file (not the Civitai `Krea 2 Identity Edit` download, whose name only comes from the server)
+   to a few bytes. **Expect:** pressing Next on Confirm shows ONE dialog listing that file;
+   Continue with it ticked re-downloads it; Cancel installation leaves you on Confirm with a notice.
 
 ## 4. Known limitations
 

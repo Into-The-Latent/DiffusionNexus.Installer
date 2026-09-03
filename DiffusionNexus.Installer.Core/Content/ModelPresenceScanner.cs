@@ -1,7 +1,9 @@
 // DiffusionNexus.Installer.Core/Content/ModelPresenceScanner.cs
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
+using DiffusionNexus.Installer.SDK.Models.Helpers;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using PipelineVram = DiffusionNexus.Installer.SDK.Services.Installation.Utilities.VramProfileHelper;
 
 namespace DiffusionNexus.Installer.Core.Content;
@@ -52,12 +54,21 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var overrides = new Dictionary<string, string>(request.FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+        // TryAdd, not the dictionary constructor: two override keys differing only by case would
+        // otherwise throw on construction instead of just letting the first one win.
+        var overrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in request.FolderPathOverrides)
+            overrides.TryAdd(key, value);
+
+        // One recursive listing per destination directory for this whole scan, not one per missing
+        // target -- a large model library and a workload with dozens of links would otherwise walk
+        // the same tree over and over on every tier change.
+        var directoryCache = new DirectoryListingCache();
         var results = new List<ModelPresence>();
 
         foreach (var model in request.Workload.ModelDownloads.Where(m => m.Enabled))
         {
-            var targets = TargetsFor(request, model, overrides);
+            var targets = TargetsFor(request, model, overrides, directoryCache);
             var allPresent = targets.Count > 0 && targets.All(t => t.ExistingPath is not null);
             results.Add(new ModelPresence(model.Id, allPresent, allPresent ? targets[^1].ExistingPath : null, targets));
         }
@@ -65,7 +76,8 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         return results;
     }
 
-    private static List<ModelFileTarget> TargetsFor(ModelScanRequest request, ModelDownload model, Dictionary<string, string> overrides)
+    private static List<ModelFileTarget> TargetsFor(
+        ModelScanRequest request, ModelDownload model, Dictionary<string, string> overrides, DirectoryListingCache directoryCache)
     {
         var modelDestination = ModelDestinationResolver.Resolve(
             request.Workload, model, request.RepositoryPath, request.ModelBaseFolder, overrides);
@@ -80,7 +92,7 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
             if (request.SelectedVramGb > 0 && !PipelineVram.VramProfileFitsSelection(model.VramProfile, request.SelectedVramGb))
                 return [];
 
-            return Target(model, model.Url, modelDestination) is { } single ? [single] : [];
+            return Target(model, model.Url, modelDestination, directoryCache) is { } single ? [single] : [];
         }
 
         var links = PipelineVram.SelectBestMatchingLinks(enabledLinks, request.SelectedVramGb, null, model.Name);
@@ -94,7 +106,7 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
                 ? modelDestination
                 : ResolveLinkDestination(link.Destination, request.RepositoryPath);
 
-            if (Target(model, link.Url, destination) is { } target) targets.Add(target);
+            if (Target(model, link.Url, destination, directoryCache) is { } target) targets.Add(target);
         }
 
         return targets;
@@ -112,37 +124,75 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         return Path.IsPathRooted(resolved) ? resolved : Path.Combine(repositoryPath, resolved);
     }
 
-    private static ModelFileTarget? Target(ModelDownload model, string url, string destinationDirectory)
+    private static ModelFileTarget? Target(ModelDownload model, string url, string destinationDirectory, DirectoryListingCache directoryCache)
     {
         var fileName = FileNameFromUrl(url);
         if (fileName is null) return null;
 
-        return new ModelFileTarget(model, url, destinationDirectory, fileName, FindFile(destinationDirectory, fileName));
+        return new ModelFileTarget(model, url, destinationDirectory, fileName, directoryCache.FindFile(destinationDirectory, fileName));
     }
 
     private static string? FileNameFromUrl(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
-
-        var name = Path.GetFileName(uri.LocalPath);
-        return string.IsNullOrWhiteSpace(name) ? null : name;
+        // The SDK's own rule, over the SDK's own normalization (HF /blob/ -> /resolve/), so the
+        // scanner names files exactly as FileDownloader will. A name with no extension means the
+        // real name only arrives with the server's Content-Disposition at download time; such a file
+        // cannot be located or verified before the download, so it yields no target and the row
+        // honestly carries no marker.
+        var name = FileDownloader.GetFileNameFromUrl(DownloadUrlNormalizer.Normalize(url));
+        if (string.IsNullOrWhiteSpace(name) || !name.Contains('.')) return null;
+        return name;
     }
 
-    /// <summary>Exact path first, then any subfolder. Anything the filesystem refuses counts as absent.</summary>
-    private static string? FindFile(string directory, string fileName)
+    /// <summary>
+    /// Caches one recursive directory listing per destination directory for the lifetime of a
+    /// single <see cref="Scan"/> call. Matching is by exact filename equality (not a search
+    /// pattern), so a filename containing '*' or '?' can never act as a wildcard against other
+    /// files. Anything the filesystem refuses counts as absent, and the failure itself is cached so
+    /// a repeatedly-unreadable directory is not retried for every remaining target.
+    /// </summary>
+    private sealed class DirectoryListingCache
     {
-        try
-        {
-            var exact = Path.Combine(directory, fileName);
-            if (File.Exists(exact)) return exact;
-            if (!Directory.Exists(directory)) return null;
+        private readonly Dictionary<string, string[]> _listings = new(StringComparer.OrdinalIgnoreCase);
 
-            return Directory.GetFiles(directory, fileName, SearchOption.AllDirectories).FirstOrDefault();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
-            or NotSupportedException or System.Security.SecurityException)
+        public string? FindFile(string directory, string fileName)
         {
-            return null;
+            try
+            {
+                var exact = Path.Combine(directory, fileName);
+                if (File.Exists(exact)) return exact;
+            }
+            catch (Exception ex) when (IsFileSystemException(ex))
+            {
+                return null;
+            }
+
+            var files = ListDirectory(directory);
+            return files.FirstOrDefault(f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));
         }
+
+        private string[] ListDirectory(string directory)
+        {
+            if (_listings.TryGetValue(directory, out var cached)) return cached;
+
+            string[] files;
+            try
+            {
+                files = Directory.Exists(directory)
+                    ? Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+                    : [];
+            }
+            catch (Exception ex) when (IsFileSystemException(ex))
+            {
+                files = [];
+            }
+
+            _listings[directory] = files;
+            return files;
+        }
+
+        private static bool IsFileSystemException(Exception ex) =>
+            ex is IOException or UnauthorizedAccessException or ArgumentException
+                or NotSupportedException or System.Security.SecurityException;
     }
 }
