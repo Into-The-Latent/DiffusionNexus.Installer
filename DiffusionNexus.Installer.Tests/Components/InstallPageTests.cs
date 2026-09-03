@@ -224,10 +224,12 @@ public class InstallPageTests : BunitContext
     }
 
     /// <summary>Registers the content workload with a registry that mirrors production's Content stage.</summary>
+    private Mock<IUserSettingsRepository>? _contentSettings;
+
     private Mock<IInstallSession> RegisterContent(Mock<IModelPresenceScanner> scanner)
     {
         var workload = ContentWorkload();
-        var settings = new Mock<IUserSettingsRepository>();
+        var settings = _contentSettings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings
             {
@@ -295,6 +297,37 @@ public class InstallPageTests : BunitContext
         page.FindComponent<VramProfilePanel>().Instance.Changed.HasDelegate.Should().BeTrue();
         page.FindComponent<ModelSelectionPanel>().Instance.Changed.HasDelegate.Should().BeTrue();
         page.FindComponent<WorkflowSelectionPanel>().Instance.Changed.HasDelegate.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Leaving_the_Location_stage_saves_the_folder_settings()
+    {
+        // The classic installer's Folder Settings window had a Save button; here the answers on
+        // the folders page are remembered when the user moves on from it.
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.Find(".advanced-toggle").Click();
+        page.Find("[data-folder-key='loras']").Input("MyLoras");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        _contentSettings!.Verify(s => s.SaveAsync(
+            It.Is<UserSettings>(u => u.DefaultLorasFolder == "MyLoras"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void A_settings_file_that_cannot_be_written_shows_a_notice_but_does_not_block_the_wizard()
+    {
+        RegisterContent(EmptyScanner());
+        _contentSettings!.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("disk full"));
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        page.FindComponent<VramProfilePanel>().Should().NotBeNull("the answers still apply to this run");
+        page.Markup.Should().Contain("could not be saved").And.Contain("disk full");
     }
 
     [Fact]

@@ -73,14 +73,14 @@ public class SelectionSyncTests
     }
 
     [Fact]
-    public async Task Opting_out_of_saved_folders_empties_the_selection_overrides()
+    public async Task Resetting_the_folder_types_to_standard_empties_the_selection_overrides()
     {
-        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultLorasFolder = @"E:\Loras" }));
+        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultLorasFolder = "Lora" }));
         var selection = Selection(RepositoryType.ComfyUI);
         await module.InitializeAsync(selection);
         selection.FolderPathOverrides.Should().NotBeEmpty();
 
-        module.UseSavedFolderDefaults = false;
+        module.ResetFolderTypesToStandard();
 
         selection.FolderPathOverrides.Should().BeEmpty();
     }

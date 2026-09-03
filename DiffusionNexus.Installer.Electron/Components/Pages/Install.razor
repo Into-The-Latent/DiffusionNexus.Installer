@@ -80,12 +80,17 @@ else
             <p class="validation-error">@_preflightNotice</p>
         }
 
+        @if (_settingsNotice is not null)
+        {
+            <p class="validation-error">@_settingsNotice</p>
+        }
+
         <div class="wizard-actions">
             @* Always available, including at stage 0. A GPU-blocked System stage validates false
                forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
             <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
-            <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy)" @onclick="Back">Back</button>
-            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy)" @onclick="Next">Next</button>
+            <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy || _savingSettings)" @onclick="Back">Back</button>
+            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">Next</button>
         </div>
 
         @foreach (var error in _run.ValidationErrors)
@@ -106,6 +111,8 @@ else
     private bool _preflightBusy;
     private string? _preflightNotice;
     private string? _preflightWarning;
+    private string? _settingsNotice;
+    private bool _savingSettings;
 
     protected override async Task OnInitializedAsync()
     {
@@ -175,7 +182,7 @@ else
         // A second click landing before the disabled="@_preflightBusy" render commits would
         // otherwise dispatch a second preflight run while one is already in flight -- and the
         // prompt service throws opening a second mismatch dialog on top of the first.
-        if (_preflightBusy) return;
+        if (_preflightBusy || _savingSettings) return;
 
         if (_run!.CurrentStage == WizardStage.Confirm)
         {
@@ -201,6 +208,35 @@ else
             finally
             {
                 _preflightBusy = false;
+            }
+        }
+
+        if (_run.CurrentStage == WizardStage.Location)
+        {
+            // The classic installer's Folder Settings window had a Save button. Here the folders
+            // page is remembered when the user moves on from it, so the next install starts from
+            // the same answers. Guarded like the preflight: a second click landing during the
+            // save would otherwise advance twice and skip a stage.
+            _savingSettings = true;
+            _settingsNotice = null;
+            try
+            {
+                foreach (var folders in _run.CurrentModules.OfType<ComfyFoldersModule>())
+                    await folders.PersistAsync(_pageCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // A settings file that cannot be written must not stop the install; the answers
+                // still apply to this run.
+                _settingsNotice = $"Your folder settings could not be saved: {ex.Message}";
+            }
+            finally
+            {
+                _savingSettings = false;
             }
         }
 

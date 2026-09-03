@@ -67,10 +67,10 @@ public class OptionsFidelityTests
     }
 
     [Fact]
-    public async Task Declining_the_saved_folders_sends_only_the_library_folder()
+    public async Task Resetting_the_folder_types_sends_only_the_library_folder()
     {
-        // The opt-out has to actually reach the options, not just the panel: with it unticked the
-        // YAML must be generated from the base path alone.
+        // The reset has to actually reach the options, not just the panel: after it the YAML must
+        // be generated from the base path alone.
         var module = ComfyFolders(new UserSettings
         {
             DefaultModelBaseFolder = @"D:\Models",
@@ -79,8 +79,9 @@ public class OptionsFidelityTests
         });
 
         await module.InitializeAsync(Selection());
-        module.SavedFolderCount.Should().Be(2);
-        module.UseSavedFolderDefaults = false;
+        module.HasCustomFolders.Should().BeTrue();
+        module.ResetFolderTypesToStandard();
+        module.RemoveAdditionalFolder(module.AdditionalFolders.Single());
 
         var draft = new InstallationOptionsDraft();
         module.Contribute(draft);

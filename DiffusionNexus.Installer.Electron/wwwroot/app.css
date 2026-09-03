@@ -611,3 +611,100 @@ progress {
     gap: .6rem;
     margin-top: 1.25rem;
 }
+
+/* Folders page: the advanced section is a disclosure, closed by default. */
+.advanced-toggle {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin-top: 1rem;
+    padding: .35rem 0;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: .9rem;
+    cursor: pointer;
+}
+
+.advanced-toggle:hover {
+    color: var(--text);
+}
+
+.advanced-chevron {
+    display: inline-block;
+    width: 1rem;
+    text-align: center;
+}
+
+.advanced {
+    margin-top: .5rem;
+    padding: .75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.advanced-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-top: 1rem;
+    margin-bottom: .4rem;
+}
+
+.advanced-head h3 {
+    margin: 0;
+    font-size: .8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.btn-small {
+    padding: .3rem .7rem;
+    font-size: .8rem;
+}
+
+.btn-icon {
+    padding: .3rem .6rem;
+    line-height: 1;
+}
+
+.folder-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr max-content 1fr;
+    gap: .4rem .75rem;
+    align-items: center;
+}
+
+.folder-grid label {
+    font-size: .85rem;
+    color: var(--muted);
+}
+
+.folder-grid input {
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: .4rem .6rem;
+    font-family: inherit;
+    font-size: .85rem;
+}
+
+.folder-grid input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+@media (max-width: 720px) {
+    .folder-grid {
+        grid-template-columns: max-content 1fr;
+    }
+}
+
+.additional-folder {
+    margin-top: .5rem;
+}
