@@ -1,0 +1,31 @@
+@using DiffusionNexus.Installer.Electron.Services
+
+@* The third-party notices shown OVER the current page. A navigation to /licenses would dispose
+   the wizard the user is about to finish; this keeps every answer where it is. *@
+
+@if (Open)
+{
+    <div class="modal-backdrop">
+        <div class="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="licences-title">
+            <h2 id="licences-title">Third-party licences</h2>
+            <p class="panel-hint">
+                The DiffusionNexus Installer is built from open-source components. Their copyright
+                notices and licence texts follow. Electron's own components (Chromium, Node.js)
+                carry their notices as <code>LICENSE.electron.txt</code> and
+                <code>LICENSES.chromium.html</code> next to the application.
+            </p>
+            <pre class="notices notices-modal">@ThirdPartyNotices.Load()</pre>
+            <div class="modal-actions">
+                <button type="button" class="btn-primary" data-role="close" @onclick="Close">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+
+    [Parameter] public EventCallback Closed { get; set; }
+
+    private Task Close() => Closed.InvokeAsync();
+}

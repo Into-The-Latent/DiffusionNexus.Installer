@@ -1,11 +1,14 @@
 @using DiffusionNexus.Installer.Core.Modules
+@using DiffusionNexus.Installer.Electron.Components.Shared
 
 <section class="panel panel-warning">
     <h2>Software disclaimer</h2>
     <p class="disclaimer-text">@DisclaimerModule.Text</p>
     <p class="disclaimer-text">
         The installer itself is built from open-source components.
-        <a href="/licenses">Third-party licences</a>
+        @* A button, not a link: navigating to /licenses would dispose the wizard the user is one
+           click from finishing. The notices open over this page instead. *@
+        <button type="button" class="link-button" data-role="licences" @onclick="ShowLicences">Third-party licences</button>
     </p>
     <label class="checkbox">
         <input type="checkbox" checked="@Module.Accepted" @onchange="OnAcceptedChanged" />
@@ -13,10 +16,18 @@
     </label>
 </section>
 
+<LicensesModal Open="_licencesOpen" Closed="HideLicences" />
+
 @code {
     [Parameter, EditorRequired] public DisclaimerModule Module { get; set; } = default!;
 
     [Parameter] public EventCallback Changed { get; set; }
+
+    private bool _licencesOpen;
+
+    private void ShowLicences() => _licencesOpen = true;
+
+    private void HideLicences() => _licencesOpen = false;
 
     private async Task OnAcceptedChanged(ChangeEventArgs e)
     {

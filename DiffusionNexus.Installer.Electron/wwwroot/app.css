@@ -761,3 +761,19 @@ progress {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+
+/* A button that reads as a link, for actions that must not navigate (e.g. opening a dialog). */
+.link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.notices-modal {
+    max-height: 60vh;
+    margin-top: .5rem;
+}

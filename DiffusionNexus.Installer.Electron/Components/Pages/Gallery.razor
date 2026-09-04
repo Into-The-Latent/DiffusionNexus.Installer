@@ -89,15 +89,19 @@ else
         </div>
     }
 
-    <p class="gallery-footer">
-        <a href="/updates">Version and updates</a>
-        @if (ShowDeveloperTools)
-        {
-            <span> | </span>
-            <a href="/debug">Developer tools</a>
-        }
-    </p>
 }
+
+@* Outside every catalog branch: the footer must be reachable whatever the catalog did. *@
+<p class="gallery-footer">
+    <a href="/updates">Version and updates</a>
+    <span> | </span>
+    <a href="/licenses">Third-party licences</a>
+    @if (ShowDeveloperTools)
+    {
+        <span> | </span>
+        <a href="/debug">Developer tools</a>
+    }
+</p>
 
 @code {
     /// <summary>

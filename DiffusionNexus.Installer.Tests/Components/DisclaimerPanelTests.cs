@@ -9,15 +9,23 @@ namespace DiffusionNexus.Installer.Tests.Components;
 public class DisclaimerPanelTests : BunitContext
 {
     [Fact]
-    public void Links_to_the_third_party_licences_of_the_installer_itself()
+    public void Shows_the_third_party_licences_in_a_dialog_without_leaving_the_wizard()
     {
-        // The disclaimer talks about third-party frameworks the installer downloads. The
-        // installer is itself built from open-source components, and their notices must be one
-        // click away from the place the user accepts the terms.
+        // The first version linked to a page. That threw away the wizard the user was one click
+        // from finishing, and "Back" landed on the gallery. The notices open over the Confirm
+        // screen instead, so nothing the user answered is lost.
         var cut = Render<DisclaimerPanel>(p => p.Add(x => x.Module, new DisclaimerModule()));
 
-        var link = cut.Find("a[href='/licenses']");
-        link.TextContent.Should().Contain("Third-party licences");
+        cut.FindAll("a[href='/licenses']").Should().BeEmpty("a navigation would discard the wizard");
+        cut.FindAll(".modal-backdrop").Should().BeEmpty();
         cut.Markup.Should().Contain("open-source components");
+
+        cut.Find("button[data-role='licences']").Click();
+
+        cut.Find(".modal-backdrop pre.notices").TextContent.Should().Contain("THIRD-PARTY SOFTWARE NOTICES AND INFORMATION");
+
+        cut.Find(".modal-backdrop button[data-role='close']").Click();
+
+        cut.FindAll(".modal-backdrop").Should().BeEmpty();
     }
 }
