@@ -40,8 +40,12 @@ public class DisclaimerPanelTests : BunitContext
         cut.Find(".modal-backdrop .modal-card").ClassList.Should().Contain("modal-card-scroll");
         cut.Find(".modal-backdrop .modal-head button[data-role='close-top']").Should().NotBeNull("a close control must be visible without scrolling");
 
-        cut.Find(".modal-backdrop .modal-card").Click();
-        cut.FindAll(".modal-backdrop").Should().ContainSingle("a click inside the card is not a dismissal");
+        // bUnit models @onclick:stopPropagation literally: a click inside the card finds no
+        // handler of its own and is NOT allowed to bubble to the backdrop's, so it throws rather
+        // than closing. In the browser the same rule means the dialog stays open.
+        var insideCard = () => cut.Find(".modal-backdrop .modal-card pre").Click();
+        insideCard.Should().Throw<MissingEventHandlerException>("a click inside the card must not reach the backdrop's close handler");
+        cut.FindAll(".modal-backdrop").Should().ContainSingle();
 
         cut.Find(".modal-backdrop").Click();
         cut.FindAll(".modal-backdrop").Should().BeEmpty("a click on the dark backdrop closes it");
