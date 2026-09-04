@@ -1,0 +1,19 @@
+@page "/licenses"
+@using DiffusionNexus.Installer.Electron.Services
+
+<PageTitle>Third-party licences</PageTitle>
+
+<div class="shell">
+    <header>
+        <h1>Third-party licences</h1>
+        <p class="host">
+            The DiffusionNexus Installer is built from open-source components. Their copyright
+            notices and licence texts are reproduced below. The notices for Electron's own
+            components (Chromium, Node.js) are installed next to the application as
+            <code>LICENSE.electron.txt</code> and <code>LICENSES.chromium.html</code>.
+        </p>
+        <p><a href="/">Back to workloads</a></p>
+    </header>
+
+    <pre class="notices">@ThirdPartyNotices.Load()</pre>
+</div>

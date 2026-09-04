@@ -42,6 +42,12 @@ jobs:
           # negotiable, so map one to the other here or every restore 401s.
           GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
 
+      # A new dependency must not ship unattributed. Regenerates the notices in memory from the
+      # restore graph and the committed npm inventory and fails on any drift.
+      - name: Third-party notices are current
+        shell: pwsh
+        run: pwsh Scripts/Generate-ThirdPartyNotices.ps1 -Check
+
       - name: Build
         run: dotnet build DiffusionNexus.Installer.slnx -c Release --no-restore -p:UseLocalSDK=false
         env:

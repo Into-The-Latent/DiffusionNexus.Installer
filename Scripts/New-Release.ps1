@@ -70,6 +70,13 @@ Write-Host "Step 1/3: dotnet publish (SDK from NuGet, not the local checkout)" -
 dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -c Release --nologo -p:UseLocalSDK=false
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
+# The publish above is the first moment the packaged npm tree exists, so this is where the
+# notices can be checked against what actually ships. Drift means a dependency changed and the
+# committed notices were not regenerated: fix that and commit before releasing.
+Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
+pwsh (Join-Path $repoRoot 'Scripts\Generate-ThirdPartyNotices.ps1') -Check
+if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run Scripts/Generate-ThirdPartyNotices.ps1, commit, and release again." }
+
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
 
 # The settings below are written INTO a generated config rather than passed as electron-builder's
