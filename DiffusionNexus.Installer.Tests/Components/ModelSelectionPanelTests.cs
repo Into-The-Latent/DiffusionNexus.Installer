@@ -136,8 +136,12 @@ public class ModelSelectionPanelTests : BunitContext
         selection.SelectedVramProfile = 16;
         cut.Render();
 
-        module.LastScannedTier.Should().Be(16);
-        scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().Be(scansBefore + 1);
+        // The rescan runs off the render thread now, so it lands a beat after the render.
+        cut.WaitForAssertion(() =>
+        {
+            module.LastScannedTier.Should().Be(16);
+            scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().Be(scansBefore + 1);
+        });
     }
 
     [Fact]
