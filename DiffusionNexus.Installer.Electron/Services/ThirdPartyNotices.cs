@@ -11,7 +11,14 @@ public static class ThirdPartyNotices
 {
     public const string ResourceName = "THIRD-PARTY-NOTICES.txt";
 
-    public static string Load()
+    // Read once: the text sits in the render tree of the Licences page and the dialog, and every
+    // re-render of the Confirm stage while the dialog is open would otherwise re-read and
+    // re-decode ~87 KB on the circuit's sync context.
+    private static readonly Lazy<string> Text = new(ReadResource, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    public static string Load() => Text.Value;
+
+    private static string ReadResource()
     {
         using var stream = typeof(ThirdPartyNotices).Assembly.GetManifestResourceStream(ResourceName)
             ?? throw new InvalidOperationException(

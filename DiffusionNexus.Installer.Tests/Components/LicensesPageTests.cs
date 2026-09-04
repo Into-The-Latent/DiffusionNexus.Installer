@@ -24,6 +24,13 @@ public class LicensesPageTests : BunitContext
     }
 
     [Fact]
+    public void The_notices_are_read_once_not_on_every_render()
+    {
+        // Review finding: 87 KB re-read and re-decoded on every re-render while the dialog was open.
+        ReferenceEquals(ThirdPartyNotices.Load(), ThirdPartyNotices.Load()).Should().BeTrue();
+    }
+
+    [Fact]
     public void The_page_shows_the_notices_and_a_way_back()
     {
         var cut = Render<Licenses>();

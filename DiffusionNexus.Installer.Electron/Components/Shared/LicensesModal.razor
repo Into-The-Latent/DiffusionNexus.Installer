@@ -1,20 +1,28 @@
 @using DiffusionNexus.Installer.Electron.Services
+@using Microsoft.AspNetCore.Components.Web
 
 @* The third-party notices shown OVER the current page. A navigation to /licenses would dispose
    the wizard the user is about to finish; this keeps every answer where it is.
 
-   The notices run to ~1,800 lines, so the card is a flex column capped at the window height and
-   the <pre> is the part that scrolls. A close control sits in the header where it is visible
-   without scrolling, and a click on the backdrop dismisses as well. *@
+   The notices run to ~1,800 lines, so the <pre> is the part that scrolls inside the capped card.
+   A close control sits in the header where it is visible without scrolling, Escape closes, and
+   focus lands on that control when the dialog opens so a keyboard user is inside it at once.
+
+   Backdrop dismissal is decided on where the press STARTED, not where the click landed: a
+   text selection dragged out of the card releases over the backdrop and would otherwise fire a
+   click that throws the dialog and the selection away. *@
 
 @if (Open)
 {
-    <div class="modal-backdrop" @onclick="Close">
+    <div class="modal-backdrop" @onmousedown="OnBackdropMouseDown" @onclick="OnBackdropClick">
         <div class="modal-card modal-card-wide modal-card-scroll" role="dialog" aria-modal="true"
-             aria-labelledby="licences-title" @onclick:stopPropagation="true">
+             aria-labelledby="licences-title" tabindex="-1"
+             @onmousedown="OnCardMouseDown" @onmousedown:stopPropagation="true"
+             @onclick:stopPropagation="true" @onkeydown="OnKeyDown">
             <div class="modal-head">
                 <h2 id="licences-title">Third-party licences</h2>
-                <button type="button" class="btn-secondary btn-icon" data-role="close-top" title="Close" @onclick="Close">✕</button>
+                <button type="button" class="btn-secondary btn-icon" data-role="close-top" title="Close"
+                        @ref="_closeButton" @onclick="Close">✕</button>
             </div>
             <p class="panel-hint">
                 The DiffusionNexus Installer is built from open-source components. Their copyright
@@ -35,5 +43,39 @@
 
     [Parameter] public EventCallback Closed { get; set; }
 
+    private ElementReference _closeButton;
+    private bool _wasOpen;
+    private bool _pressStartedOnBackdrop;
+
     private Task Close() => Closed.InvokeAsync();
+
+    private void OnBackdropMouseDown() => _pressStartedOnBackdrop = true;
+
+    private void OnCardMouseDown() => _pressStartedOnBackdrop = false;
+
+    private async Task OnBackdropClick()
+    {
+        var dismiss = _pressStartedOnBackdrop;
+        _pressStartedOnBackdrop = false;
+        if (dismiss) await Close();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await Close();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Move focus into the dialog the moment it opens (once per opening, not per render).
+        if (Open && !_wasOpen)
+        {
+            _wasOpen = true;
+            try { await _closeButton.FocusAsync(); } catch (Exception) { /* no JS runtime in tests; nothing to do */ }
+        }
+        else if (!Open)
+        {
+            _wasOpen = false;
+        }
+    }
 }

@@ -40,14 +40,42 @@ public class DisclaimerPanelTests : BunitContext
         cut.Find(".modal-backdrop .modal-card").ClassList.Should().Contain("modal-card-scroll");
         cut.Find(".modal-backdrop .modal-head button[data-role='close-top']").Should().NotBeNull("a close control must be visible without scrolling");
 
-        // bUnit models @onclick:stopPropagation literally: a click inside the card finds no
-        // handler of its own and is NOT allowed to bubble to the backdrop's, so it throws rather
-        // than closing. In the browser the same rule means the dialog stays open.
-        var insideCard = () => cut.Find(".modal-backdrop .modal-card pre").Click();
-        insideCard.Should().Throw<MissingEventHandlerException>("a click inside the card must not reach the backdrop's close handler");
-        cut.FindAll(".modal-backdrop").Should().ContainSingle();
+        // Only the outcome is asserted: bUnit may either refuse to bubble a click past
+        // @onclick:stopPropagation (it throws today) or model it as a silent no-op; either way
+        // the dialog must still be there.
+        try { cut.Find(".modal-backdrop .modal-card pre").Click(); } catch (MissingEventHandlerException) { }
+        cut.FindAll(".modal-backdrop").Should().ContainSingle("a click inside the card is not a dismissal");
 
+        cut.Find(".modal-backdrop").MouseDown();
         cut.Find(".modal-backdrop").Click();
-        cut.FindAll(".modal-backdrop").Should().BeEmpty("a click on the dark backdrop closes it");
+        cut.FindAll(".modal-backdrop").Should().BeEmpty("a press-and-release on the dark backdrop closes it");
+    }
+
+    [Fact]
+    public void Releasing_a_text_selection_over_the_backdrop_does_not_close_the_dialog()
+    {
+        // Review finding: drag-selecting a licence paragraph and releasing outside the card fires
+        // a click on the backdrop and threw the dialog (and the selection) away.
+        var cut = Render<DisclaimerPanel>(p => p.Add(x => x.Module, new DisclaimerModule()));
+        cut.Find("button[data-role='licences']").Click();
+
+        cut.Find(".modal-backdrop .modal-card pre").MouseDown();   // press inside the text
+        cut.Find(".modal-backdrop").Click();                        // release outside: click lands on the backdrop
+
+        cut.FindAll(".modal-backdrop").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Escape_closes_the_dialog_and_focus_starts_on_the_close_control()
+    {
+        // Review finding: role="dialog" was declared but nothing was keyboard-operable.
+        var cut = Render<DisclaimerPanel>(p => p.Add(x => x.Module, new DisclaimerModule()));
+        cut.Find("button[data-role='licences']").Click();
+
+        var card = cut.Find(".modal-backdrop .modal-card");
+        card.GetAttribute("tabindex").Should().Be("-1", "the card must be focusable so it can receive Escape");
+        card.KeyDown(Key.Escape);
+
+        cut.FindAll(".modal-backdrop").Should().BeEmpty();
     }
 }

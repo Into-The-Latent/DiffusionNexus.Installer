@@ -20,6 +20,18 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void every_modal_card_is_capped_to_the_window_and_scrolls()
+    {
+        // Review finding: the cap was opt-in (.modal-card-scroll) so MismatchModal, which lists
+        // every mismatched file, kept the bug LicensesModal was fixed for.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+        var card = Regex.Match(css, @"\.modal-card\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        card.Should().Contain("max-height: calc(100vh - 3rem)").And.Contain("overflow: auto").And.Contain("margin: auto");
+        var backdrop = Regex.Match(css, @"\.modal-backdrop\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        backdrop.Should().Contain("align-items: flex-start").And.Contain("overflow: auto");
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");
@@ -34,8 +46,10 @@ public class StylesheetTests
             if (ch == '\n') line++;
             if (ch == '{') depth++;
             if (ch == '}') depth--;
+            // No upper bound: @media > @keyframes > frame, @supports inside @media and native
+            // nesting all legitimately go deeper than two. The failure this guards (a dropped
+            // closing brace) shows up as depth != 0 at the end regardless.
             depth.Should().BeGreaterThanOrEqualTo(0, $"a '}}' without an opener appears around line {line}");
-            depth.Should().BeLessThanOrEqualTo(2, $"blocks nest deeper than @media > rule around line {line}, which means a '}}' is missing above");
         }
 
         depth.Should().Be(0, "every block that is opened must be closed");

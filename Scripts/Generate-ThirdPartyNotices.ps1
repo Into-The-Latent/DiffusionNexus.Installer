@@ -22,19 +22,33 @@
     Project whose restore graph is read. Defaults to DiffusionNexus.Installer.Electron.
 
 .PARAMETER NpmModulesDir
-    The node_modules folder of the PACKAGED app. Defaults to the Release publish output. When it
-    exists the npm inventory file is regenerated from it (or, with -Check, compared against it).
+    The node_modules folder of the PACKAGED app. Defaults to the Release publish output. Read only
+    with -RefreshNpm.
+
+.PARAMETER RefreshNpm
+    Rescan NpmModulesDir and rewrite Scripts/license-data/npm-inventory.json (or, with -Check,
+    compare the rescan against the committed inventory). Explicit on purpose: a plain run must
+    never silently regress the inventory from a weeks-old publish folder. Run 'dotnet publish
+    -c Release' first.
+
+.PARAMETER AllowLocalSdk
+    Accept a restore graph in which the DiffusionNexus SDK is resolved as local project
+    references. Off by default: the committed notices must come from the PACKAGE graph CI
+    reproduces ('dotnet restore ... -p:UseLocalSDK=false'), or CI fails "out of date" on an
+    unrelated PR the moment the local SDK checkout gains a dependency the package lacks.
 
 .PARAMETER OutputPath
     Where to write the notices file. Defaults to THIRD-PARTY-NOTICES.txt at repo root.
 
 .PARAMETER Check
-    Do not write. Compare the committed notices (and, when NpmModulesDir exists, the committed
-    npm inventory) against what would be generated and exit non-zero on any difference.
-    Comparison ignores line-ending style.
+    Do not write. Compare the committed notices (and, with -RefreshNpm, the committed npm
+    inventory) against what would be generated and exit non-zero on any difference. Comparison
+    ignores line-ending style but is otherwise exact, including case.
 
 .EXAMPLE
-    pwsh Scripts/Generate-ThirdPartyNotices.ps1
+    dotnet restore DiffusionNexus.Installer.Electron -p:UseLocalSDK=false
+    dotnet publish DiffusionNexus.Installer.Electron -c Release -p:UseLocalSDK=false
+    pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm
 
 .EXAMPLE
     pwsh Scripts/Generate-ThirdPartyNotices.ps1 -Check
@@ -44,6 +58,8 @@ param(
     [string]$ProjectDir = 'DiffusionNexus.Installer.Electron',
     [string]$NpmModulesDir,
     [string]$OutputPath,
+    [switch]$RefreshNpm,
+    [switch]$AllowLocalSdk,
     [switch]$Check
 )
 
@@ -73,6 +89,24 @@ Write-Host "NuGet cache           : $nugetRoot"
 $graph = Get-Content $assets -Raw | ConvertFrom-Json
 $supplements = Get-Content (Join-Path $dataDir 'supplements.json') -Raw | ConvertFrom-Json
 
+# The committed file must come from the graph CI reproduces. Directory.Build.targets swaps the SDK
+# PackageReferences for ProjectReferences whenever the SDK checkout exists next door, and that
+# graph pulls transitives from whatever branch the checkout is on.
+$localSdk = @($graph.libraries.PSObject.Properties | Where-Object { $_.Value.type -eq 'project' -and $_.Name -like 'DiffusionNexus.Installer.SDK*' })
+if ($localSdk.Count -gt 0 -and -not $AllowLocalSdk) {
+    throw "The restore graph resolves the SDK as LOCAL project references ($($localSdk.Count) entries). Run 'dotnet restore $ProjectDir -p:UseLocalSDK=false' (needs GITHUB_PACKAGES_TOKEN) and generate again, or pass -AllowLocalSdk if you really mean it."
+}
+
+# Build-only, auto-referenced SDK assets (Microsoft.AspNetCore.App.Internal.Assets: suppressParent
+# All, never shipped). Their version follows the INSTALLED SDK, so listing them would make the CI
+# freshness gate fail on every SDK patch bump.
+$autoReferenced = @()
+foreach ($fw in $graph.project.frameworks.PSObject.Properties) {
+    foreach ($dep in $fw.Value.dependencies.PSObject.Properties) {
+        if ($dep.Value.autoReferenced -eq $true) { $autoReferenced += $dep.Name }
+    }
+}
+
 # ------------------------------------------------------- collect .NET packages
 function Get-NuspecField {
     param([string]$Xml, [string]$Field)
@@ -94,8 +128,10 @@ foreach ($entry in $graph.libraries.PSObject.Properties) {
         if ($id.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { $skip = $true; break }
     }
     if ($skip) { continue }
+    if ($autoReferenced -contains $id) { continue }
 
-    $pkgDir = Join-Path $nugetRoot $id.ToLowerInvariant() $version
+    # NuGet's global-packages layout lower-cases BOTH segments (SomePkg/1.0.0-Beta2 -> somepkg/1.0.0-beta2).
+    $pkgDir = Join-Path $nugetRoot $id.ToLowerInvariant() $version.ToLowerInvariant()
     $nuspec = Get-ChildItem -Path $pkgDir -Filter '*.nuspec' -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $nuspec) { throw "Package '$id/$version' is not in the NuGet cache. Run 'dotnet restore' first." }
 
@@ -141,20 +177,43 @@ foreach ($c in ($components | Where-Object { $_.License -eq 'FILE' })) {
     }
 }
 
+# ---------------------------------------------- runtime packs (self-contained)
+# Self-contained publishing embeds the .NET runtime packs, and each ships its own
+# THIRD-PARTY-NOTICES.TXT (zlib, Brotli, the Unicode data, ...). The restore graph lists them as
+# downloadDependencies; reproduce every notice file found.
+$runtimePacks = @()
+foreach ($fw in $graph.project.frameworks.PSObject.Properties) {
+    foreach ($d in @($fw.Value.downloadDependencies)) {
+        if (-not $d) { continue }
+        $v = (($d.version -replace '[\[\]\(\)]', '') -split ',')[0].Trim()
+        $dir = Join-Path $nugetRoot $d.name.ToLowerInvariant() $v.ToLowerInvariant()
+        if (-not (Test-Path $dir)) { throw "Runtime pack '$($d.name)/$v' is not in the NuGet cache. Run 'dotnet restore' first." }
+        $file = Get-ChildItem -Path $dir -Filter 'THIRD-PARTY-NOTICES*' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($file) {
+            $runtimePacks += [pscustomobject]@{ Name = $d.name; Version = $v; File = $file.FullName }
+        }
+    }
+}
+$runtimePacks = @($runtimePacks | Sort-Object Name)
+Write-Host ("Runtime pack notices  : {0}" -f $runtimePacks.Count)
+
 # ------------------------------------------------ collect Node.js packages
-# Every package.json directly under node_modules (or under a scoped @org folder) is one shipped
-# package. First-party file: dependencies (the ElectronHostHook) are skipped by npmExcludePrefixes.
+# Every package.json whose folder sits directly under a node_modules folder (or under a scoped
+# @org folder inside one) is one shipped package -- at ANY depth: electron-updater carries its own
+# nested node_modules/semver, packed into app.asar like everything else. Duplicates by
+# name+version collapse. First-party file: dependencies (the ElectronHostHook) are skipped by
+# npmExcludePrefixes.
 function Get-NpmInventory {
     param([string]$ModulesDir)
-    $found = @()
-    $dirs = @(Get-ChildItem -Path $ModulesDir -Directory | Where-Object { -not $_.Name.StartsWith('@') })
-    foreach ($scope in (Get-ChildItem -Path $ModulesDir -Directory | Where-Object { $_.Name.StartsWith('@') })) {
-        $dirs += Get-ChildItem -Path $scope.FullName -Directory
-    }
-    foreach ($dir in $dirs) {
-        $pj = Join-Path $dir.FullName 'package.json'
-        if (-not (Test-Path $pj)) { continue }
-        $j = Get-Content $pj -Raw | ConvertFrom-Json
+    $found = @{}
+    foreach ($pjFile in (Get-ChildItem -Path $ModulesDir -Recurse -Filter 'package.json' -File)) {
+        $dir = $pjFile.Directory
+        $parent = $dir.Parent
+        $isPackageRoot = ($parent.Name -eq 'node_modules') -or
+            ($parent.Name.StartsWith('@') -and $parent.Parent -and $parent.Parent.Name -eq 'node_modules')
+        if (-not $isPackageRoot) { continue }
+
+        $j = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
         if (-not $j.name) { continue }
 
         $skip = $false
@@ -171,7 +230,8 @@ function Get-NpmInventory {
 
         $licenseText = ''
         $licenseFile = Get-ChildItem -Path $dir.FullName -File |
-            Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING)(\..*)?$' } |
+            Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING|NOTICE)([-.].*)?$' } |
+            Sort-Object { $_.Name -notmatch '^LICEN' }, Name |
             Select-Object -First 1
         if ($licenseFile) { $licenseText = (Get-Content $licenseFile.FullName -Raw).TrimEnd() }
 
@@ -183,7 +243,7 @@ function Get-NpmInventory {
         if ($j.author -is [string]) { $author = $j.author }
         elseif ($j.author -and $j.author.name) { $author = $j.author.name }
 
-        $found += [pscustomobject][ordered]@{
+        $found["$($j.name)@$($j.version)"] = [pscustomobject][ordered]@{
             name        = $j.name
             version     = [string]$j.version
             license     = $license
@@ -192,21 +252,22 @@ function Get-NpmInventory {
             licenseText = Normalize-Text $licenseText
         }
     }
-    return @($found | Sort-Object name)
+    return @($found.Values | Sort-Object name, version)
 }
 
 $npmFresh = $null
-if (Test-Path $NpmModulesDir) {
+if ($RefreshNpm) {
+    if (-not (Test-Path $NpmModulesDir)) { throw "-RefreshNpm: packaged app not found at '$NpmModulesDir'. Run 'dotnet publish -c Release' first." }
     Write-Host "Node.js packages from : $NpmModulesDir"
     $npmFresh = Get-NpmInventory -ModulesDir $NpmModulesDir
     Write-Host ("Node.js packages      : {0}" -f $npmFresh.Count)
 }
 else {
-    Write-Host "Node.js packages      : packaged app not found at '$NpmModulesDir'; using the committed inventory"
+    Write-Host "Node.js packages      : committed inventory (pass -RefreshNpm after 'dotnet publish' to rescan)"
 }
 
 if (-not (Test-Path $npmInventoryPath) -and -not $npmFresh) {
-    throw "No npm inventory at '$npmInventoryPath' and no packaged app to build one from. Run 'dotnet publish -c Release' first."
+    throw "No npm inventory at '$npmInventoryPath'. Run 'dotnet publish -c Release' and then this script with -RefreshNpm."
 }
 
 $npmFreshJson = $null
@@ -214,7 +275,7 @@ if ($npmFresh) { $npmFreshJson = Normalize-Text ($npmFresh | ConvertTo-Json -Dep
 $npmCommittedJson = if (Test-Path $npmInventoryPath) { Normalize-Text (Get-Content $npmInventoryPath -Raw) } else { '' }
 
 if ($Check) {
-    if ($npmFreshJson -and ($npmFreshJson.TrimEnd() -ne $npmCommittedJson.TrimEnd())) {
+    if ($npmFreshJson -and ($npmFreshJson.TrimEnd() -cne $npmCommittedJson.TrimEnd())) {
         Write-Host "::error::$npmInventoryPath is out of date against the packaged app. Run: pwsh Scripts/Generate-ThirdPartyNotices.ps1 and commit the result."
         exit 1
     }
@@ -255,8 +316,9 @@ Add-Line 'others) are not part of this product. They are fetched from their own 
 Add-Line 'at install time under their own licenses, which they carry themselves.'
 Add-Line ''
 Add-Line 'GENERATED FILE - DO NOT EDIT BY HAND.'
-Add-Line 'Regenerate with:  pwsh Scripts/Generate-ThirdPartyNotices.ps1'
-Add-Line 'Inputs:           <project>/obj/project.assets.json          (restore graph)'
+Add-Line 'Regenerate with:  pwsh Scripts/Generate-ThirdPartyNotices.ps1 [-RefreshNpm]'
+Add-Line 'Inputs:           <project>/obj/project.assets.json          (restore graph, package mode)'
+Add-Line '                  <nuget cache>/<runtime pack>/THIRD-PARTY-NOTICES.TXT'
 Add-Line '                  Scripts/license-data/npm-inventory.json    (bundled Node.js packages)'
 Add-Line '                  Scripts/license-data/supplements.json      (hand-authored entries)'
 Add-Line ''
@@ -302,8 +364,20 @@ foreach ($group in $byLicense) {
 Add-Line '3. BUNDLED NOTICE FILES'
 Add-Line $thin
 Add-Line ''
-if (-not $supplements.bundledNotices -or $supplements.bundledNotices.Count -eq 0) {
-    Add-Line 'No shipped .NET package carries its own notice file.'
+Add-Line 'Notice files that ship inside the .NET runtime packs embedded by self-contained'
+Add-Line 'publishing, and inside any package that carries its own, reproduced verbatim.'
+Add-Line ''
+foreach ($rp in $runtimePacks) {
+    Add-Line ("### {0} {1} (runtime pack)" -f $rp.Name, $rp.Version)
+    Add-Line ("Source: {0}" -f (Split-Path -Leaf $rp.File))
+    Add-Line ''
+    Add-Line (Get-Content $rp.File -Raw).TrimEnd()
+    Add-Line ''
+    Add-Line $thin
+    Add-Line ''
+}
+if ($runtimePacks.Count -eq 0 -and (-not $supplements.bundledNotices -or $supplements.bundledNotices.Count -eq 0)) {
+    Add-Line 'No shipped component carries its own notice file.'
     Add-Line ''
 }
 foreach ($b in $supplements.bundledNotices) {
@@ -364,6 +438,7 @@ foreach ($n in $npmInventory) {
         }
         Add-Line ("(no license file in the package; the standard {0} text applies)" -f $n.license)
         Add-Line ''
+        if ($n.author) { Add-Line ("Copyright (c) {0}" -f $n.author); Add-Line '' }
         Add-Line (Get-Content $stdFile -Raw).TrimEnd()
     }
     Add-Line ''
@@ -385,7 +460,7 @@ if ($Check) {
     }
     $committed = Normalize-Text (Get-Content $OutputPath -Raw)
     $expected  = Normalize-Text $text
-    if ($committed -ne $expected) {
+    if ($committed -cne $expected) {
         Write-Host "::error::$OutputPath is out of date. Run: pwsh Scripts/Generate-ThirdPartyNotices.ps1 and commit the result."
         Write-Host 'First differing lines:'
         Compare-Object ($committed -split "`n") ($expected -split "`n") |
