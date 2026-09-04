@@ -40,8 +40,9 @@ public interface IWizardModule
     bool IsAdvanced => false;
 
     /// <summary>
-    /// Writes the module's answers back to user settings so the next run starts from them. Called
-    /// when the user leaves the module's stage with Next. Implementations must re-read the
+    /// Writes the module's answers back to user settings so the next run starts from them. The
+    /// page calls it for every module of the stage being left, on every stage's Next (including
+    /// Confirm's "Start installation"). Implementations must re-read the
     /// settings before writing: several modules save in a row and each must build on the file as
     /// it is now, not on the copy it loaded at initialization.
     /// </summary>

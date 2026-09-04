@@ -1,4 +1,5 @@
 @* DiffusionNexus.Installer.Electron/Components/Wizard/ModelSelectionPanel.razor *@
+@using DiffusionNexus.Installer.Core.Content
 @using DiffusionNexus.Installer.Core.Modules
 @using DiffusionNexus.Installer.Core.Wizard
 @implements IDisposable
@@ -41,17 +42,21 @@
         else if (Module.Estimate is { } estimate)
         {
             <text>Needs about @estimate.RequiredText</text>
-            @if (estimate.LibraryAvailableBytes is not null)
+            @if (estimate.HasLibrary)
             {
                 <text>, of which @estimate.ModelBytesText of models go to your library folder</text>
             }
             @if (!estimate.AvailableKnown)
             {
-                <text>. We could not read the free space on that drive.</text>
+                <text>. We could not read the free space on the install drive.</text>
             }
-            else if (estimate.LibraryAvailableBytes is { } libraryFree)
+            else if (estimate.LibraryAvailableBytes is not null)
             {
                 <text>. @estimate.AvailableText free on the install drive, @estimate.LibraryAvailableText free in the library folder.</text>
+            }
+            else if (estimate.HasLibrary && estimate.LibraryAvailableBytes is null && !SameDriveAsInstall(estimate))
+            {
+                <text>. @estimate.AvailableText free on the install drive; the library folder's free space could not be read.</text>
             }
             else
             {
@@ -112,6 +117,10 @@
         }
     }
 
+    /// <summary>A library on the install drive reports one shared figure; the estimator then leaves LibraryAvailableBytes null on purpose.</summary>
+    private bool SameDriveAsInstall(DiskSpaceEstimate estimate) =>
+        Selection.ModelBaseFolder is { } library && SdkDiskSpaceEstimator.SharesDrive(Selection.TargetFolder, library);
+
     private bool ScanIsStale() =>
         Module.LastScannedTier != Selection.SelectedVramProfile
         || !string.Equals(Module.LastScannedFolder, Selection.TargetFolder, StringComparison.Ordinal);
@@ -125,7 +134,13 @@
         _scanning = true;
         try
         {
-            await Task.Run(Module.RefreshPresence);
+            // A tier moved while the scan was running would otherwise be dropped for good:
+            // OnParametersSet only fires on a parent render, and nothing re-checks afterwards.
+            do
+            {
+                await Task.Run(Module.RefreshPresence);
+            }
+            while (ScanIsStale());
         }
         finally
         {

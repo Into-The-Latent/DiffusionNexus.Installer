@@ -233,12 +233,12 @@ else
             }
         }
 
-        if (_run.CurrentStage == WizardStage.Location)
         {
-            // The classic installer's Folder Settings window had a Save button. Here the folders
-            // page is remembered when the user moves on from it, so the next install starts from
-            // the same answers. Guarded like the preflight: a second click landing during the
-            // save would otherwise advance twice and skip a stage.
+            // The classic installer's Folder Settings window had a Save button. Here every module
+            // of the stage being left is asked to remember its answers (IWizardModule.PersistAsync,
+            // a no-op by default), so the next install starts from the same ones. Guarded like the
+            // preflight: a second click landing during the save would otherwise advance twice and
+            // skip a stage.
             _savingSettings = true;
             try
             {

@@ -24,6 +24,35 @@ public class DiskSpaceEstimatorTests
     }
 
     [Fact]
+    public void A_library_on_the_same_drive_as_the_install_shares_one_free_space_figure()
+    {
+        // Review finding: E:\Installer (20 GB) + E:\Models (60 GB) with 70 GB free passed both
+        // per-drive checks and ran out mid-install. Same drive is the common layout.
+        SdkDiskSpaceEstimator.SharesDrive(@"E:\Installer\9", @"e:\Models").Should().BeTrue();
+        SdkDiskSpaceEstimator.SharesDrive(@"E:\Installer\9", @"D:\Models").Should().BeFalse();
+
+        var verdict = SdkDiskSpaceEstimator.Judge(installBytes: 20, modelBytes: 60, installFree: 70, libraryFree: 70, sameDrive: true);
+
+        verdict.IsSufficient.Should().BeFalse("80 GB has to fit in the 70 GB the two folders share");
+        verdict.LibraryAvailableBytes.Should().BeNull("there is no second drive to report");
+        verdict.HasLibrary.Should().BeTrue();
+    }
+
+    [Fact]
+    public void An_unreadable_library_drive_does_not_hide_the_install_drive_figure()
+    {
+        // Review finding: known was an AND of both drives, so one unreadable library drive made the
+        // panel claim it could not read free space while holding a good install-drive figure.
+        var verdict = SdkDiskSpaceEstimator.Judge(installBytes: 10, modelBytes: 60, installFree: 40, libraryFree: null, hasLibrary: true);
+
+        verdict.AvailableKnown.Should().BeTrue();
+        verdict.AvailableBytes.Should().Be(40);
+        verdict.HasLibrary.Should().BeTrue();
+        verdict.LibraryAvailableBytes.Should().BeNull();
+        verdict.IsSufficient.Should().BeTrue("the install drive fits its share; the library side is unknown, not short");
+    }
+
+    [Fact]
     public void A_full_model_library_drive_is_a_shortfall_even_when_the_install_drive_is_roomy()
         => SdkDiskSpaceEstimator.Judge(installBytes: 10, modelBytes: 60, installFree: 4000, libraryFree: 5)
             .IsSufficient.Should().BeFalse();

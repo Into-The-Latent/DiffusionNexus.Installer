@@ -53,7 +53,8 @@ public class ModelSelectionModuleTests
         var act = () => module.InitializeAsync(Selection(Vae, twin));
 
         await act.Should().NotThrowAsync();
-        module.Rows.Should().HaveCount(2);
+        module.Rows.Should().ContainSingle("first entry wins; a second row with the same id would flip the first one's checkbox and show its presence");
+        module.Rows.Single().Name.Should().Be("VAE");
     }
 
     [Fact]

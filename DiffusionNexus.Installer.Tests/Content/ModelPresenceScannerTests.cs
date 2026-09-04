@@ -87,6 +87,16 @@ public sealed class ModelPresenceScannerTests : IDisposable
     }
 
     [Fact]
+    public void The_directory_cache_key_keeps_a_drive_root_intact()
+    {
+        // Review finding: trimming the separator off "D:\" yields "D:", a drive-RELATIVE path that
+        // enumerates the process's current directory on D: instead of the root.
+        ModelPresenceScanner.NormalizeDirectoryKey(@"D:\").Should().Be(@"D:\");
+        ModelPresenceScanner.NormalizeDirectoryKey(@"C:\models\loras\").Should().Be(@"C:\models\loras");
+        ModelPresenceScanner.NormalizeDirectoryKey(@"C:\models\loras").Should().Be(@"C:\models\loras");
+    }
+
+    [Fact]
     public void A_file_filed_into_a_subfolder_still_counts()
     {
         // Users sort models into subfolders ("Wan 2.2\..."); 1.x searched recursively and so do we.

@@ -62,8 +62,12 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
         _selection = selection;
+        // A repeated model id is a hand-authored catalog mistake. First entry wins HERE, at the
+        // rows, not only at the presence lookup: two rows sharing an id would flip each other's
+        // checkbox (SetSelected finds the first) and both show the first one's presence.
         Rows = selection.Workload.ModelDownloads
             .Where(m => m.Enabled)
+            .DistinctBy(m => m.Id)
             .Select(m => new ModelRow(m.Id, m.Name, string.IsNullOrWhiteSpace(m.Destination) ? NotAssignedGroup : m.Destination))
             .ToList();
         Groups = Rows

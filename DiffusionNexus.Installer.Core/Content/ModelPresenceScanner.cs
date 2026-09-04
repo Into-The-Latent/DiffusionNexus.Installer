@@ -160,6 +160,26 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
     /// files. Anything the filesystem refuses counts as absent, and the failure itself is cached so
     /// a repeatedly-unreadable directory is not retried for every remaining target.
     /// </summary>
+    /// <summary>
+    /// The cache key for a destination directory: the full path without a trailing separator,
+    /// except for a drive root, which keeps it. Trimming "D:\" to "D:" would make a drive-RELATIVE
+    /// path that means "the current directory on D:", not the root.
+    /// </summary>
+    public static string NormalizeDirectoryKey(string directory)
+    {
+        try
+        {
+            var full = Path.GetFullPath(directory);
+            var root = Path.GetPathRoot(full);
+            if (string.Equals(root, full, StringComparison.OrdinalIgnoreCase)) return full;
+            return full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or System.Security.SecurityException)
+        {
+            return directory;
+        }
+    }
+
     private sealed class DirectoryListingCache
     {
         private readonly Dictionary<string, string[]> _listings = new(StringComparer.OrdinalIgnoreCase);
@@ -183,8 +203,9 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         private string[] ListDirectory(string directory)
         {
             // Keyed by the normalized full path: "...\loras" and "...\loras\" are one walk, not two.
-            directory = NormalizeKey(directory);
-            if (_listings.TryGetValue(directory, out var cached)) return cached;
+            // The KEY only; the listing itself uses the directory as given.
+            var key = NormalizeDirectoryKey(directory);
+            if (_listings.TryGetValue(key, out var cached)) return cached;
 
             string[] files;
             try
@@ -198,20 +219,8 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
                 files = [];
             }
 
-            _listings[directory] = files;
+            _listings[key] = files;
             return files;
-        }
-
-        private static string NormalizeKey(string directory)
-        {
-            try
-            {
-                return Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-            catch (Exception ex) when (IsFileSystemException(ex))
-            {
-                return directory;
-            }
         }
 
         private static bool IsFileSystemException(Exception ex) =>

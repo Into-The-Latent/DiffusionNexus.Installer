@@ -226,7 +226,7 @@ public class InstallPageTests : BunitContext
     /// <summary>Registers the content workload with a registry that mirrors production's Content stage.</summary>
     private Mock<IUserSettingsRepository>? _contentSettings;
 
-    private Mock<IInstallSession> RegisterContent(Mock<IModelPresenceScanner> scanner)
+    private Mock<IInstallSession> RegisterContent(Mock<IModelPresenceScanner> scanner, IWizardModule? extra = null)
     {
         var workload = ContentWorkload();
         var settings = _contentSettings = new Mock<IUserSettingsRepository>();
@@ -271,6 +271,7 @@ public class InstallPageTests : BunitContext
             new WorkflowSelectionModule(),
             new ShortcutsModule(),
             new DisclaimerModule(),
+            .. (extra is null ? Array.Empty<IWizardModule>() : [extra]),
         ]));
 
         return session;
@@ -368,6 +369,37 @@ public class InstallPageTests : BunitContext
         _contentSettings!.Verify(s => s.SaveAsync(
             It.Is<UserSettings>(u => u.DefaultTargetInstallFolder == chosen),
             It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void Every_stage_persists_its_modules_on_Next_not_only_Location()
+    {
+        // Review finding: IWizardModule.PersistAsync promised "called when the user leaves the
+        // module's stage" but the page only called it on Location.
+        var remembering = new RememberingContentModule();
+        RegisterContent(EmptyScanner(), remembering);
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();   // Location -> Content
+        remembering.Persisted.Should().Be(0, "it is a Content module; leaving Location is not its moment");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();   // Content -> System
+
+        remembering.Persisted.Should().Be(1);
+    }
+
+    /// <summary>A Content-stage module that only wants to be asked to persist.</summary>
+    private sealed class RememberingContentModule : IWizardModule
+    {
+        public int Persisted { get; private set; }
+        public string Id => "remembering";
+        public WizardStage Stage => WizardStage.Content;
+        public int Order => 99;
+        public WorkloadCapability Satisfies => WorkloadCapability.None;
+        public bool AppliesTo(WizardSelection selection) => true;
+        public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default) => Task.CompletedTask;
+        public void Contribute(InstallationOptionsDraft draft) { }
+        public ModuleValidation Validate() => ModuleValidation.Ok();
+        public Task PersistAsync(CancellationToken ct = default) { Persisted++; return Task.CompletedTask; }
     }
 
     [Fact]
