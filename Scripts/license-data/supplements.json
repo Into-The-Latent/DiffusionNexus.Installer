@@ -1,0 +1,24 @@
+{
+  "_comment": "Attribution obligations neither the NuGet restore graph nor the packaged node_modules folder express. Each entry is appended verbatim by Scripts/Generate-ThirdPartyNotices.ps1.",
+  "excludePrefixes": [
+    "DiffusionNexus."
+  ],
+  "npmExcludePrefixes": [
+    "electron-host-hook"
+  ],
+  "bundledNotices": [],
+  "supplements": [
+    {
+      "title": "Electron",
+      "license": "MIT",
+      "textFile": "MIT-Electron.txt",
+      "note": "The application runs inside the Electron framework (see ElectronVersion in the .csproj). Electron bundles Chromium, Node.js and V8 together with their own third-party components; electron-builder installs their complete notices next to the executable as LICENSE.electron.txt and LICENSES.chromium.html, and those files are part of this product's attribution."
+    },
+    {
+      "title": ".NET 10 runtime, ASP.NET Core shared framework and base class libraries",
+      "license": "MIT",
+      "textFile": "MIT-dotnet-runtime.txt",
+      "note": "Embedded into the application by self-contained publishing. They are part of the shipped artifact but never appear as package entries in the restore graph."
+    }
+  ]
+}

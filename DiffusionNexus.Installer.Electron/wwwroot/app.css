@@ -576,18 +576,27 @@ progress {
 
 /* Fixed and above everything else. This is the whole reason a mid-install
    question is answerable at all. */
+/* Every dialog: the card is centred while it fits (margin: auto) and never grows past the window;
+   a card that would overflow scrolls inside itself instead of losing its top and bottom. */
 .modal-backdrop {
     position: fixed;
     inset: 0;
     z-index: 2000;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
+    overflow: auto;
     background: rgba(0, 0, 0, .65);
     padding: 1.5rem;
 }
 
 .modal-card {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+    max-height: calc(100vh - 3rem);
+    overflow: auto;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -595,6 +604,10 @@ progress {
     max-width: 32rem;
     width: 100%;
     box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+}
+
+.modal-card > * {
+    flex: 0 0 auto;
 }
 
 .modal-card h2 {
@@ -746,4 +759,59 @@ progress {
 
 .destination code {
     color: var(--text);
+}
+
+/* Licences page: the generated notices, verbatim. */
+.notices {
+    margin: 1rem 0 0;
+    padding: 1rem;
+    max-height: 70vh;
+    overflow: auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: .8rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* A button that reads as a link, for actions that must not navigate (e.g. opening a dialog). */
+.link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.notices-modal {
+    max-height: 60vh;
+    margin-top: .5rem;
+}
+
+/* A dialog whose body is the scrolling part (the licences): the card itself must not scroll,
+   or there would be two nested scrollbars. */
+.modal-card-scroll {
+    overflow: hidden;
+}
+
+.modal-card-scroll .notices-modal {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.modal-head h2 {
+    margin: 0;
 }
