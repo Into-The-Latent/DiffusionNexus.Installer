@@ -746,6 +746,8 @@ progress {
 
 .destination code {
     color: var(--text);
+}
+
 /* Licences page: the generated notices, verbatim. */
 .notices {
     margin: 1rem 0 0;
