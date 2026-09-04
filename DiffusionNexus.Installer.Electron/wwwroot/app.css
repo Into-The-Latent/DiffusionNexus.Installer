@@ -777,3 +777,31 @@ progress {
     max-height: 60vh;
     margin-top: .5rem;
 }
+
+/* Dialogs with a long body: the card never grows past the window, the body scrolls. */
+.modal-backdrop {
+    overflow: auto;
+}
+
+.modal-card-scroll {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 3rem);
+}
+
+.modal-card-scroll .notices-modal {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.modal-head h2 {
+    margin: 0;
+}

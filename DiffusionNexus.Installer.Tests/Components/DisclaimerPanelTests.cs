@@ -28,4 +28,22 @@ public class DisclaimerPanelTests : BunitContext
 
         cut.FindAll(".modal-backdrop").Should().BeEmpty();
     }
+
+    [Fact]
+    public void The_dialog_always_offers_a_way_out_and_a_scrollable_body()
+    {
+        // 1,800 lines of notices: the body must be the scrolling part, the card must never grow
+        // past the window (which pushed Close off-screen), and a click outside must close it.
+        var cut = Render<DisclaimerPanel>(p => p.Add(x => x.Module, new DisclaimerModule()));
+        cut.Find("button[data-role='licences']").Click();
+
+        cut.Find(".modal-backdrop .modal-card").ClassList.Should().Contain("modal-card-scroll");
+        cut.Find(".modal-backdrop .modal-head button[data-role='close-top']").Should().NotBeNull("a close control must be visible without scrolling");
+
+        cut.Find(".modal-backdrop .modal-card").Click();
+        cut.FindAll(".modal-backdrop").Should().ContainSingle("a click inside the card is not a dismissal");
+
+        cut.Find(".modal-backdrop").Click();
+        cut.FindAll(".modal-backdrop").Should().BeEmpty("a click on the dark backdrop closes it");
+    }
 }
