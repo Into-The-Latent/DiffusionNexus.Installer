@@ -1,0 +1,41 @@
+@* The one "Advanced settings" bar every wizard page uses: closed by default, big enough to be
+   noticed, with an optional summary of what is inside and an optional badge for "something in
+   here changes the install". *@
+
+<button type="button" class="advanced-toggle" @onclick="Toggle" aria-expanded="@(_open ? "true" : "false")">
+    <span class="advanced-chevron">@(_open ? "▾" : "▸")</span>
+    <span class="advanced-title">Advanced settings</span>
+    <span class="advanced-subtitle">@Subtitle</span>
+    @if (!string.IsNullOrWhiteSpace(Summary))
+    {
+        <span class="advanced-summary">@Summary</span>
+    }
+    @if (!string.IsNullOrWhiteSpace(Badge))
+    {
+        <span class="tag">@Badge</span>
+    }
+</button>
+
+@if (_open)
+{
+    <div class="advanced">
+        @ChildContent
+    </div>
+}
+
+@code {
+    /// <summary>What the section holds, shown after "Advanced settings", e.g. "custom model folders".</summary>
+    [Parameter, EditorRequired] public string Subtitle { get; set; } = string.Empty;
+
+    /// <summary>Optional muted summary of the current answers inside, e.g. "14 of 14 models".</summary>
+    [Parameter] public string? Summary { get; set; }
+
+    /// <summary>Optional highlighted badge, e.g. "custom folders in use".</summary>
+    [Parameter] public string? Badge { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _open;
+
+    private void Toggle() => _open = !_open;
+}

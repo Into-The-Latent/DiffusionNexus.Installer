@@ -5,6 +5,7 @@
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Modules
 @using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.Electron.Components.Wizard
 @using DiffusionNexus.Installer.SDK.Models.Enums
 @using DiffusionNexus.Installer.SDK.Services
@@ -65,9 +66,30 @@ else
 
         @* Confirm-stage modules render after the summary: the disclaimer belongs below what it
            applies to, and nothing else targets that stage today. *@
-        @foreach (var module in _run.CurrentModules)
+        @if (_run.CurrentStage == WizardStage.Content)
         {
-            @RenderModule(module)
+            @* First look is the one question everybody must answer. Models and workflows are all
+               ticked by default, so they live behind Advanced with a summary on the closed bar. *@
+            @foreach (var module in _run.CurrentModules.Where(m => m is VramProfileModule))
+            {
+                @RenderModule(module)
+            }
+            @if (_run.CurrentModules.Any(m => m is not VramProfileModule))
+            {
+                <AdvancedDisclosure Subtitle="models and workflows" Summary="@ContentSummary()">
+                    @foreach (var module in _run.CurrentModules.Where(m => m is not VramProfileModule))
+                    {
+                        @RenderModule(module)
+                    }
+                </AdvancedDisclosure>
+            }
+        }
+        else
+        {
+            @foreach (var module in _run.CurrentModules)
+            {
+                @RenderModule(module)
+            }
         }
 
         @if (_preflightBusy)
@@ -90,7 +112,9 @@ else
                forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
             <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
             <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy || _savingSettings)" @onclick="Back">Back</button>
-            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">Next</button>
+            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">
+                @(_run.CurrentStage == WizardStage.Confirm ? "Start installation" : "Next")
+            </button>
         </div>
 
         @* The install-folder panel shows its own message right under its box; listing it here
@@ -270,6 +294,25 @@ else
         if (Session.Plan is not { } running) return;
 
         Nav.NavigateTo($"/install/{running.Selection.Workload.Id}");
+    }
+
+    /// <summary>What the closed Advanced bar on the Content stage says, e.g. "14 of 14 models, 3 of 3 workflows".</summary>
+    private string ContentSummary()
+    {
+        var parts = new List<string>();
+        foreach (var module in _run!.CurrentModules)
+        {
+            switch (module)
+            {
+                case ModelSelectionModule m:
+                    parts.Add($"{m.SelectedCount} of {m.Rows.Count} models");
+                    break;
+                case WorkflowSelectionModule w:
+                    parts.Add($"{w.SelectedCount} of {w.Rows.Count} workflows");
+                    break;
+            }
+        }
+        return string.Join(", ", parts);
     }
 
     private RenderFragment RenderModule(IWizardModule module) => module switch

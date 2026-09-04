@@ -203,12 +203,12 @@ public class InstallPageTests : BunitContext
         }
 
         page.Markup.Should().Contain("Software disclaimer");
-        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation")
             .HasAttribute("disabled").Should().BeTrue("nothing has been accepted yet");
 
         page.Find(".checkbox input").Change(true);
 
-        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation")
             .HasAttribute("disabled").Should().BeFalse();
     }
 
@@ -293,6 +293,7 @@ public class InstallPageTests : BunitContext
 
         // Location (folder pre-filled from settings) -> Content.
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".advanced-toggle").Click();
 
         page.FindComponent<VramProfilePanel>().Instance.Changed.HasDelegate.Should().BeTrue();
         page.FindComponent<ModelSelectionPanel>().Instance.Changed.HasDelegate.Should().BeTrue();
@@ -345,6 +346,41 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
+    public void The_content_stage_shows_only_the_memory_panel_until_advanced_is_opened()
+    {
+        // First look is the one question everybody has to answer. Models and workflows are all
+        // ticked by default, so they sit behind Advanced with a summary on the closed bar.
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        page.FindComponents<VramProfilePanel>().Should().ContainSingle();
+        page.FindComponents<ModelSelectionPanel>().Should().BeEmpty();
+        page.FindComponents<WorkflowSelectionPanel>().Should().BeEmpty();
+        var toggle = page.Find(".advanced-toggle");
+        toggle.TextContent.Should().Contain("Advanced").And.Contain("1 of 1 models").And.Contain("1 of 1 workflows");
+
+        toggle.Click();
+
+        page.FindComponents<ModelSelectionPanel>().Should().ContainSingle();
+        page.FindComponents<WorkflowSelectionPanel>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public void The_confirm_stage_button_reads_Start_installation()
+    {
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Next", "earlier stages still say Next");
+
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Start installation");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Next");
+    }
+
+    [Fact]
     public void Changing_the_tier_rescans_the_models_through_the_page()
     {
         // End to end: VRAM panel -> Changed -> page re-render -> ModelSelectionPanel notices -> rescan.
@@ -352,6 +388,7 @@ public class InstallPageTests : BunitContext
         RegisterContent(scanner);
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".advanced-toggle").Click();
         var scansBefore = scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan));
 
         page.Find("select").Change("16");
@@ -375,7 +412,7 @@ public class InstallPageTests : BunitContext
             page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
         page.Find(".checkbox input").Change(true); // disclaimer
 
-        await page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").ClickAsync(new MouseEventArgs());
+        await page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation").ClickAsync(new MouseEventArgs());
 
         page.Markup.Should().Contain("Ready to install", "a dismissed dialog must not advance");
         page.Markup.Should().Contain("not started");
@@ -401,7 +438,7 @@ public class InstallPageTests : BunitContext
             page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
         page.Find(".checkbox input").Change(true); // disclaimer
 
-        var next = page.FindAll("button").Single(b => b.TextContent.Trim() == "Next");
+        var next = page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation");
         var first = next.ClickAsync(new MouseEventArgs());
         var second = next.ClickAsync(new MouseEventArgs());
 

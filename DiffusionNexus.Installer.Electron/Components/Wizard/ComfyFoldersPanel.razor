@@ -1,5 +1,6 @@
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Modules
+@using DiffusionNexus.Installer.Electron.Components.Shared
 @inject IFolderPicker FolderPicker
 
 <section class="panel">
@@ -16,80 +17,68 @@
         </div>
     }
 
-    <button type="button" class="advanced-toggle" @onclick="ToggleAdvanced" aria-expanded="@(_advancedOpen ? "true" : "false")">
-        <span class="advanced-chevron">@(_advancedOpen ? "▾" : "▸")</span>
-        Advanced: custom model folders
-        @if (Module.HasCustomFolders)
+    <AdvancedDisclosure Subtitle="custom model folders" Badge="@(Module.HasCustomFolders ? "custom folders in use" : null)">
+        <p class="panel-hint">
+            Only needed if you keep models outside the install, or your library uses different
+            folder names than ComfyUI's standard ones. Everything here is remembered for your
+            next install.
+        </p>
+
+        <label>Model library folder <span class="panel-hint">(optional)</span></label>
+        <p class="panel-hint">
+            Leave empty to keep models inside the install. Point it at an existing library and the
+            installer writes an <code>extra_model_paths.yaml</code> so the software reads from it
+            instead of downloading again.
+        </p>
+        <div class="path-row">
+            <input type="text" data-role="library" value="@Module.ModelBaseFolder"
+                   placeholder="@Module.DefaultModelsFolder" @oninput="OnModelBaseFolderTyped" />
+            <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
         {
-            <span class="tag">custom folders in use</span>
+            <label class="checkbox">
+                <input type="checkbox" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
+                Overwrite an existing extra_model_paths.yaml
+            </label>
         }
-    </button>
 
-    @if (_advancedOpen)
-    {
-        <div class="advanced">
-            <p class="panel-hint">
-                Only needed if you keep models outside the install, or your library uses different
-                folder names than ComfyUI's standard ones. Everything here is remembered for your
-                next install.
-            </p>
-
-            <label>Model library folder <span class="panel-hint">(optional)</span></label>
-            <p class="panel-hint">
-                Leave empty to keep models inside the install. Point it at an existing library and the
-                installer writes an <code>extra_model_paths.yaml</code> so the software reads from it
-                instead of downloading again.
-            </p>
-            <div class="path-row">
-                <input type="text" data-role="library" value="@Module.ModelBaseFolder"
-                       placeholder="@Module.DefaultModelsFolder" @oninput="OnModelBaseFolderTyped" />
-                <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+        <div class="advanced-head">
+            <h3>Folder names inside the library</h3>
+            <button type="button" class="btn-secondary btn-small" @onclick="ResetFolderTypes">Reset to standard</button>
+        </div>
+        <div class="folder-grid">
+            @foreach (var row in Module.FolderTypes)
             {
-                <label class="checkbox">
-                    <input type="checkbox" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
-                    Overwrite an existing extra_model_paths.yaml
-                </label>
-            }
-
-            <div class="advanced-head">
-                <h3>Folder names inside the library</h3>
-                <button type="button" class="btn-secondary btn-small" @onclick="ResetFolderTypes">Reset to standard</button>
-            </div>
-            <div class="folder-grid">
-                @foreach (var row in Module.FolderTypes)
-                {
-                    <label for="folder-type-@row.Key">@row.Label</label>
-                    <input id="folder-type-@row.Key" type="text" data-folder-key="@row.Key"
-                           value="@row.Value" placeholder="@row.Standard"
-                           @oninput="e => OnFolderTypeTyped(row.Key, e)" />
-                }
-            </div>
-
-            <div class="advanced-head">
-                <h3>Additional folders</h3>
-                <button type="button" class="btn-secondary btn-small" @onclick="AddAdditionalFolder">+ Add folder</button>
-            </div>
-            <p class="panel-hint">
-                Extra entries for extra_model_paths.yaml beyond the standard types: the name ComfyUI
-                should use and the folder it points at.
-            </p>
-            @foreach (var row in Module.AdditionalFolders)
-            {
-                <div class="additional-folder path-row" @key="row.Id">
-                    <input type="text" data-role="name" placeholder="ComfyUI folder name"
-                           value="@row.BaseName" @oninput="e => OnAdditionalNameTyped(row, e)" />
-                    <input type="text" data-role="path" placeholder="Folder path"
-                           value="@row.MapsTo" @oninput="e => OnAdditionalPathTyped(row, e)" />
-                    <button type="button" class="btn-secondary" @onclick="() => BrowseAdditional(row)">Browse...</button>
-                    <button type="button" class="btn-secondary btn-icon" data-role="remove" title="Remove"
-                            @onclick="() => RemoveAdditionalFolder(row)">✕</button>
-                </div>
+                <label for="folder-type-@row.Key">@row.Label</label>
+                <input id="folder-type-@row.Key" type="text" data-folder-key="@row.Key"
+                       value="@row.Value" placeholder="@row.Standard"
+                       @oninput="e => OnFolderTypeTyped(row.Key, e)" />
             }
         </div>
-    }
+
+        <div class="advanced-head">
+            <h3>Additional folders</h3>
+            <button type="button" class="btn-secondary btn-small" @onclick="AddAdditionalFolder">+ Add folder</button>
+        </div>
+        <p class="panel-hint">
+            Extra entries for extra_model_paths.yaml beyond the standard types: the name ComfyUI
+            should use and the folder it points at.
+        </p>
+        @foreach (var row in Module.AdditionalFolders)
+        {
+            <div class="additional-folder path-row" @key="row.Id">
+                <input type="text" data-role="name" placeholder="ComfyUI folder name"
+                       value="@row.BaseName" @oninput="e => OnAdditionalNameTyped(row, e)" />
+                <input type="text" data-role="path" placeholder="Folder path"
+                       value="@row.MapsTo" @oninput="e => OnAdditionalPathTyped(row, e)" />
+                <button type="button" class="btn-secondary" @onclick="() => BrowseAdditional(row)">Browse...</button>
+                <button type="button" class="btn-secondary btn-icon" data-role="remove" title="Remove"
+                        @onclick="() => RemoveAdditionalFolder(row)">✕</button>
+            </div>
+        }
+    </AdvancedDisclosure>
 </section>
 
 @code {
@@ -101,10 +90,6 @@
     /// user can never leave the stage.
     /// </summary>
     [Parameter] public EventCallback Changed { get; set; }
-
-    private bool _advancedOpen;
-
-    private void ToggleAdvanced() => _advancedOpen = !_advancedOpen;
 
     private async Task OnModelBaseFolderTyped(ChangeEventArgs e)
     {

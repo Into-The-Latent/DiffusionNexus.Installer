@@ -42,8 +42,8 @@ real run can prove. Use a scratch install folder, never a real one.
 2. Pick Blanck-ComfyUI. **Expect:** the Install location panel says "Where the software gets
    installed" and, once a folder is typed, a grey "Will be created: <folder>\ComfyUI" line under
    the box. The folders panel shows only the Output folder box, empty, with grey
-   `<folder>\ComfyUI\output` text inside, and below it a closed "Advanced: custom model folders"
-   line. No "saved model folders" checkbox, no library box outside Advanced. Click the line.
+   `<folder>\ComfyUI\output` text inside, and below it a full-width closed "Advanced settings · custom model folders"
+   bar. No "saved model folders" checkbox, no library box outside Advanced. Click the bar.
    **Expect:** it opens with the Model library folder box first (grey `<folder>\ComfyUI\models`
    inside when empty), the overwrite checkbox (only when a library is set), 21 folder-name boxes
    prefilled with ComfyUI's standard names (or your saved custom ones), "Reset to standard", and
@@ -55,13 +55,18 @@ real run can prove. Use a scratch install folder, never a real one.
 4. Clear the install folder. **Expect:** Next is disabled and the validation message shows.
 5. Click Browse. **Expect:** a native folder dialog opens. Dismiss it. **Expect:** the field is
    unchanged and nothing crashes.
-6. Pick Krea-2-Turbo. **Expect:** after Location comes a Content screen with a VRAM dropdown
-   offering exactly 8, 12, 16, 24, 32 GB with 8 preselected, every model ticked and grouped by
-   folder, every workflow ticked, and a disk-space line that updates when you untick a model or
+6. Pick Krea-2-Turbo. **Expect:** after Location comes a Content screen showing ONLY the
+   "Graphics card memory" panel with a VRAM dropdown offering exactly 8, 12, 16, 24, 32 GB with
+   8 preselected, and below it a closed "Advanced settings · models and workflows" bar whose
+   right side reads "N of N models, N of N workflows". Open it. **Expect:** every model ticked
+   and grouped by folder, every workflow ticked, and a disk-space line that updates when you untick a model or
    change the tier.
 7. Pick Ideogram-4.0. **Expect:** the dropdown offers exactly 24 and 32 GB, 24 preselected.
 8. On the Content screen, point the install folder (Back, then edit) at a folder that already
    holds one of the listed models. **Expect:** that row shows "already downloaded".
+
+**Confirm stage:** the primary button reads "Start installation" (every earlier stage says
+"Next").
 
 ## 3. A real install
 

@@ -612,29 +612,48 @@ progress {
     margin-top: 1.25rem;
 }
 
-/* Folders page: the advanced section is a disclosure, closed by default. */
+/* "Advanced settings" bar: a disclosure, closed by default, big enough to be noticed. */
 .advanced-toggle {
     display: flex;
     align-items: center;
-    gap: .4rem;
+    flex-wrap: wrap;
+    gap: .5rem;
+    width: 100%;
     margin-top: 1rem;
-    padding: .35rem 0;
-    background: none;
-    border: none;
-    color: var(--muted);
+    padding: .65rem .9rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
     font: inherit;
-    font-size: .9rem;
+    font-size: 1rem;
+    text-align: left;
     cursor: pointer;
 }
 
 .advanced-toggle:hover {
-    color: var(--text);
+    border-color: var(--accent);
 }
 
 .advanced-chevron {
     display: inline-block;
     width: 1rem;
     text-align: center;
+    color: var(--accent);
+}
+
+.advanced-title {
+    font-weight: 600;
+}
+
+.advanced-subtitle,
+.advanced-summary {
+    color: var(--muted);
+    font-size: .9rem;
+}
+
+.advanced-summary {
+    margin-left: auto;
 }
 
 .advanced {
@@ -642,6 +661,15 @@ progress {
     padding: .75rem 1rem;
     border: 1px solid var(--border);
     border-radius: 8px;
+}
+
+/* Whole panels nested inside an Advanced section (the Content stage). */
+.advanced > .panel {
+    margin-bottom: .75rem;
+}
+
+.advanced > .panel:last-child {
+    margin-bottom: 0;
 }
 
 .advanced-head {
