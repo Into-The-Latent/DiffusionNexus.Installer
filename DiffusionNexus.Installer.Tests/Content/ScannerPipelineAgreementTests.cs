@@ -3,6 +3,8 @@ using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Models.Helpers;
+using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Installation.Steps.Content;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
@@ -41,37 +43,55 @@ public sealed class ScannerPipelineAgreementTests : IAsyncLifetime
 
         var scanner = new ModelPresenceScanner();
         var noOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var libraryOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["loras"] = "Lora", ["vae"] = "VAEs" };
+        const string repo = @"C:\dn-agreement\repo";
 
+        // The handler's ResolvePath is private; calling the real one keeps this an agreement test
+        // rather than a third hand-copy of the rule.
+        var resolvePath = typeof(ModelDownloadStepHandler).GetMethod("ResolvePath",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+        foreach (var (library, overrides) in new (string?, Dictionary<string, string>)[] { (null, noOverrides), (@"D:\dn-library", libraryOverrides) })
         foreach (var workload in withModels)
         {
             var tiers = VramTiers.Parse(workload.Vram.VramProfiles).Prepend(0).Distinct();
 
             foreach (var tier in tiers)
             {
-                var presence = scanner.Scan(new ModelScanRequest(workload, @"C:\dn-agreement\repo", null, noOverrides, tier))
-                    .ToDictionary(p => p.ModelId);
+                var presence = scanner.Scan(new ModelScanRequest(workload, repo, library, overrides, tier))
+                    .GroupBy(p => p.ModelId).ToDictionary(g => g.Key, g => g.First());
 
                 foreach (var model in workload.ModelDownloads.Where(m => m.Enabled))
                 {
                     var enabledLinks = model.DownloadLinks.Where(l => l.Enabled).ToList();
+                    var modelDestination = ModelDestinationResolver.Resolve(workload, model, repo, library, overrides);
+
+                    // (url, destination directory) exactly as ModelDownloadStepHandler computes them.
                     var expected = enabledLinks.Count == 0
                         ? (string.IsNullOrWhiteSpace(model.Url)
                             || (tier > 0 && !PipelineVram.VramProfileFitsSelection(model.VramProfile, tier))
-                            ? [] : new[] { model.Url })
-                        : PipelineVram.SelectBestMatchingLinks(enabledLinks, tier, null, model.Name).Select(l => l.Url).ToArray();
+                            ? [] : new[] { (Url: model.Url, Dir: modelDestination) })
+                        : PipelineVram.SelectBestMatchingLinks(enabledLinks, tier, null, model.Name)
+                            .Select(l => (Url: l.Url, Dir: string.IsNullOrWhiteSpace(l.Destination)
+                                ? modelDestination
+                                : (string)resolvePath.Invoke(null, [l.Destination, repo, workload])!))
+                            .ToArray();
 
                     // Links whose downloader-derived name has no extension can never be scanned or
                     // verified before download (the real name only arrives with the server's
-                    // Content-Disposition header) -- the scanner correctly drops those, so the URL
+                    // Content-Disposition header) -- the scanner correctly drops those, so the
                     // comparison is only meaningful for the rest.
                     var expectedWithExtension = expected
-                        .Where(u => FileDownloader.GetFileNameFromUrl(DownloadUrlNormalizer.Normalize(u)).Contains('.'))
+                        .Where(e => FileDownloader.GetFileNameFromUrl(DownloadUrlNormalizer.Normalize(e.Url)).Contains('.'))
                         .ToArray();
 
                     var actualTargets = presence[model.Id].Targets;
 
-                    actualTargets.Select(t => t.Url).Should().Equal(expectedWithExtension,
-                        $"'{workload.Name}' / '{model.Name}' at {tier} GB must scan exactly what the pipeline downloads");
+                    actualTargets.Select(t => (Url: t.Url, Dir: t.DestinationDirectory)).Should().Equal(expectedWithExtension,
+                        $"'{workload.Name}' / '{model.Name}' at {tier} GB (library: {library ?? "none"}) must scan exactly where the pipeline downloads");
+
+                    presence[model.Id].UnresolvableLinks.Should().Be(expected.Length - expectedWithExtension.Length,
+                        $"'{workload.Name}' / '{model.Name}' must count every dropped link");
 
                     foreach (var target in actualTargets)
                     {
@@ -80,7 +100,7 @@ public sealed class ScannerPipelineAgreementTests : IAsyncLifetime
                             $"'{workload.Name}' / '{model.Name}' must name files exactly as FileDownloader will");
                     }
 
-                    foreach (var dropped in expected.Except(expectedWithExtension))
+                    foreach (var dropped in expected.Select(e => e.Url).Except(expectedWithExtension.Select(e => e.Url)))
                     {
                         FileDownloader.GetFileNameFromUrl(DownloadUrlNormalizer.Normalize(dropped)).Should().NotContain(".",
                             $"'{workload.Name}' / '{model.Name}': '{dropped}' must be dropped only for the Content-Disposition case");

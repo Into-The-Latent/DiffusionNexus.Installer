@@ -42,10 +42,13 @@ public sealed class InstallFolderModule(
         get => _targetFolder;
         set
         {
+            // Raw here so the text box never fights a keystroke; TRIMMED everywhere it is acted
+            // on. A pasted trailing space once made the destination line, the presence scan and
+            // the pipeline disagree on which folder they meant.
             _targetFolder = value;
             // Pushed eagerly, not only from Contribute: the Content stage scans the install folder
             // for models already on disk before Confirm ever runs ToOptions.
-            if (_selection is not null) _selection.TargetFolder = value;
+            if (_selection is not null) _selection.TargetFolder = value.Trim();
         }
     }
 
@@ -76,7 +79,18 @@ public sealed class InstallFolderModule(
         // The target folder is not an InstallationOptions field — the orchestrator takes it as a
         // separate argument — so it lands on the selection instead.
         if (_selection is not null)
-            _selection.TargetFolder = TargetFolder;
+            _selection.TargetFolder = TargetFolder.Trim();
+    }
+
+    /// <summary>Remembers the install folder for the next run. Re-reads settings first: another module may have just saved.</summary>
+    public async Task PersistAsync(CancellationToken ct = default)
+    {
+        var folder = TargetFolder.Trim();
+        if (folder.Length == 0) return;
+
+        var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+        user.DefaultTargetInstallFolder = folder;
+        await settings.SaveAsync(user, ct).ConfigureAwait(false);
     }
 
     public ModuleValidation Validate()
@@ -87,10 +101,11 @@ public sealed class InstallFolderModule(
         if (_selection is null)
             return ModuleValidation.Ok();
 
-        if (!string.Equals(_validatedPath, TargetFolder, StringComparison.Ordinal))
+        var folder = TargetFolder.Trim();
+        if (!string.Equals(_validatedPath, folder, StringComparison.Ordinal))
         {
-            _validatedPath = TargetFolder;
-            _validationError = CheckTargetFolder(TargetFolder);
+            _validatedPath = folder;
+            _validationError = CheckTargetFolder(folder);
         }
 
         return _validationError is null

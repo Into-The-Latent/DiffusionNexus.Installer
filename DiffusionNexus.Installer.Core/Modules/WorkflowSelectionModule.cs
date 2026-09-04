@@ -22,6 +22,9 @@ public sealed class WorkflowSelectionModule : IWizardModule
     public int Order => 20;
     public WorkloadCapability Satisfies => WorkloadCapability.Workflows;
 
+    /// <summary>All ticked by default; lives behind Advanced with the models.</summary>
+    public bool IsAdvanced => true;
+
     public IReadOnlyList<WorkflowRow> Rows { get; private set; } = [];
     public int SelectedCount => Rows.Count(r => r.IsSelected);
 

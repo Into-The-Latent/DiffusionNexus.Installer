@@ -218,6 +218,54 @@ public class ComfyFoldersAdvancedTests
     }
 
     [Fact]
+    public async Task Persist_leaves_per_type_folders_alone_when_the_advanced_section_was_never_edited()
+    {
+        // Review finding: a returning 1.x user with "checkpoints"/"loras" stored (standard names,
+        // hence not overrides) pressed Next without opening Advanced and had both fields blanked.
+        var stored = new UserSettings
+        {
+            DefaultCheckpointsFolder = "checkpoints",
+            DefaultLoraFolder = "loras",
+            additionalFolders = [new AdditionalFolder { BaseName = "extra", MapsTo = @"G:\Extra" }],
+        };
+        var (module, repo) = Module(stored);
+        await module.InitializeAsync(Selection());
+        module.ModelBaseFolder = @"D:\Models";
+
+        await module.PersistAsync();
+
+        repo.Verify(r => r.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()), Times.Once);
+        stored.DefaultModelBaseFolder.Should().Be(@"D:\Models", "the visible answer is always saved");
+        stored.DefaultCheckpointsFolder.Should().Be("checkpoints");
+        stored.DefaultLoraFolder.Should().Be("loras");
+        stored.additionalFolders.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Persist_rereads_the_settings_so_it_never_clobbers_what_another_module_just_saved()
+    {
+        // Two Location modules save in a row. Each must start from the file as it is NOW, not
+        // from the copy it loaded at initialization, or the second save undoes the first.
+        var atInit = new UserSettings { DefaultTargetInstallFolder = @"C:\Old" };
+        var atPersist = new UserSettings { DefaultTargetInstallFolder = @"C:\JustSavedByInstallFolderModule" };
+        var repo = new Mock<IUserSettingsRepository>();
+        repo.SetupSequence(r => r.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(atInit)
+            .ReturnsAsync(atPersist);
+        repo.Setup(r => r.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((UserSettings s, CancellationToken _) => s);
+        var module = new ComfyFoldersModule(repo.Object);
+        await module.InitializeAsync(Selection());
+        module.ModelBaseFolder = @"D:\Models";
+
+        await module.PersistAsync();
+
+        repo.Verify(r => r.SaveAsync(atPersist, It.IsAny<CancellationToken>()), Times.Once);
+        atPersist.DefaultTargetInstallFolder.Should().Be(@"C:\JustSavedByInstallFolderModule");
+        atPersist.DefaultModelBaseFolder.Should().Be(@"D:\Models");
+    }
+
+    [Fact]
     public async Task Persist_does_nothing_for_a_workload_the_module_does_not_apply_to()
     {
         // The registry initializes every module. A Fooocus install must not rewrite the ComfyUI

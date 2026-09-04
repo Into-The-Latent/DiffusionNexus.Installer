@@ -66,30 +66,20 @@ else
 
         @* Confirm-stage modules render after the summary: the disclaimer belongs below what it
            applies to, and nothing else targets that stage today. *@
-        @if (_run.CurrentStage == WizardStage.Content)
+        @* Modules that declare themselves advanced (all-ticked-by-default lists) render behind
+           the stage's "Advanced settings" bar; everything else is the first look. *@
+        @foreach (var module in _run.CurrentModules.Where(m => !m.IsAdvanced))
         {
-            @* First look is the one question everybody must answer. Models and workflows are all
-               ticked by default, so they live behind Advanced with a summary on the closed bar. *@
-            @foreach (var module in _run.CurrentModules.Where(m => m is VramProfileModule))
-            {
-                @RenderModule(module)
-            }
-            @if (_run.CurrentModules.Any(m => m is not VramProfileModule))
-            {
-                <AdvancedDisclosure Subtitle="models and workflows" Summary="@ContentSummary()">
-                    @foreach (var module in _run.CurrentModules.Where(m => m is not VramProfileModule))
-                    {
-                        @RenderModule(module)
-                    }
-                </AdvancedDisclosure>
-            }
+            @RenderModule(module)
         }
-        else
+        @if (_run.CurrentModules.Any(m => m.IsAdvanced))
         {
-            @foreach (var module in _run.CurrentModules)
-            {
-                @RenderModule(module)
-            }
+            <AdvancedDisclosure Subtitle="@AdvancedSubtitle()" Summary="@ContentSummary()">
+                @foreach (var module in _run.CurrentModules.Where(m => m.IsAdvanced))
+                {
+                    @RenderModule(module)
+                }
+            </AdvancedDisclosure>
         }
 
         @if (_preflightBusy)
@@ -213,6 +203,9 @@ else
         // prompt service throws opening a second mismatch dialog on top of the first.
         if (_preflightBusy || _savingSettings) return;
 
+        // A notice about the previous stage's save must not follow the user any further.
+        _settingsNotice = null;
+
         if (_run!.CurrentStage == WizardStage.Confirm)
         {
             // 1.x checks already-present files when Install is pressed. Here that is Confirm's
@@ -247,11 +240,10 @@ else
             // the same answers. Guarded like the preflight: a second click landing during the
             // save would otherwise advance twice and skip a stage.
             _savingSettings = true;
-            _settingsNotice = null;
             try
             {
-                foreach (var folders in _run.CurrentModules.OfType<ComfyFoldersModule>())
-                    await folders.PersistAsync(_pageCts.Token);
+                foreach (var module in _run.CurrentModules)
+                    await module.PersistAsync(_pageCts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -282,8 +274,9 @@ else
     private void Back()
     {
         // Otherwise a "not started" notice from a dismissed Confirm preflight would keep showing
-        // on the System stage, where it no longer applies.
+        // on the System stage, where it no longer applies. Same for a failed settings save.
         _preflightNotice = null;
+        _settingsNotice = null;
         _run!.Back();
     }
 
@@ -295,6 +288,8 @@ else
 
         Nav.NavigateTo($"/install/{running.Selection.Workload.Id}");
     }
+
+    private string AdvancedSubtitle() => _run!.CurrentStage == WizardStage.Content ? "models and workflows" : "more options";
 
     /// <summary>What the closed Advanced bar on the Content stage says, e.g. "14 of 14 models, 3 of 3 workflows".</summary>
     private string ContentSummary()

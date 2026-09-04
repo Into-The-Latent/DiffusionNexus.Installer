@@ -85,6 +85,25 @@ public class ModelSelectionPanelTests : BunitContext
     }
 
     [Fact]
+    public async Task Unknown_free_space_is_said_plainly_and_not_flagged_as_a_shortfall()
+    {
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiskSpaceEstimate(3L * 1024 * 1024 * 1024, 0, true, [], AvailableKnown: false));
+        var selection = Selection();
+        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object);
+        await module.InitializeAsync(selection);
+
+        var cut = RenderPanel(module, selection);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".disk-space").TextContent.Should().Contain("Needs about").And.Contain("could not read the free space");
+            cut.Find(".disk-space").ClassList.Should().NotContain("disk-space-bad");
+        });
+    }
+
+    [Fact]
     public async Task Shows_the_disk_space_estimate_and_flags_a_shortfall()
     {
         var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, Estimator(sufficient: false));

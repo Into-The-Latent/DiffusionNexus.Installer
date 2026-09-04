@@ -42,6 +42,41 @@ public class ModelSelectionModuleTests
         new((scanner ?? Scanner()).Object, estimator ?? Mock.Of<IDiskSpaceEstimator>());
 
     [Fact]
+    public async Task A_duplicated_model_id_in_the_catalog_is_a_data_smell_not_a_crash()
+    {
+        // Review finding: ToDictionary threw on a repeated GUID (hand-authored catalog JSON),
+        // taking the whole Content stage down with no pointer at the catalog.
+        var twin = new ModelDownload { Id = Vae.Id, Name = "VAE again", Destination = @"models\vae", Url = Vae.Url };
+        var scanner = Scanner(Present(Vae, @"C:\AI\ComfyUI\models\vae\ae.safetensors"), Absent(twin));
+        var module = Module(scanner);
+
+        var act = () => module.InitializeAsync(Selection(Vae, twin));
+
+        await act.Should().NotThrowAsync();
+        module.Rows.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Groups_are_computed_once_not_on_every_render()
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(Unet, Vae));
+
+        module.Groups.Should().BeSameAs(module.Groups, "the grouping never changes after initialization");
+        module.Groups.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Models_and_workflows_are_advanced_questions_and_the_memory_tier_is_not()
+    {
+        // The page renders primary modules first and the rest behind Advanced, by asking the
+        // module -- not by testing its type.
+        Module().IsAdvanced.Should().BeTrue();
+        new WorkflowSelectionModule().IsAdvanced.Should().BeTrue();
+        ((IWizardModule)new VramProfileModule()).IsAdvanced.Should().BeFalse("the default is to be shown, not hidden");
+    }
+
+    [Fact]
     public async Task Every_enabled_model_is_a_ticked_row_grouped_by_destination_with_unassigned_last()
     {
         var disabled = new ModelDownload { Name = "Off", Enabled = false };

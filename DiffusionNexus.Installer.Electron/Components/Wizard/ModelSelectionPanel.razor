@@ -40,7 +40,23 @@
         }
         else if (Module.Estimate is { } estimate)
         {
-            <text>Needs about @estimate.RequiredText, @estimate.AvailableText free on that drive.</text>
+            <text>Needs about @estimate.RequiredText</text>
+            @if (estimate.LibraryAvailableBytes is not null)
+            {
+                <text>, of which @estimate.ModelBytesText of models go to your library folder</text>
+            }
+            @if (!estimate.AvailableKnown)
+            {
+                <text>. We could not read the free space on that drive.</text>
+            }
+            else if (estimate.LibraryAvailableBytes is { } libraryFree)
+            {
+                <text>. @estimate.AvailableText free on the install drive, @estimate.LibraryAvailableText free in the library folder.</text>
+            }
+            else
+            {
+                <text>, @estimate.AvailableText free on that drive.</text>
+            }
             @if (!estimate.IsSufficient)
             {
                 <text> Not enough space.</text>
@@ -75,21 +91,45 @@
     private CancellationTokenSource? _estimateCts;
     private bool _estimating;
 
-    protected override void OnInitialized()
+    private bool _scanning;
+
+    protected override async Task OnInitializedAsync()
     {
-        // The install folder may have changed since the module was initialized on the Location stage.
-        Module.RefreshPresence();
+        // The install folder may have changed since the module was initialized on the Location
+        // stage. Only then is a rescan needed; the module already scanned at initialization.
+        if (ScanIsStale()) await RescanAsync();
         ScheduleEstimate();
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         // A sibling panel edits the tier. Its Changed re-renders the page, which re-renders this
         // panel with the same parameters -- that render is when the moved tier becomes visible.
-        if (Module.LastScannedTier != Selection.SelectedVramProfile)
+        if (!_scanning && ScanIsStale())
         {
-            Module.RefreshPresence();
+            await RescanAsync();
             ScheduleEstimate();
+        }
+    }
+
+    private bool ScanIsStale() =>
+        Module.LastScannedTier != Selection.SelectedVramProfile
+        || !string.Equals(Module.LastScannedFolder, Selection.TargetFolder, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The scan walks every destination directory. Off the render thread, or a large library on a
+    /// slow disk freezes the window on every tier change with nothing to say why.
+    /// </summary>
+    private async Task RescanAsync()
+    {
+        _scanning = true;
+        try
+        {
+            await Task.Run(Module.RefreshPresence);
+        }
+        finally
+        {
+            _scanning = false;
         }
     }
 

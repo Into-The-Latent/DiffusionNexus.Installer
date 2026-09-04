@@ -67,6 +67,26 @@ public sealed class ModelPresenceScannerTests : IDisposable
     }
 
     [Fact]
+    public void A_link_whose_name_is_unknown_until_download_keeps_the_model_from_counting_as_present()
+    {
+        // Review finding: a dotless link (real name arrives with Content-Disposition) yields no
+        // target, and "all targets present" must not be answered over the survivors alone -- the
+        // row would say "already downloaded" and the estimate would zero the whole model while
+        // that link still downloads.
+        Touch(@"models\unet\unet.gguf");
+        var model = Model("Mixed", @"models\unet",
+            Link("https://host.invalid/files/unet.gguf"),
+            Link("https://civitai.com/api/download/models/12345"));
+
+        var presence = _scanner.Scan(Request(Workload(model))).Single();
+
+        presence.AllPartsPresent.Should().BeFalse();
+        presence.ExistingPath.Should().BeNull();
+        presence.UnresolvableLinks.Should().Be(1);
+        presence.Targets.Should().ContainSingle().Which.ExistingPath.Should().NotBeNull();
+    }
+
+    [Fact]
     public void A_file_filed_into_a_subfolder_still_counts()
     {
         // Users sort models into subfolders ("Wan 2.2\..."); 1.x searched recursively and so do we.

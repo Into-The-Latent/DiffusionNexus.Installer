@@ -31,8 +31,10 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         var module = plan.AllModules.OfType<ModelSelectionModule>().FirstOrDefault();
         if (module is null) return new PreflightResult(true, null);
 
-        // The folder may have changed since the Content stage rendered; scan against what Confirm shows.
-        module.RefreshPresence();
+        // The folder may have changed since the Content stage rendered; scan against what Confirm
+        // shows. Off the render thread: a large library on a slow disk must not freeze the window
+        // before the "Verifying..." hint can even paint.
+        await Task.Run(module.RefreshPresence, ct).ConfigureAwait(false);
         module.ApplyVerification([], []);
 
         var candidates = module.ExistingTargetsForSelectedModels()

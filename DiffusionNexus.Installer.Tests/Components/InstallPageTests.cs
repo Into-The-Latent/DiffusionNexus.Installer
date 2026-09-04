@@ -312,9 +312,11 @@ public class InstallPageTests : BunitContext
 
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
 
+        // Every Location module saves (install folder first, then the ComfyUI folders), and Moq
+        // evaluates the predicate against the shared settings object as it is now.
         _contentSettings!.Verify(s => s.SaveAsync(
             It.Is<UserSettings>(u => u.DefaultLorasFolder == "MyLoras"),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Fact]
@@ -329,6 +331,43 @@ public class InstallPageTests : BunitContext
 
         page.FindComponent<VramProfilePanel>().Should().NotBeNull("the answers still apply to this run");
         page.Markup.Should().Contain("could not be saved").And.Contain("disk full");
+    }
+
+    [Fact]
+    public void A_settings_notice_does_not_follow_the_user_past_the_next_stage()
+    {
+        // Review finding: the "could not be saved" line stayed on screen through Content, System
+        // and Confirm, where it read as a live problem with the screen in front of the user.
+        RegisterContent(EmptyScanner());
+        _contentSettings!.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("disk full"));
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();   // Location -> Content
+        page.Markup.Should().Contain("could not be saved");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();   // Content -> System
+        page.Markup.Should().NotContain("could not be saved");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Back").Click();   // System -> Content
+        page.Markup.Should().NotContain("could not be saved");
+    }
+
+    [Fact]
+    public void Leaving_the_Location_stage_remembers_the_install_folder_too()
+    {
+        // Review finding: only the ComfyUI folders were saved; the install folder itself, the one
+        // answer every workload type asks, was never remembered.
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var chosen = Path.Combine(Path.GetTempPath(), $"dn-remember-{Guid.NewGuid():N}");
+        page.Find(".path-row input").Input(chosen + " ");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        _contentSettings!.Verify(s => s.SaveAsync(
+            It.Is<UserSettings>(u => u.DefaultTargetInstallFolder == chosen),
+            It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Fact]
@@ -393,8 +432,12 @@ public class InstallPageTests : BunitContext
 
         page.Find("select").Change("16");
 
-        page.FindComponent<ModelSelectionPanel>().Instance.Module.LastScannedTier.Should().Be(16);
-        scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().BeGreaterThan(scansBefore);
+        // The scan now runs off the render thread, so the rescan lands a beat after the change.
+        page.WaitForAssertion(() =>
+        {
+            page.FindComponent<ModelSelectionPanel>().Instance.Module.LastScannedTier.Should().Be(16);
+            scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().BeGreaterThan(scansBefore);
+        });
     }
 
     [Fact]

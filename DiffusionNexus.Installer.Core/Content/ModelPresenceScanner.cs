@@ -26,11 +26,16 @@ public sealed record ModelFileTarget(
     string? ExistingPath);
 
 /// <param name="AllPartsPresent">True only when every target's file exists — a half-downloaded multi-link model is not "already downloaded".</param>
+/// <param name="UnresolvableLinks">
+/// Links the pipeline will download whose file name is only known once the server answers
+/// (no extension in the URL). They cannot be scanned, so a model with any is never "all present".
+/// </param>
 public sealed record ModelPresence(
     Guid ModelId,
     bool AllPartsPresent,
     string? ExistingPath,
-    IReadOnlyList<ModelFileTarget> Targets);
+    IReadOnlyList<ModelFileTarget> Targets,
+    int UnresolvableLinks = 0);
 
 public interface IModelPresenceScanner
 {
@@ -68,15 +73,17 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
 
         foreach (var model in request.Workload.ModelDownloads.Where(m => m.Enabled))
         {
-            var targets = TargetsFor(request, model, overrides, directoryCache);
-            var allPresent = targets.Count > 0 && targets.All(t => t.ExistingPath is not null);
-            results.Add(new ModelPresence(model.Id, allPresent, allPresent ? targets[^1].ExistingPath : null, targets));
+            var (targets, unresolvable) = TargetsFor(request, model, overrides, directoryCache);
+            // Over ALL links the pipeline will download, not just the scannable ones: a model with
+            // one file on disk and one name-unknown link still has a download ahead of it.
+            var allPresent = targets.Count > 0 && unresolvable == 0 && targets.All(t => t.ExistingPath is not null);
+            results.Add(new ModelPresence(model.Id, allPresent, allPresent ? targets[^1].ExistingPath : null, targets, unresolvable));
         }
 
         return results;
     }
 
-    private static List<ModelFileTarget> TargetsFor(
+    private static (List<ModelFileTarget> Targets, int Unresolvable) TargetsFor(
         ModelScanRequest request, ModelDownload model, Dictionary<string, string> overrides, DirectoryListingCache directoryCache)
     {
         var modelDestination = ModelDestinationResolver.Resolve(
@@ -87,16 +94,17 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         if (enabledLinks.Count == 0)
         {
             // The handler's fallback: the model's own URL, subject to the model-level tier.
-            if (string.IsNullOrWhiteSpace(model.Url)) return [];
+            if (string.IsNullOrWhiteSpace(model.Url)) return ([], 0);
 
             if (request.SelectedVramGb > 0 && !PipelineVram.VramProfileFitsSelection(model.VramProfile, request.SelectedVramGb))
-                return [];
+                return ([], 0);
 
-            return Target(model, model.Url, modelDestination, directoryCache) is { } single ? [single] : [];
+            return Target(model, model.Url, modelDestination, directoryCache) is { } single ? ([single], 0) : ([], 1);
         }
 
         var links = PipelineVram.SelectBestMatchingLinks(enabledLinks, request.SelectedVramGb, null, model.Name);
         var targets = new List<ModelFileTarget>();
+        var unresolvable = 0;
 
         foreach (var link in links)
         {
@@ -107,9 +115,10 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
                 : ResolveLinkDestination(link.Destination, request.RepositoryPath);
 
             if (Target(model, link.Url, destination, directoryCache) is { } target) targets.Add(target);
+            else unresolvable++;
         }
 
-        return targets;
+        return (targets, unresolvable);
     }
 
     /// <summary>Mirrors ModelDownloadStepHandler.ResolvePath: rooted as-is, placeholders, else under the repository.</summary>
@@ -173,6 +182,8 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
 
         private string[] ListDirectory(string directory)
         {
+            // Keyed by the normalized full path: "...\loras" and "...\loras\" are one walk, not two.
+            directory = NormalizeKey(directory);
             if (_listings.TryGetValue(directory, out var cached)) return cached;
 
             string[] files;
@@ -189,6 +200,18 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
 
             _listings[directory] = files;
             return files;
+        }
+
+        private static string NormalizeKey(string directory)
+        {
+            try
+            {
+                return Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch (Exception ex) when (IsFileSystemException(ex))
+            {
+                return directory;
+            }
         }
 
         private static bool IsFileSystemException(Exception ex) =>
