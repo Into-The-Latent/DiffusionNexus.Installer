@@ -14,17 +14,14 @@ real run can prove. Use a scratch install folder, never a real one.
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
    **Expect:** the gallery populates from the embedded seed; no error, no empty state.
-2. **Expect:** exactly nine cards are enabled — Stable Diffusion web UI, Stable Diffusion WebUI Forge,
-   Fooocus, ACE-Step-1.5, AI-Toolkit, Blanck-ComfyUI, Base-install-Triton-SageAttention-Manager,
-   ComfyUI Llama Cpp test, and FlashVSR-Video&Image Upscale. Every other card is visible but
-   disabled, most with a "Coming soon" note (they need ModelDownloads or VramProfile, neither of
-   which is in slice 1).
+2. **Expect:** every card is enabled except Config535 — 20 of 21. The DiffusionNexusCore
+   workloads (Captioning, Inpainting, Outpainting, Upscaling-Z-Image-Turbo) are not listed at all.
    **Config535 is the exception:** it is disabled with a torch message, not a "Coming soon" one —
    its catalog entry pairs torch 2.8.0 with CUDA 13.0, for which no wheel exists, so the pipeline
    would refuse it before step 1. That is a catalog data fix, not a missing module.
 3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
-   Wan 2.2 - GGUF appear (all disabled/"coming soon" — none are in the slice-1 installable set);
-   the Image cards do not.
+   Wan 2.2 - GGUF appear (all enabled now — LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3 and
+   Wan 2.2 - GGUF are Content-stage workloads); the Image cards do not.
    Note: the embedded seed predates the catalog's Audio workflow type, so no workload in it is
    tagged Audio yet (ACE-Step-1.5 is still `Image` in this snapshot) and no Audio filter button
    renders. Re-check this step once an Audio-tagged workload ships in the embedded catalog.
@@ -40,14 +37,36 @@ real run can prove. Use a scratch install folder, never a real one.
 
 ## 2. Wizard stages
 
-1. Pick Fooocus. **Expect:** Location → System → Confirm → Install. No model, VRAM,
-   workflow or accelerator screen appears.
-2. Pick Blanck-ComfyUI. **Expect:** the Location stage also shows the model-library and output
-   folder fields.
+1. Pick Fooocus. **Expect:** Location → System → Confirm → Install. No Content screen (VRAM,
+   models, workflows) appears.
+2. Pick Blanck-ComfyUI. **Expect:** the Install location panel says "Where the software gets
+   installed" and, once a folder is typed, a grey "Will be created: <folder>\ComfyUI" line under
+   the box. The folders panel shows only the Output folder box, empty, with grey
+   `<folder>\ComfyUI\output` text inside, and below it a full-width closed "Advanced settings · custom model folders"
+   bar. No "saved model folders" checkbox, no library box outside Advanced. Click the bar.
+   **Expect:** it opens with the Model library folder box first (grey `<folder>\ComfyUI\models`
+   inside when empty), the overwrite checkbox (only when a library is set), 21 folder-name boxes
+   prefilled with ComfyUI's standard names (or your saved custom ones), "Reset to standard", and
+   an empty "Additional folders" list with "+ Add folder". Type `MyLoras` into LoRAs, press Next,
+   then Back. **Expect:** the closed line now says "custom folders in use". Cancel the wizard and
+   pick Blanck-ComfyUI again. **Expect:** LoRAs still reads `MyLoras` (saved on Next). Reset to
+   standard and press Next to clean up.
 3. Pick AI-Toolkit. **Expect:** the model-library field is present, the output folder field is not.
 4. Clear the install folder. **Expect:** Next is disabled and the validation message shows.
 5. Click Browse. **Expect:** a native folder dialog opens. Dismiss it. **Expect:** the field is
    unchanged and nothing crashes.
+6. Pick Krea-2-Turbo. **Expect:** after Location comes a Content screen showing ONLY the
+   "Graphics card memory" panel with a VRAM dropdown offering exactly 8, 12, 16, 24, 32 GB with
+   8 preselected, and below it a closed "Advanced settings · models and workflows" bar whose
+   right side reads "N of N models, N of N workflows". Open it. **Expect:** every model ticked
+   and grouped by folder, every workflow ticked, and a disk-space line that updates when you untick a model or
+   change the tier.
+7. Pick Ideogram-4.0. **Expect:** the dropdown offers exactly 24 and 32 GB, 24 preselected.
+8. On the Content screen, point the install folder (Back, then edit) at a folder that already
+   holds one of the listed models. **Expect:** that row shows "already downloaded".
+
+**Confirm stage:** the primary button reads "Start installation" (every earlier stage says
+"Next").
 
 ## 3. A real install
 
@@ -65,6 +84,13 @@ real run can prove. Use a scratch install folder, never a real one.
    back, then opening the wizard again. **Expect:** the wizard restarts from the first screen,
    not the finished report. The install itself never runs again. This is a known limitation:
    reconnecting after an install has completed returns to the wizard's start, not the result.
+6. Install Wan 2.2 - GGUF at tier 8 into a scratch folder — the heaviest case, 10 models and 26
+   links. **Expect:** files land under the right `models\...` folders, the report shows no
+   unexplained skips, and no row says "Requires more VRAM" for a model you expected.
+7. Re-run the same install over that folder after truncating one downloaded Hugging Face model
+   file (not the Civitai `Krea 2 Identity Edit` download, whose name only comes from the server)
+   to a few bytes. **Expect:** pressing Next on Confirm shows ONE dialog listing that file;
+   Continue with it ticked re-downloads it; Cancel installation leaves you on Confirm with a notice.
 
 ## 4. Known limitations
 

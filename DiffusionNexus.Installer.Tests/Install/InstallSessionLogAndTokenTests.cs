@@ -20,7 +20,7 @@ public class InstallSessionLogAndTokenTests
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        var registry = new WizardModuleRegistry([]);
+        var registry = new WizardModuleRegistry(() => []);
         var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
         plan.Selection.TargetFolder = @"C:\Installs\Fooocus";
         return plan;

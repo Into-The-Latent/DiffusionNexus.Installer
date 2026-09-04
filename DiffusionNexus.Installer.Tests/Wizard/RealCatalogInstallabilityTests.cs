@@ -1,16 +1,14 @@
 using DiffusionNexus.Installer.SDK.Services;
-using System.IO.Compression;
 using DiffusionNexus.Installer.Core.Catalog;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
-using DiffusionNexus.Installer.Electron.Services;
-using DiffusionNexus.Installer.SDK.Catalog;
-using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Hardware;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -25,15 +23,12 @@ namespace DiffusionNexus.Installer.Tests.Wizard;
 /// Electron project embeds and ships (Assets/Catalog/catalog.zip) -- the same archive Program.cs
 /// seeds a fresh install from -- rather than another synthetic fixture.
 /// </summary>
-public sealed class RealCatalogInstallabilityTests : IDisposable
+public sealed class RealCatalogInstallabilityTests : IAsyncLifetime
 {
-    // The exact names manual-smoke.md documents as enabled in slice 1. Everything else among the
-    // installer-targeted workloads must be blocked -- that is what the second half of the Fact
-    // below checks.
-    //
-    // Config535 is NOT here even though every capability it needs is covered: it pairs torch 2.8.0
-    // with CUDA 13.0, for which no wheel exists, so InstallationPipeline refuses it before step 1.
-    // See Config535_is_blocked_for_an_impossible_torch_pairing below.
+    // Every Installer-targeted workload in the embedded seed except Config535, which pairs torch
+    // 2.8.0 with CUDA 13.0 (no such wheel) and is refused by the pipeline before step 1 -- see
+    // Config535_is_blocked_for_an_impossible_torch_pairing. The four DiffusionNexusCore workloads
+    // never reach the gallery and are filtered out before this list is compared.
     private static readonly string[] ExpectedInstallableNames =
     [
         "Stable Diffusion web UI",
@@ -45,34 +40,31 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
         "Base-install-Triton-SageAttention-Manager",
         "ComfyUI Llama Cpp test",
         "FlashVSR-Video&Image Upscale",
+        "Ernie-Image-Turbo",
+        "Flux-Klein 9b + 4b",
+        "Ideogram-4.0",
+        "Krea-2-Turbo",
+        "LTX-2-3-GGUF",
+        "LTX-2-3-V1.1-Director-GGUF",
+        "LTX2 - GGUF - Legacy",
+        "MiniMax H3",
+        "Qwen-Image-Edit-2511 - 2512 - Layered",
+        "Qwen-Image-Edit-2511 - Deprecated",
+        "Wan 2.2 - GGUF",
     ];
 
-    private readonly string _catalogDir;
+    private string _catalogDir = string.Empty;
+    private IReadOnlyList<InstallationConfiguration> _workloads = [];
 
-    public RealCatalogInstallabilityTests()
+    public async Task InitializeAsync() => (_catalogDir, _workloads) = await EmbeddedCatalog.LoadAsync();
+
+    public Task DisposeAsync()
     {
-        _catalogDir = Path.Combine(Path.GetTempPath(), $"dn-catalog-agreement-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_catalogDir);
-
-        // Read the same embedded resource Program.cs seeds a fresh install from, by logical name
-        // off the Electron assembly, rather than a path relative to the test assembly's output
-        // directory: catalog.zip is an EmbeddedResource, not Content, so nothing copies it there,
-        // and this way the test does not depend on any path outside the repo.
-        var electronAssembly = typeof(UpdaterLog).Assembly;
-        using var zipStream = electronAssembly.GetManifestResourceStream("catalog.zip")
-            ?? throw new InvalidOperationException(
-                "catalog.zip is not embedded in the Electron assembly -- check the EmbeddedResource item in DiffusionNexus.Installer.Electron.csproj.");
-        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
-        archive.ExtractToDirectory(_catalogDir);
+        EmbeddedCatalog.Delete(_catalogDir);
+        return Task.CompletedTask;
     }
 
-    private async Task<IReadOnlyList<InstallationConfiguration>> ReadCatalogWorkloadsAsync()
-    {
-        var options = new CatalogOptions { LocalOverridePath = _catalogDir };
-        var locator = new CatalogLocator(options);
-        ICatalog catalog = new FileCatalog(locator, options);
-        return await catalog.GetWorkloadsAsync();
-    }
+    private Task<IReadOnlyList<InstallationConfiguration>> ReadCatalogWorkloadsAsync() => Task.FromResult(_workloads);
 
     private static IUserSettingsRepository Settings()
     {
@@ -114,10 +106,13 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
     /// Mirrors CoreServiceCollectionExtensions.AddInstallerCore's slice-1 module set exactly, so
     /// the gate under test is the one the app actually registers, not an arbitrary stand-in.
     /// </summary>
-    private WizardModuleRegistry ProductionRegistry() => new(
+    private WizardModuleRegistry ProductionRegistry() => new(() =>
     [
         new InstallFolderModule(Settings(), new PreInstallationService()),
         new ComfyFoldersModule(Settings()),
+        new VramProfileModule(),
+        new ModelSelectionModule(new ModelPresenceScanner(), Mock.Of<IDiskSpaceEstimator>()),
+        new WorkflowSelectionModule(),
         new GpuPreflightModule(Gpu()),
         new VcRuntimeModule(VcRuntime()),
         new LlamaCppModule(Wheels()),
@@ -126,7 +121,7 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
     ]);
 
     [Fact]
-    public async Task Exactly_the_slice_one_workloads_are_installable_in_the_real_catalog()
+    public async Task Exactly_twenty_of_the_twenty_one_installer_workloads_are_installable()
     {
         var workloads = (await ReadCatalogWorkloadsAsync())
             .Where(w => w.WorkloadTarget == WorkloadTargetType.Installer)
@@ -139,9 +134,10 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
         var blocked = workloads.Where(w => !registry.IsInstallable(w)).Select(w => w.Name).ToList();
 
         installable.Should().BeEquivalentTo(ExpectedInstallableNames,
-            "these are the only workloads slice 1's registered modules cover");
+            "these are the twenty Installer-targeted workloads slice 2's modules cover");
         blocked.Should().BeEquivalentTo(workloads.Select(w => w.Name).Except(ExpectedInstallableNames),
-            "every installer-targeted workload not in the installable list must be blocked, not silently allowed");
+            "Config535 must be blocked, not silently allowed");
+        blocked.Should().Equal("Config535");
     }
 
     [Fact]
@@ -181,30 +177,27 @@ public sealed class RealCatalogInstallabilityTests : IDisposable
     }
 
     [Fact]
-    public async Task Detect_and_AppliesTo_agree_on_ComfyFolders_for_every_real_catalog_workload()
+    public async Task Detect_and_AppliesTo_agree_for_every_real_catalog_workload()
     {
-        // ComfyFolders is the only capability slice 1 registers a module for besides the
-        // unconditional ones, so it is the only pairing that can actually drift between the gate
-        // (Detect) and the runtime (AppliesTo).
-        var comfyFolders = new ComfyFoldersModule(Settings());
+        var modules = new IWizardModule[]
+        {
+            new ComfyFoldersModule(Settings()),
+            new VramProfileModule(),
+            new ModelSelectionModule(new ModelPresenceScanner(), Mock.Of<IDiskSpaceEstimator>()),
+            new WorkflowSelectionModule(),
+        };
         var workloads = await ReadCatalogWorkloadsAsync();
         workloads.Should().NotBeEmpty();
 
         foreach (var workload in workloads)
         {
             var selection = new WizardSelection { Workload = workload };
-            var detected = WorkloadCapabilities.Detect(workload).HasFlag(WorkloadCapability.ComfyFolders);
-            var applies = comfyFolders.AppliesTo(selection);
-
-            applies.Should().Be(detected,
-                $"'{workload.Name}' ({workload.Repository.Type}) must agree between Detect and AppliesTo");
+            foreach (var module in modules)
+            {
+                var detected = WorkloadCapabilities.Detect(workload).HasFlag(module.Satisfies);
+                module.AppliesTo(selection).Should().Be(detected,
+                    $"'{workload.Name}': {module.Satisfies} must agree between Detect and AppliesTo");
+            }
         }
-    }
-
-    public void Dispose()
-    {
-        try { Directory.Delete(_catalogDir, recursive: true); }
-        catch (IOException) { /* best-effort cleanup of a temp dir */ }
-        catch (UnauthorizedAccessException) { /* best-effort cleanup of a temp dir */ }
     }
 }

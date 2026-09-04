@@ -1,51 +1,84 @@
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Modules
+@using DiffusionNexus.Installer.Electron.Components.Shared
 @inject IFolderPicker FolderPicker
 
 <section class="panel">
     <h2>Model and output folders</h2>
 
-    <label>Model library folder <span class="panel-hint">(optional)</span></label>
-    <p class="panel-hint">
-        Point this at an existing model library and the installer writes an
-        <code>extra_model_paths.yaml</code> so the workload reads from it instead of duplicating
-        downloads.
-    </p>
-    <div class="path-row">
-        <input type="text" value="@Module.ModelBaseFolder" @oninput="OnModelBaseFolderTyped" />
-        <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
-    </div>
-
-    @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
-    {
-        <label class="checkbox">
-            <input type="checkbox" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
-            Overwrite an existing extra_model_paths.yaml
-        </label>
-    }
-
-    @if (Module.SavedFolderCount > 0)
-    {
-        <label class="checkbox">
-            <input type="checkbox" checked="@Module.UseSavedFolderDefaults" @onchange="OnUseSavedDefaultsChanged" />
-            Use my @Module.SavedFolderCount saved model folder@(Module.SavedFolderCount == 1 ? "" : "s")
-        </label>
-        <p class="panel-hint">
-            Per-type folders you have set before (LoRAs, checkpoints, VAE and so on) are written into
-            extra_model_paths.yaml alongside the library folder above. Untick to use only the library
-            folder.
-        </p>
-    }
-
     @if (Module.SupportsOutputFolder)
     {
         <label>Output folder <span class="panel-hint">(optional)</span></label>
-        <p class="panel-hint">Generated images and videos are written here instead of inside the install.</p>
+        <p class="panel-hint">Leave empty to keep generated images and videos inside the install.</p>
         <div class="path-row">
-            <input type="text" value="@Module.OutputFolder" @oninput="OnOutputFolderTyped" />
+            <input type="text" data-role="output" value="@Module.OutputFolder"
+                   placeholder="@Module.DefaultOutputFolder" @oninput="OnOutputFolderTyped" />
             <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
         </div>
     }
+
+    <AdvancedDisclosure Subtitle="custom model folders" Badge="@(Module.HasCustomFolders ? "custom folders in use" : null)">
+        <p class="panel-hint">
+            Only needed if you keep models outside the install, or your library uses different
+            folder names than ComfyUI's standard ones. Everything here is remembered for your
+            next install.
+        </p>
+
+        <label>Model library folder <span class="panel-hint">(optional)</span></label>
+        <p class="panel-hint">
+            Leave empty to keep models inside the install. Point it at an existing library and the
+            installer writes an <code>extra_model_paths.yaml</code> so the software reads from it
+            instead of downloading again.
+        </p>
+        <div class="path-row">
+            <input type="text" data-role="library" value="@Module.ModelBaseFolder"
+                   placeholder="@Module.DefaultModelsFolder" @oninput="OnModelBaseFolderTyped" />
+            <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+        {
+            <label class="checkbox">
+                <input type="checkbox" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
+                Overwrite an existing extra_model_paths.yaml
+            </label>
+        }
+
+        <div class="advanced-head">
+            <h3>Folder names inside the library</h3>
+            <button type="button" class="btn-secondary btn-small" @onclick="ResetFolderTypes">Reset to standard</button>
+        </div>
+        <div class="folder-grid">
+            @foreach (var row in Module.FolderTypes)
+            {
+                <label for="folder-type-@row.Key">@row.Label</label>
+                <input id="folder-type-@row.Key" type="text" data-folder-key="@row.Key"
+                       value="@row.Value" placeholder="@row.Standard"
+                       @oninput="e => OnFolderTypeTyped(row.Key, e)" />
+            }
+        </div>
+
+        <div class="advanced-head">
+            <h3>Additional folders</h3>
+            <button type="button" class="btn-secondary btn-small" @onclick="AddAdditionalFolder">+ Add folder</button>
+        </div>
+        <p class="panel-hint">
+            Extra entries for extra_model_paths.yaml beyond the standard types: the name ComfyUI
+            should use and the folder it points at.
+        </p>
+        @foreach (var row in Module.AdditionalFolders)
+        {
+            <div class="additional-folder path-row" @key="row.Id">
+                <input type="text" data-role="name" placeholder="ComfyUI folder name"
+                       value="@row.BaseName" @oninput="e => OnAdditionalNameTyped(row, e)" />
+                <input type="text" data-role="path" placeholder="Folder path"
+                       value="@row.MapsTo" @oninput="e => OnAdditionalPathTyped(row, e)" />
+                <button type="button" class="btn-secondary" @onclick="() => BrowseAdditional(row)">Browse...</button>
+                <button type="button" class="btn-secondary btn-icon" data-role="remove" title="Remove"
+                        @onclick="() => RemoveAdditionalFolder(row)">✕</button>
+            </div>
+        }
+    </AdvancedDisclosure>
 </section>
 
 @code {
@@ -64,12 +97,6 @@
         await Changed.InvokeAsync();
     }
 
-    private async Task OnUseSavedDefaultsChanged(ChangeEventArgs e)
-    {
-        Module.UseSavedFolderDefaults = (bool)(e.Value ?? false);
-        await Changed.InvokeAsync();
-    }
-
     private async Task OnOverwriteChanged(ChangeEventArgs e)
     {
         Module.OverwriteExtraModelPaths = (bool)(e.Value ?? false);
@@ -79,6 +106,42 @@
     private async Task OnOutputFolderTyped(ChangeEventArgs e)
     {
         Module.OutputFolder = e.Value?.ToString() ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnFolderTypeTyped(string key, ChangeEventArgs e)
+    {
+        Module.SetFolderType(key, e.Value?.ToString() ?? string.Empty);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task ResetFolderTypes()
+    {
+        Module.ResetFolderTypesToStandard();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AddAdditionalFolder()
+    {
+        Module.AddAdditionalFolder();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task RemoveAdditionalFolder(AdditionalFolderRow row)
+    {
+        Module.RemoveAdditionalFolder(row);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnAdditionalNameTyped(AdditionalFolderRow row, ChangeEventArgs e)
+    {
+        row.BaseName = e.Value?.ToString() ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnAdditionalPathTyped(AdditionalFolderRow row, ChangeEventArgs e)
+    {
+        row.MapsTo = e.Value?.ToString() ?? string.Empty;
         await Changed.InvokeAsync();
     }
 
@@ -97,6 +160,15 @@
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.OutputFolder = chosen;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task BrowseAdditional(AdditionalFolderRow row)
+    {
+        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", row.MapsTo);
+        if (chosen is null) return;          // dismissed -- leave the field untouched
+
+        row.MapsTo = chosen;
         await Changed.InvokeAsync();
     }
 }

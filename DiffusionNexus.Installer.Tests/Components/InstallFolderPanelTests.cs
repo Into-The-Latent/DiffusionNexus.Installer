@@ -2,6 +2,8 @@ using DiffusionNexus.Installer.SDK.Services;
 using Bunit;
 using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Modules;
+using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.Electron.Components.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -28,6 +30,48 @@ public class InstallFolderPanelTests : BunitContext
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings { DefaultTargetInstallFolder = string.Empty });
         return new InstallFolderModule(settings.Object, new PreInstallationService());
+    }
+
+    private static async Task<InstallFolderModule> InitializedModule()
+    {
+        var module = Module();
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.ComfyUI;
+        w.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(new WizardSelection { Workload = w });
+        return module;
+    }
+
+    [Fact]
+    public async Task The_panel_says_software_and_shows_the_folder_that_will_be_created()
+    {
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        var module = await InitializedModule();
+        var cut = Render<InstallFolderPanel>(p => p.Add(x => x.Module, module));
+
+        cut.Markup.Should().Contain("Where the software gets installed").And.NotContain("workload");
+        cut.FindAll(".destination").Should().BeEmpty("nothing is created while the box is empty");
+
+        cut.Find("input").Input(@"E:\Installer\9");
+
+        cut.Find(".destination").TextContent.Should().Contain(@"E:\Installer\9\ComfyUI");
+    }
+
+    [Fact]
+    public async Task The_validation_message_sits_directly_under_the_hint_line()
+    {
+        // The page used to list every message under the buttons, far from the box it is about.
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        var module = await InitializedModule();
+        var cut = Render<InstallFolderPanel>(p => p.Add(x => x.Module, module));
+
+        var error = cut.Find(".panel .validation-error");
+        error.TextContent.Should().Contain("Choose a folder");
+
+        var hintEnd = cut.Markup.IndexOf("Where the software gets installed", StringComparison.Ordinal);
+        var errorAt = cut.Markup.IndexOf("Choose a folder", StringComparison.Ordinal);
+        var inputAt = cut.Markup.IndexOf("<input", StringComparison.Ordinal);
+        errorAt.Should().BeGreaterThan(hintEnd).And.BeLessThan(inputAt);
     }
 
     [Fact]

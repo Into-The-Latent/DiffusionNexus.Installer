@@ -25,7 +25,7 @@ public class WizardRunTests
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        return await new WizardModuleRegistry(modules)
+        return await new WizardModuleRegistry(() => modules)
             .BuildPlanAsync(new WizardSelection { Workload = workload });
     }
 

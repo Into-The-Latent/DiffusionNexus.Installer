@@ -1,9 +1,11 @@
 @page "/install/{WorkloadId:guid}"
+@implements IDisposable
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Modules
 @using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.Electron.Components.Wizard
 @using DiffusionNexus.Installer.SDK.Models.Enums
 @using DiffusionNexus.Installer.SDK.Services
@@ -11,6 +13,7 @@
 @inject WizardModuleRegistry Registry
 @inject IInstallSession Session
 @inject IUserPrompt Prompt
+@inject IModelPreflight Preflight
 @inject NavigationManager Nav
 
 <PageTitle>Install</PageTitle>
@@ -48,6 +51,10 @@ else
         @* Done is rendered by InstallStage, not here: this page does not subscribe to
            Session.Changed, so a button placed here would be stuck at whatever Phase said during
            the single render that created the stage -- i.e. visible for the whole install. *@
+        @if (_preflightWarning is not null)
+        {
+            <p class="validation-error">@_preflightWarning</p>
+        }
         <InstallStage Run="_run" Done="_backToGallery" />
     }
     else
@@ -59,22 +66,65 @@ else
 
         @* Confirm-stage modules render after the summary: the disclaimer belongs below what it
            applies to, and nothing else targets that stage today. *@
-        @foreach (var module in _run.CurrentModules)
+        @if (_run.CurrentStage == WizardStage.Content)
         {
-            @RenderModule(module)
+            @* First look is the one question everybody must answer. Models and workflows are all
+               ticked by default, so they live behind Advanced with a summary on the closed bar. *@
+            @foreach (var module in _run.CurrentModules.Where(m => m is VramProfileModule))
+            {
+                @RenderModule(module)
+            }
+            @if (_run.CurrentModules.Any(m => m is not VramProfileModule))
+            {
+                <AdvancedDisclosure Subtitle="models and workflows" Summary="@ContentSummary()">
+                    @foreach (var module in _run.CurrentModules.Where(m => m is not VramProfileModule))
+                    {
+                        @RenderModule(module)
+                    }
+                </AdvancedDisclosure>
+            }
+        }
+        else
+        {
+            @foreach (var module in _run.CurrentModules)
+            {
+                @RenderModule(module)
+            }
+        }
+
+        @if (_preflightBusy)
+        {
+            <p class="panel-hint">Verifying existing model files...</p>
+        }
+
+        @if (_preflightNotice is not null)
+        {
+            <p class="validation-error">@_preflightNotice</p>
+        }
+
+        @if (_settingsNotice is not null)
+        {
+            <p class="validation-error">@_settingsNotice</p>
         }
 
         <div class="wizard-actions">
             @* Always available, including at stage 0. A GPU-blocked System stage validates false
                forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
             <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
-            <button class="btn-secondary" disabled="@(!_run.CanGoBack)" @onclick="Back">Back</button>
-            <button class="btn-primary" disabled="@(!_run.CanGoNext)" @onclick="Next">Next</button>
+            <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy || _savingSettings)" @onclick="Back">Back</button>
+            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">
+                @(_run.CurrentStage == WizardStage.Confirm ? "Start installation" : "Next")
+            </button>
         </div>
 
-        @foreach (var error in _run.ValidationErrors)
+        @* The install-folder panel shows its own message right under its box; listing it here
+           too would put the same sentence on the page twice. *@
+        @foreach (var module in _run.CurrentModules.Where(m => m is not InstallFolderModule))
         {
-            <p class="validation-error">@error</p>
+            @if (module.Validate() is { IsValid: false, ErrorMessage: { } error })
+            {
+                <p class="validation-error">@error</p>
+            }
         }
     }
 }
@@ -86,6 +136,12 @@ else
     private string? _busyWith;
     private EventCallback _moduleChanged;
     private EventCallback _backToGallery;
+    private readonly CancellationTokenSource _pageCts = new();
+    private bool _preflightBusy;
+    private string? _preflightNotice;
+    private string? _preflightWarning;
+    private string? _settingsNotice;
+    private bool _savingSettings;
 
     protected override async Task OnInitializedAsync()
     {
@@ -150,9 +206,86 @@ else
         _run = new WizardRun(plan);
     }
 
-    private void Next() => _run!.TryNext();
+    private async Task Next()
+    {
+        // A second click landing before the disabled="@_preflightBusy" render commits would
+        // otherwise dispatch a second preflight run while one is already in flight -- and the
+        // prompt service throws opening a second mismatch dialog on top of the first.
+        if (_preflightBusy || _savingSettings) return;
 
-    private void Back() => _run!.Back();
+        if (_run!.CurrentStage == WizardStage.Confirm)
+        {
+            // 1.x checks already-present files when Install is pressed. Here that is Confirm's
+            // Next: WizardRun cannot go back from the Install stage, so a dismissed dialog must
+            // stop the user HERE rather than strand them on an install that never started.
+            _preflightBusy = true;
+            _preflightNotice = null;
+            try
+            {
+                var result = await Preflight.RunAsync(_run.Plan, _pageCts.Token);
+                _preflightWarning = result.Warning;
+                if (!result.Proceed)
+                {
+                    _preflightNotice = "Installation not started: the mismatched model files were not resolved.";
+                    return;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            finally
+            {
+                _preflightBusy = false;
+            }
+        }
+
+        if (_run.CurrentStage == WizardStage.Location)
+        {
+            // The classic installer's Folder Settings window had a Save button. Here the folders
+            // page is remembered when the user moves on from it, so the next install starts from
+            // the same answers. Guarded like the preflight: a second click landing during the
+            // save would otherwise advance twice and skip a stage.
+            _savingSettings = true;
+            _settingsNotice = null;
+            try
+            {
+                foreach (var folders in _run.CurrentModules.OfType<ComfyFoldersModule>())
+                    await folders.PersistAsync(_pageCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // A settings file that cannot be written must not stop the install; the answers
+                // still apply to this run.
+                _settingsNotice = $"Your folder settings could not be saved: {ex.Message}";
+            }
+            finally
+            {
+                _savingSettings = false;
+            }
+        }
+
+        _run.TryNext();
+    }
+
+    public void Dispose()
+    {
+        // Navigating away while the mismatch dialog is open releases it as a dismissal.
+        _pageCts.Cancel();
+        _pageCts.Dispose();
+    }
+
+    private void Back()
+    {
+        // Otherwise a "not started" notice from a dismissed Confirm preflight would keep showing
+        // on the System stage, where it no longer applies.
+        _preflightNotice = null;
+        _run!.Back();
+    }
 
     private void GoToGallery() => Nav.NavigateTo("/");
 
@@ -163,10 +296,32 @@ else
         Nav.NavigateTo($"/install/{running.Selection.Workload.Id}");
     }
 
+    /// <summary>What the closed Advanced bar on the Content stage says, e.g. "14 of 14 models, 3 of 3 workflows".</summary>
+    private string ContentSummary()
+    {
+        var parts = new List<string>();
+        foreach (var module in _run!.CurrentModules)
+        {
+            switch (module)
+            {
+                case ModelSelectionModule m:
+                    parts.Add($"{m.SelectedCount} of {m.Rows.Count} models");
+                    break;
+                case WorkflowSelectionModule w:
+                    parts.Add($"{w.SelectedCount} of {w.Rows.Count} workflows");
+                    break;
+            }
+        }
+        return string.Join(", ", parts);
+    }
+
     private RenderFragment RenderModule(IWizardModule module) => module switch
     {
         InstallFolderModule m => @<InstallFolderPanel Module="m" Changed="_moduleChanged" />,
         ComfyFoldersModule m => @<ComfyFoldersPanel Module="m" Changed="_moduleChanged" />,
+        VramProfileModule m => @<VramProfilePanel Module="m" Changed="_moduleChanged" />,
+        ModelSelectionModule m => @<ModelSelectionPanel Module="m" Selection="_run!.Plan.Selection" Changed="_moduleChanged" />,
+        WorkflowSelectionModule m => @<WorkflowSelectionPanel Module="m" Changed="_moduleChanged" />,
         GpuPreflightModule m => @<GpuPreflightPanel Module="m" Changed="_moduleChanged" />,
         VcRuntimeModule m => @<VcRuntimePanel Module="m" Changed="_moduleChanged" />,
         LlamaCppModule m => @<LlamaCppPanel Module="m" />,

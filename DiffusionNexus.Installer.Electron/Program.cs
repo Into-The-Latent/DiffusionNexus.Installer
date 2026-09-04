@@ -55,6 +55,8 @@ builder.Services.AddDiffusionNexusCatalog(options =>
 builder.Services.AddInstallerCore();
 builder.Services.AddSingleton<ModalPromptService>();
 builder.Services.AddSingleton<IUserPrompt>(sp => sp.GetRequiredService<ModalPromptService>());
+builder.Services.AddSingleton<MismatchPromptService>();
+builder.Services.AddSingleton<IMismatchedFilePrompt>(sp => sp.GetRequiredService<MismatchPromptService>());
 builder.Services.AddSingleton<IFolderPicker, ElectronFolderPicker>();
 
 // The Electron shell is only spun up when the app is launched through Electron; running the

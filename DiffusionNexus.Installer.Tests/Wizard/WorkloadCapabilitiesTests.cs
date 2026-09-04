@@ -43,6 +43,20 @@ public class WorkloadCapabilitiesTests
         WorkloadCapabilities.Detect(w).Should().NotHaveFlag(WorkloadCapability.VramProfile);
     }
 
+    [Theory]
+    [InlineData("abc")]
+    [InlineData(",,")]
+    public void Vram_is_not_detected_from_an_unparseable_profile_string(string profiles)
+    {
+        // Detect and VramProfileModule.AppliesTo share VramTiers.Parse. If Detect kept its old
+        // "non-blank string" rule, this workload would be gated as needing a tier (blocking) while
+        // the module refused to render one -- a card that can never be installed.
+        var w = new InstallationConfiguration();
+        w.Vram.VramProfiles = profiles;
+
+        WorkloadCapabilities.Detect(w).Should().NotHaveFlag(WorkloadCapability.VramProfile);
+    }
+
     // Split from a single Content_capabilities_come_from_collection_counts test that populated all
     // three collections together, so a copy-paste swap between the three .Count > 0 checks inside
     // Detect (e.g. GitRepositories.Count > 0 setting Workflows instead of CustomNodes) would still

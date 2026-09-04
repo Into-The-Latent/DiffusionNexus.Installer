@@ -1,8 +1,10 @@
 using DiffusionNexus.Installer.Core.Catalog;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -20,25 +22,40 @@ public static class CoreServiceCollectionExtensions
 
         services.AddSingleton<IWorkloadSource, CatalogWorkloadSource>();
         services.AddSingleton<IInstallSession, InstallSession>();
+        services.AddSingleton<IModelPreflight, ModelPreflight>();
 
         // The SDK's own AddInstallationServices does not register this one — both Avalonia apps
         // construct it by hand — but the install-folder pre-flight needs it. TryAdd so a host that
         // registers its own implementation still wins.
         services.TryAddSingleton<IPreInstallationService, PreInstallationService>();
 
-        // Slice 1 modules. Adding a slice-2 module here is the only change needed to make the
-        // workloads that need it installable -- the gallery gate reads the registry.
-        services.AddSingleton<IWizardModule, InstallFolderModule>();
-        services.AddSingleton<IWizardModule, ComfyFoldersModule>();
-        services.AddSingleton<IWizardModule, GpuPreflightModule>();
-        services.AddSingleton<IWizardModule, VcRuntimeModule>();
-        services.AddSingleton<IWizardModule, LlamaCppModule>();
-        services.AddSingleton<IWizardModule, ShortcutsModule>();
-        services.AddSingleton<IWizardModule, DisclaimerModule>();
+        // Transient on purpose: modules hold per-run answers. The registry's factory resolves a
+        // fresh set for every plan, so a workload never sees another workload's answers.
+        services.AddTransient<IWizardModule, InstallFolderModule>();
+        services.AddTransient<IWizardModule, ComfyFoldersModule>();
+        services.AddTransient<IWizardModule, VramProfileModule>();
+        services.AddTransient<IWizardModule, ModelSelectionModule>();
+        services.AddTransient<IWizardModule, WorkflowSelectionModule>();
+        services.AddTransient<IWizardModule, GpuPreflightModule>();
+        services.AddTransient<IWizardModule, VcRuntimeModule>();
+        services.AddTransient<IWizardModule, LlamaCppModule>();
+        services.AddTransient<IWizardModule, ShortcutsModule>();
+        services.AddTransient<IWizardModule, DisclaimerModule>();
+
+        // Size lookups get their OWN bounded client, never the container's: AddInstallationServices
+        // registers HttpClient with an infinite timeout on purpose (model downloads run for hours)
+        // and documents that size-resolution consumers must construct their own. A HEAD against a
+        // dead host on the shared client would hang the Content stage with no way out. One
+        // resolver instance so the disk-space estimate and the pre-flight verification share a
+        // size cache -- 1.x learned that a second resolver adds a full HEAD pass after Install.
+        services.AddSingleton(_ => new UrlSizeResolver(new HttpClient { Timeout = TimeSpan.FromSeconds(10) }));
+        services.AddSingleton<IDiskSpaceEstimator, SdkDiskSpaceEstimator>();
+        services.AddSingleton<IExistingModelVerifier, SdkExistingModelVerifier>();
+        services.AddSingleton<IModelPresenceScanner, ModelPresenceScanner>();
 
         services.AddSingleton<DevTools.LauncherScriptPreview>();
         services.AddSingleton<Gallery.GalleryBuilder>();
-        services.AddSingleton(sp => new WizardModuleRegistry(sp.GetServices<IWizardModule>()));
+        services.AddSingleton(sp => new WizardModuleRegistry(() => sp.GetServices<IWizardModule>()));
 
         return services;
     }

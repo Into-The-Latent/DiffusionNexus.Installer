@@ -1,0 +1,67 @@
+@using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.SDK.Services.Installation.Utilities
+@implements IDisposable
+@inject MismatchPromptService Prompts
+
+@if (Prompts.IsOpen)
+{
+    <div class="modal-backdrop">
+        <div class="modal-card modal-card-wide" role="dialog" aria-modal="true">
+            <h2>Some existing model files look wrong</h2>
+            <p class="panel-hint">
+                These files are already in place but their size does not match what the server
+                reports. Ticked files are downloaded again; unticked files are kept as they are.
+            </p>
+            <table class="report">
+                <thead><tr><th>Redownload</th><th>File</th><th>On disk</th><th>Expected</th></tr></thead>
+                <tbody>
+                    @foreach (var m in Prompts.Mismatches)
+                    {
+                        <tr>
+                            <td><input type="checkbox" checked="@IsRedownload(m.Url)" @onchange="e => Toggle(m.Url, e)" /></td>
+                            <td title="@m.FilePath">@System.IO.Path.GetFileName(m.FilePath)</td>
+                            <td>@DiskSpaceRequirement.FormatBytes(m.ActualBytes)</td>
+                            <td>@DiskSpaceRequirement.FormatBytes(m.ExpectedBytes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="modal-actions">
+                <button class="btn-secondary" @onclick="() => Prompts.Answer(null)">Cancel installation</button>
+                <button class="btn-primary" @onclick="Continue">Continue</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // URLs the user unticked. Everything else redownloads: a size mismatch usually means a partial
+    // or corrupt file, so "download it again" is the safe default.
+    private readonly HashSet<string> _keep = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnInitialized() => Prompts.Changed += OnChanged;
+
+    private bool IsRedownload(string url) => !_keep.Contains(url);
+
+    private void Toggle(string url, ChangeEventArgs e)
+    {
+        if ((bool)(e.Value ?? false)) _keep.Remove(url); else _keep.Add(url);
+    }
+
+    private void Continue()
+    {
+        var all = Prompts.Mismatches.Select(m => m.Url).ToList();
+        var redownload = all.Where(u => !_keep.Contains(u)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var trusted = all.Where(_keep.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _keep.Clear();
+        Prompts.Answer(new MismatchResolution(redownload, trusted));
+    }
+
+    private void OnChanged()
+    {
+        if (!Prompts.IsOpen) _keep.Clear();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Prompts.Changed -= OnChanged;
+}

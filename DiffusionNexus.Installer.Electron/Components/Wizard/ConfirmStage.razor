@@ -1,3 +1,4 @@
+@using DiffusionNexus.Installer.Core.Modules
 @using DiffusionNexus.Installer.Core.Wizard
 
 @{
@@ -5,6 +6,8 @@
     // so it must run before the summary below reads it, or the folder row renders blank on the
     // first visit to this screen.
     var options = Run.Plan.ToOptions();
+    var models = Run.Plan.AllModules.OfType<ModelSelectionModule>().FirstOrDefault();
+    var workflows = Run.Plan.AllModules.OfType<WorkflowSelectionModule>().FirstOrDefault();
 }
 
 <section class="panel">
@@ -22,6 +25,24 @@
 
         <dt>Python</dt>
         <dd>@Run.Plan.Selection.Workload.Python.PythonVersion</dd>
+
+        @if (options.SelectedVramProfile > 0)
+        {
+            <dt>VRAM tier</dt>
+            <dd>@options.SelectedVramProfile GB</dd>
+        }
+
+        @if (models is not null)
+        {
+            <dt>Models</dt>
+            <dd>@models.SelectedCount of @models.Rows.Count selected</dd>
+        }
+
+        @if (workflows is not null)
+        {
+            <dt>Workflows</dt>
+            <dd>@workflows.SelectedCount of @workflows.Rows.Count selected</dd>
+        }
 
         @if (options.ModelBaseFolder is not null)
         {

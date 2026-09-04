@@ -21,7 +21,7 @@ public class InstallSessionTests
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        var registry = new WizardModuleRegistry([]);
+        var registry = new WizardModuleRegistry(() => []);
         var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
         plan.Selection.TargetFolder = @"C:\Installs\Fooocus";
         return plan;
@@ -76,6 +76,12 @@ public class InstallSessionTests
         // right -- so the folder was read before ToOptions() ran Contribute, which is what writes
         // the module's answer into the selection. It only worked before because some other render
         // path (ConfirmStage) happened to call ToOptions() first, as a side effect.
+        //
+        // InstallFolderModule now pushes TargetFolder onto the selection eagerly (Task 3, so the
+        // Content stage can scan the install folder before Confirm ever runs Contribute), so the
+        // selection already carries the answer below -- the original argument-evaluation-order bug
+        // this test guards against is now structurally impossible for TargetFolder. The assertion
+        // that matters is still the one after StartAsync: the orchestrator gets the right folder.
         var settings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings());
@@ -84,12 +90,12 @@ public class InstallSessionTests
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
-        var registry = new WizardModuleRegistry([folderModule]);
+        var registry = new WizardModuleRegistry(() => [folderModule]);
         var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
 
         // The module has an answer, but nothing has called ToOptions() yet.
         folderModule.TargetFolder = @"C:\Installs\Fooocus";
-        plan.Selection.TargetFolder.Should().BeEmpty("Contribute has not run yet");
+        plan.Selection.TargetFolder.Should().Be(@"C:\Installs\Fooocus", "the module pushes it eagerly");
 
         string? receivedTargetDirectory = null;
         var orchestrator = new Mock<IInstallationOrchestrator>();

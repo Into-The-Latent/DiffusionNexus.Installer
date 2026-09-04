@@ -36,7 +36,7 @@ public class GalleryBuilderTests
         var source = new Mock<IWorkloadSource>();
         source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(workloads);
-        return new GalleryBuilder(source.Object, new WizardModuleRegistry([new FoldersModule()]));
+        return new GalleryBuilder(source.Object, new WizardModuleRegistry(() => [new FoldersModule()]));
     }
 
     [Fact]
