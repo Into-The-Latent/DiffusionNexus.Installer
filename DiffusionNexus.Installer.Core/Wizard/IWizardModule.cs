@@ -31,4 +31,20 @@ public interface IWizardModule
     void Contribute(InstallationOptionsDraft draft);
 
     ModuleValidation Validate();
+
+    /// <summary>
+    /// Whether the page renders this module behind the stage's "Advanced settings" bar rather
+    /// than in first view. Declared by the module so the page needs no per-type knowledge and a
+    /// new question is shown, not hidden, unless it says otherwise.
+    /// </summary>
+    bool IsAdvanced => false;
+
+    /// <summary>
+    /// Writes the module's answers back to user settings so the next run starts from them. The
+    /// page calls it for every module of the stage being left, on every stage's Next (including
+    /// Confirm's "Start installation"). Implementations must re-read the
+    /// settings before writing: several modules save in a row and each must build on the file as
+    /// it is now, not on the copy it loaded at initialization.
+    /// </summary>
+    Task PersistAsync(CancellationToken ct = default) => Task.CompletedTask;
 }

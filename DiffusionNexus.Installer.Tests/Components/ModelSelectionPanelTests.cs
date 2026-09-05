@@ -85,6 +85,71 @@ public class ModelSelectionPanelTests : BunitContext
     }
 
     [Fact]
+    public async Task Unknown_free_space_is_said_plainly_and_not_flagged_as_a_shortfall()
+    {
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiskSpaceEstimate(3L * 1024 * 1024 * 1024, 0, true, [], AvailableKnown: false));
+        var selection = Selection();
+        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object);
+        await module.InitializeAsync(selection);
+
+        var cut = RenderPanel(module, selection);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".disk-space").TextContent.Should().Contain("Needs about").And.Contain("could not read the free space");
+            cut.Find(".disk-space").ClassList.Should().NotContain("disk-space-bad");
+        });
+    }
+
+    [Fact]
+    public async Task An_unreadable_library_drive_is_reported_next_to_the_install_drive_figure()
+    {
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiskSpaceEstimate(70, 40, true, [], AvailableKnown: true, LibraryAvailableBytes: null, ModelBytes: 60, HasLibrary: true));
+        var selection = Selection();
+        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object);
+        await module.InitializeAsync(selection);
+
+        var cut = RenderPanel(module, selection);
+
+        cut.WaitForAssertion(() =>
+        {
+            var text = cut.Find(".disk-space").TextContent;
+            text.Should().Contain("free on the install drive").And.Contain("library folder").And.Contain("could not be read");
+            cut.Find(".disk-space").ClassList.Should().NotContain("disk-space-bad");
+        });
+    }
+
+    [Fact]
+    public async Task A_tier_moved_while_a_scan_is_running_is_scanned_again_not_dropped()
+    {
+        // Review finding: a parameter-set arriving mid-scan was discarded and nothing re-checked,
+        // so markers and the estimate stayed on the old tier with no further trigger.
+        var scanner = new Mock<IModelPresenceScanner>();
+        var selection = Selection("8,12,16");
+        selection.SelectedVramProfile = 8;
+        var scans = 0;
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>()))
+            .Returns((ModelScanRequest r) =>
+            {
+                // The second scan (first rescan) sees the tier move underneath it.
+                if (++scans == 2) selection.SelectedVramProfile = 16;
+                return [];
+            });
+        var module = new ModelSelectionModule(scanner.Object, Estimator());
+        await module.InitializeAsync(selection);
+        var cut = RenderPanel(module, selection);
+
+        selection.SelectedVramProfile = 12;
+        cut.Render();
+
+        cut.WaitForAssertion(() => module.LastScannedTier.Should().Be(16));
+    }
+
+    [Fact]
     public async Task Shows_the_disk_space_estimate_and_flags_a_shortfall()
     {
         var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, Estimator(sufficient: false));
@@ -117,8 +182,12 @@ public class ModelSelectionPanelTests : BunitContext
         selection.SelectedVramProfile = 16;
         cut.Render();
 
-        module.LastScannedTier.Should().Be(16);
-        scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().Be(scansBefore + 1);
+        // The rescan runs off the render thread now, so it lands a beat after the render.
+        cut.WaitForAssertion(() =>
+        {
+            module.LastScannedTier.Should().Be(16);
+            scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().Be(scansBefore + 1);
+        });
     }
 
     [Fact]

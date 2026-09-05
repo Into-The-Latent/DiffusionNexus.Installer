@@ -76,6 +76,12 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     private readonly List<FolderTypeRow> _folderTypes = [];
     private readonly List<AdditionalFolderRow> _additionalFolders = [];
 
+    // What the advanced section held when it was loaded. Persist only rewrites the per-type and
+    // additional folders when they differ from this: a user who never opened Advanced must not
+    // have stored fields blanked by a page they never saw.
+    private Dictionary<string, string> _loadedOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private List<(string BaseName, string MapsTo)> _loadedAdditional = [];
+
     public string ModelBaseFolder
     {
         get => _modelBaseFolder;
@@ -176,8 +182,21 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             });
         }
 
+        _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+        _loadedAdditional = CompleteAdditionalFolders();
+
         SyncSelection();
     }
+
+    /// <summary>Whether the per-type names or additional folders differ from what was loaded.</summary>
+    public bool AdvancedEdited =>
+        !DictionaryEquals(_loadedOverrides, FolderPathOverrides) || !_loadedAdditional.SequenceEqual(CompleteAdditionalFolders());
+
+    private List<(string BaseName, string MapsTo)> CompleteAdditionalFolders() =>
+        _additionalFolders.Where(r => r.IsComplete).Select(r => (r.BaseName.Trim(), r.MapsTo.Trim())).ToList();
+
+    private static bool DictionaryEquals(IReadOnlyDictionary<string, string> a, IReadOnlyDictionary<string, string> b) =>
+        a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var v) && string.Equals(v, kv.Value, StringComparison.Ordinal));
 
     /// <summary>Sets one per-type folder name. Blank means "use the standard name".</summary>
     public void SetFolderType(string key, string value)
@@ -212,17 +231,24 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// </summary>
     public async Task PersistAsync(CancellationToken ct = default)
     {
-        if (_selection is null || _user is null || !AppliesTo(_selection)) return;
+        if (_selection is null || !AppliesTo(_selection)) return;
 
-        _user.DefaultModelBaseFolder = ModelBaseFolder.Trim();
-        if (SupportsOutputFolder) _user.OutputFolder = OutputFolder.Trim();
-        UserModelFolderMap.Apply(_user, FolderPathOverrides);
-        _user.additionalFolders = _additionalFolders
-            .Where(r => r.IsComplete)
-            .Select(r => r.ToModel(_user.UserId))
-            .ToList();
+        // Re-read, never the copy from InitializeAsync: the install-folder module saves just
+        // before this one, and writing a stale object back would undo it.
+        var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+        user.DefaultModelBaseFolder = ModelBaseFolder.Trim();
+        if (SupportsOutputFolder) user.OutputFolder = OutputFolder.Trim();
 
-        await settings.SaveAsync(_user, ct).ConfigureAwait(false);
+        if (AdvancedEdited)
+        {
+            UserModelFolderMap.Apply(user, FolderPathOverrides);
+            user.additionalFolders = _additionalFolders
+                .Where(r => r.IsComplete)
+                .Select(r => r.ToModel(user.UserId))
+                .ToList();
+        }
+
+        await settings.SaveAsync(user, ct).ConfigureAwait(false);
     }
 
     /// <summary>

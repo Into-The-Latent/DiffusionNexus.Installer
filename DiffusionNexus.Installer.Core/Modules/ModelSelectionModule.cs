@@ -37,15 +37,13 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     public int Order => 10;
     public WorkloadCapability Satisfies => WorkloadCapability.ModelDownloads;
 
+    /// <summary>Models and workflows are all ticked by default; they live behind Advanced.</summary>
+    public bool IsAdvanced => true;
+
     public IReadOnlyList<ModelRow> Rows { get; private set; } = [];
 
-    /// <summary>Rows by catalog destination, "Not assigned" last. Presentation grouping only.</summary>
-    public IReadOnlyList<ModelGroup> Groups => Rows
-        .GroupBy(r => r.Group)
-        .OrderBy(g => g.Key == NotAssignedGroup)
-        .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-        .Select(g => new ModelGroup(g.Key, g.ToList()))
-        .ToList();
+    /// <summary>Grouped once in <see cref="InitializeAsync"/>: a row's group never changes, and the panel reads this on every render.</summary>
+    public IReadOnlyList<ModelGroup> Groups { get; private set; } = [];
 
     public int SelectedCount => Rows.Count(r => r.IsSelected);
 
@@ -55,15 +53,28 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     /// <summary>Tier the last presence scan used; -1 before any scan. The panel rescans when the selection's tier differs.</summary>
     public int LastScannedTier { get; private set; } = -1;
 
+    /// <summary>Install folder the last presence scan used; the panel rescans only when tier or folder moved.</summary>
+    public string? LastScannedFolder { get; private set; }
+
     /// <summary>Mirrors Detect (Count > 0), NOT Any(Enabled): the gate and the module must agree.</summary>
     public bool AppliesTo(WizardSelection selection) => selection.Workload.ModelDownloads.Count > 0;
 
     public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
         _selection = selection;
+        // A repeated model id is a hand-authored catalog mistake. First entry wins HERE, at the
+        // rows, not only at the presence lookup: two rows sharing an id would flip each other's
+        // checkbox (SetSelected finds the first) and both show the first one's presence.
         Rows = selection.Workload.ModelDownloads
             .Where(m => m.Enabled)
+            .DistinctBy(m => m.Id)
             .Select(m => new ModelRow(m.Id, m.Name, string.IsNullOrWhiteSpace(m.Destination) ? NotAssignedGroup : m.Destination))
+            .ToList();
+        Groups = Rows
+            .GroupBy(r => r.Group)
+            .OrderBy(g => g.Key == NotAssignedGroup)
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ModelGroup(g.Key, g.ToList()))
             .ToList();
         _presence = [];
         _forceRedownloadUrls.Clear();
@@ -71,6 +82,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         Estimate = null;
         EstimateError = null;
         LastScannedTier = -1;
+        LastScannedFolder = null;
 
         RefreshPresence();
         return Task.CompletedTask;
@@ -88,6 +100,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
 
         var tier = _selection.SelectedVramProfile;
         LastScannedTier = tier;
+        LastScannedFolder = _selection.TargetFolder;
 
         if (string.IsNullOrWhiteSpace(_selection.TargetFolder))
         {
@@ -103,7 +116,9 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
             _selection.FolderPathOverrides,
             tier));
 
-        var byId = _presence.ToDictionary(p => p.ModelId);
+        // A repeated model id is a hand-authored catalog mistake, not an impossibility; the first
+        // entry wins rather than the whole Content stage throwing.
+        var byId = _presence.GroupBy(p => p.ModelId).ToDictionary(g => g.Key, g => g.First());
         foreach (var row in Rows)
         {
             var found = byId.TryGetValue(row.Id, out var presence) && presence.AllPartsPresent;
@@ -128,7 +143,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
                 _selection.TargetFolder,
                 _selection.SelectedVramProfile,
                 Rows.Where(r => !r.IsSelected).Select(r => r.Id).ToHashSet(),
-                Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet()), ct).ConfigureAwait(false);
+                Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet(),
+                _selection.ModelBaseFolder), ct).ConfigureAwait(false);
             EstimateError = null;
         }
         catch (OperationCanceledException)
