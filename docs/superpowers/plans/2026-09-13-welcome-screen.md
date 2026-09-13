@@ -15,6 +15,7 @@
 - Branch is `feature/welcome-screen`, already created off `main`. Do not create another.
 - Build and test in **Release**: `dotnet test -c Release`. The Debug bin of the Electron project is locked while the user runs the app from Visual Studio.
 - Before pushing, verify the package-only build: `dotnet build -c Release -p:UseLocalSDK=false`. CI is the gate for package completeness; a local build with the SDK checkout present cannot prove it.
+- **Every new CSS rule uses the existing `:root` variables** — `--bg #12161a`, `--panel #1a2026`, `--border #27313a`, `--text #e6edf3`, `--muted #8b98a5`, `--accent #1fb8a6`, `--accent-hover #26d4bf`. Established literals for semantics: error text `#ff8f8f`, warning text `#e8c67a`, text-on-solid-accent `#06231f`. Do not introduce a second palette.
 - `wwwroot/app.css` has **no compiler**. A dropped brace silently kills every rule after it while all tests stay green. `StylesheetTests` guards brace balance — never bypass it, and add new rules at the end of the file, never mid-block.
 - Preprocessor directives (`#if DEBUG`) are **not legal in Razor markup**. They may only appear inside `@code`. The existing `ShowDeveloperTools` const is the pattern.
 - The SDK defines two public `InstallationOptions` types (`Models.Installation` class vs `Services` record). Importing both namespaces is CS0104-ambiguous.
@@ -768,14 +769,14 @@ Append to the end of `DiffusionNexus.Installer.Electron/wwwroot/app.css`. Check 
     gap: 12px;
     flex-wrap: wrap;
     padding: 10px 16px;
-    background: #1b1a31;
-    border-bottom: 1px solid #343160;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
 }
 
 .top-bar-version {
     font-family: Consolas, "Courier New", monospace;
     font-size: 12px;
-    color: #9b98c2;
+    color: var(--muted);
     margin-right: auto;
 }
 
@@ -792,9 +793,9 @@ Append to the end of `DiffusionNexus.Installer.Electron/wwwroot/app.css`. Check 
     gap: 6px;
     padding: 6px 12px;
     border-radius: 8px;
-    border: 1px solid #343160;
-    background: #222141;
-    color: #eae8f8;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
     font-size: 12.5px;
     font-weight: 500;
     text-decoration: none;
@@ -802,16 +803,16 @@ Append to the end of `DiffusionNexus.Installer.Electron/wwwroot/app.css`. Check 
 }
 
 .top-bar-btn:hover {
-    border-color: #2fd4c4;
+    border-color: var(--accent);
 }
 
 .top-bar-feedback {
-    border-color: #2fd4c4;
+    border-color: var(--accent);
 }
 
 .top-bar-dev {
     border-style: dashed;
-    color: #9b98c2;
+    color: var(--muted);
 }
 ```
 
@@ -998,7 +999,7 @@ Append to `wwwroot/app.css`:
 /* ---------- Community footer ---------- */
 
 .community {
-    border-top: 1px solid #343160;
+    border-top: 1px solid var(--border);
     margin-top: 8px;
     padding-top: 18px;
     text-align: center;
@@ -1008,7 +1009,7 @@ Append to `wwwroot/app.css`:
     font-size: 14px;
     font-weight: 700;
     margin: 0 0 12px;
-    color: #eae8f8;
+    color: var(--text);
 }
 
 .community-links {
@@ -1023,16 +1024,16 @@ Append to `wwwroot/app.css`:
     align-items: center;
     padding: 6px 14px;
     border-radius: 999px;
-    border: 1px solid #343160;
-    background: #222141;
-    color: #eae8f8;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
     font-size: 12.5px;
     font-weight: 500;
     text-decoration: none;
 }
 
 .community-link:hover {
-    border-color: #2fd4c4;
+    border-color: var(--accent);
 }
 ```
 
@@ -1235,9 +1236,9 @@ Append to `wwwroot/app.css`:
 .workload-card {
     display: flex;
     flex-direction: column;
-    border: 1px solid #343160;
+    border: 1px solid var(--border);
     border-radius: 11px;
-    background: #222141;
+    background: var(--panel);
     overflow: hidden;
 }
 
@@ -1249,8 +1250,8 @@ Append to `wwwroot/app.css`:
     aspect-ratio: 1 / 1;
     display: grid;
     place-items: center;
-    background: #1e1d39;
-    border-bottom: 1px solid #343160;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
 }
 
 .workload-card-art img {
@@ -1266,7 +1267,7 @@ Append to `wwwroot/app.css`:
     text-align: center;
     font-size: 12px;
     font-weight: 600;
-    color: #9b98c2;
+    color: var(--muted);
 }
 
 .workload-card-meta {
@@ -1282,7 +1283,7 @@ Append to `wwwroot/app.css`:
     font-size: 13px;
     font-weight: 600;
     line-height: 1.3;
-    color: #eae8f8;
+    color: var(--text);
 }
 
 .workload-card-badge {
@@ -1291,17 +1292,17 @@ Append to `wwwroot/app.css`:
     text-transform: uppercase;
     padding: 2px 7px;
     border-radius: 4px;
-    background: rgba(139, 123, 240, 0.25);
-    color: #c9bffb;
+    background: rgba(31, 184, 166, 0.18);
+    color: var(--accent);
 }
 
 .workload-card-install {
     margin-top: 2px;
     padding: 6px 14px;
     border-radius: 8px;
-    border: 1px solid #2fd4c4;
-    background: rgba(47, 212, 196, 0.15);
-    color: #eae8f8;
+    border: 1px solid var(--accent);
+    background: rgba(31, 184, 166, 0.15);
+    color: var(--text);
     font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
@@ -1310,7 +1311,7 @@ Append to `wwwroot/app.css`:
 .workload-card-unavailable {
     margin: 0;
     font-size: 11.5px;
-    color: #9b98c2;
+    color: var(--muted);
 }
 ```
 
@@ -1693,7 +1694,7 @@ Append to `wwwroot/app.css`:
     font-size: 32px;
     font-weight: 800;
     letter-spacing: -0.02em;
-    background: linear-gradient(96deg, #8b7bf0 6%, #5b8def 62%, #2fd4c4 100%);
+    background: linear-gradient(96deg, #8b7bf0 6%, #5b8def 62%, var(--accent) 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -1703,7 +1704,7 @@ Append to `wwwroot/app.css`:
     margin: -12px 0 0;
     text-align: center;
     font-size: 13px;
-    color: #9b98c2;
+    color: var(--muted);
 }
 
 .software-grid {
@@ -1713,14 +1714,14 @@ Append to `wwwroot/app.css`:
 }
 
 .software-card {
-    border: 1px solid #343160;
+    border: 1px solid var(--border);
     border-radius: 11px;
-    background: #222141;
+    background: var(--panel);
     overflow: hidden;
 }
 
 .software-card:hover {
-    border-color: #2fd4c4;
+    border-color: var(--accent);
 }
 
 .software-card a {
@@ -1733,8 +1734,8 @@ Append to `wwwroot/app.css`:
     aspect-ratio: 16 / 10;
     display: grid;
     place-items: center;
-    background: #1e1d39;
-    border-bottom: 1px solid #343160;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
 }
 
 .software-card-art img {
@@ -1750,7 +1751,7 @@ Append to `wwwroot/app.css`:
     text-align: center;
     font-size: 13px;
     font-weight: 700;
-    color: #9b98c2;
+    color: var(--muted);
 }
 
 .software-card-meta {
@@ -1765,13 +1766,13 @@ Append to `wwwroot/app.css`:
     margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: #eae8f8;
+    color: var(--text);
 }
 
 .software-card-count {
     margin: 0;
     font-size: 11.5px;
-    color: #9b98c2;
+    color: var(--muted);
 }
 ```
 
@@ -2097,9 +2098,9 @@ gallery — reuse them, and only add what is missing):
     align-self: flex-start;
     padding: 5px 11px;
     border-radius: 8px;
-    border: 1px solid #343160;
-    background: #222141;
-    color: #eae8f8;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
     font-size: 12.5px;
     font-weight: 500;
     text-decoration: none;
@@ -2109,23 +2110,23 @@ gallery — reuse them, and only add what is missing):
     margin: 0;
     font-size: 22px;
     font-weight: 700;
-    color: #eae8f8;
+    color: var(--text);
 }
 
 .workload-screen-head p {
     margin: 4px 0 0;
     font-size: 13px;
-    color: #9b98c2;
+    color: var(--muted);
 }
 
 .software-not-found {
     padding: 40px 0;
     text-align: center;
-    color: #9b98c2;
+    color: var(--muted);
 }
 
 .software-not-found a {
-    color: #2fd4c4;
+    color: var(--accent);
 }
 ```
 
@@ -2511,9 +2512,9 @@ Append to `wwwroot/app.css`. `.modal-backdrop` already exists at line 581 (from 
     overflow-y: auto;
     padding: 22px;
     border-radius: 12px;
-    border: 1px solid #343160;
-    background: #1e1d39;
-    color: #eae8f8;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
 }
 
 .feedback-dialog h3 {
@@ -2525,7 +2526,7 @@ Append to `wwwroot/app.css`. `.modal-backdrop` already exists at line 581 (from 
 .feedback-dialog label {
     font-size: 12px;
     font-weight: 600;
-    color: #9b98c2;
+    color: var(--muted);
 }
 
 .feedback-dialog input,
@@ -2535,9 +2536,9 @@ Append to `wwwroot/app.css`. `.modal-backdrop` already exists at line 581 (from 
     max-width: 100%;
     padding: 8px 10px;
     border-radius: 8px;
-    border: 1px solid #343160;
-    background: #161528;
-    color: #eae8f8;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
     font-family: inherit;
     font-size: 13px;
 }
@@ -2556,14 +2557,14 @@ Append to `wwwroot/app.css`. `.modal-backdrop` already exists at line 581 (from 
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    border: 1px solid #343160;
-    background: #222141;
-    color: #eae8f8;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
 }
 
 .feedback-submit {
-    border-color: #2fd4c4;
-    background: rgba(47, 212, 196, 0.16);
+    border-color: var(--accent);
+    background: rgba(31, 184, 166, 0.16);
 }
 
 .feedback-submit:disabled,
@@ -2575,7 +2576,7 @@ Append to `wwwroot/app.css`. `.modal-backdrop` already exists at line 581 (from 
 .feedback-error {
     margin: 4px 0 0;
     font-size: 12.5px;
-    color: #f08a8a;
+    color: #ff8f8f;
 }
 
 .feedback-success {
@@ -2586,7 +2587,7 @@ Append to `wwwroot/app.css`. `.modal-backdrop` already exists at line 581 (from 
 .feedback-issue {
     font-family: Consolas, "Courier New", monospace;
     font-size: 12px;
-    color: #2fd4c4;
+    color: var(--accent);
     overflow-wrap: anywhere;
 }
 ```

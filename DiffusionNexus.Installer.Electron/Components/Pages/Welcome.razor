@@ -1,0 +1,139 @@
+@page "/"
+@using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.Electron.Components.Shared
+@using DiffusionNexus.Installer.SDK.Catalog
+@inject SoftwareGalleryBuilder Builder
+@inject IWorkloadSource Workloads
+@inject NavigationManager Nav
+
+<PageTitle>DiffusionNexus Installer</PageTitle>
+
+<TopBar />
+
+<div class="welcome">
+    <div class="welcome-banner">
+        <img src="img/banner.jpg" alt="Into The Latent" />
+    </div>
+
+    <h1 class="welcome-title">Easy Workload Installer</h1>
+    <p class="welcome-subtitle">Choose which AI application you want to install.</p>
+
+    @if (_software is null)
+    {
+        <p>Loading the catalog...</p>
+    }
+    else if (_loadError is not null)
+    {
+        <p class="gallery-error">The catalog could not be read: @_loadError</p>
+    }
+    else if (_software.Count == 0)
+    {
+        @* Diagnostics before the bland empty message. The SDK reports a missing or unreadable
+           catalog as Error diagnostics on a successfully-returned empty snapshot -- never as an
+           exception -- so without this a hard failure on a cold start is indistinguishable from
+           "nothing to install". *@
+        @if (_errors.Count > 0)
+        {
+            <p class="gallery-error">The catalog could not be loaded:</p>
+            <ul class="gallery-error">
+                @foreach (var diagnostic in _errors)
+                {
+                    <li>@diagnostic.Code: @diagnostic.Message</li>
+                }
+            </ul>
+        }
+        else
+        {
+            <p>No workloads are available.</p>
+        }
+    }
+    else
+    {
+        <div class="software-grid">
+            @foreach (var software in _software)
+            {
+                @if (software.GoesStraightToSetup)
+                {
+                    var only = software.SingleWorkload!;
+                    <div class="software-card">
+                        <div class="software-card-art">
+                            @if (software.LogoPath is not null)
+                            {
+                                <img src="@software.LogoPath" alt="@software.DisplayName" />
+                            }
+                            else
+                            {
+                                <span class="software-card-art-fallback">@software.DisplayName</span>
+                            }
+                        </div>
+                        <div class="software-card-meta">
+                            <p class="software-card-name">@software.DisplayName</p>
+                            @if (only.IsInstallable)
+                            {
+                                <p class="software-card-count">straight to setup</p>
+                                <button class="workload-card-install" type="button"
+                                        @onclick="() => Install(only)">Install</button>
+                            }
+                            else
+                            {
+                                <p class="software-card-count">straight to setup</p>
+                                <p class="workload-card-unavailable">@only.UnavailableReason</p>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="software-card">
+                        <a href="/software/@software.Type">
+                            <div class="software-card-art">
+                                @if (software.LogoPath is not null)
+                                {
+                                    <img src="@software.LogoPath" alt="@software.DisplayName" />
+                                }
+                                else
+                                {
+                                    <span class="software-card-art-fallback">@software.DisplayName</span>
+                                }
+                            </div>
+                            <div class="software-card-meta">
+                                <p class="software-card-name">@software.DisplayName</p>
+                                <p class="software-card-count">@software.WorkloadCount workloads</p>
+                            </div>
+                        </a>
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    <CommunityLinks />
+</div>
+
+@code {
+    private IReadOnlyList<SoftwareEntry>? _software;
+    private IReadOnlyList<CatalogDiagnostic> _errors = [];
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _software = await Builder.BuildAsync();
+
+            // Read after the build: the catalog populates diagnostics during the load the build
+            // triggers, so asking earlier reports on a catalog that has not been resolved yet.
+            _errors = Workloads.Diagnostics.Where(d => d.IsError).ToList();
+        }
+        catch (Exception ex)
+        {
+            // This is the first screen; it must say why it is empty rather than take the app down
+            // with an unhandled exception out of the component lifecycle.
+            _loadError = ex.Message;
+            _software = [];
+        }
+    }
+
+    private void Install(GalleryEntry entry) => Nav.NavigateTo($"/install/{entry.Workload.Id}");
+}
