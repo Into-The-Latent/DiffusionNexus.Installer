@@ -876,6 +876,8 @@ progress {
 .workload-card-art {
     aspect-ratio: 1 / 1;
     display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
     place-items: center;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
@@ -1020,8 +1022,10 @@ progress {
 }
 
 .software-card-art {
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 1 / 1;
     display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
     place-items: center;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
