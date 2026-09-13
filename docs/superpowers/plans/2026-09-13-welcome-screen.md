@@ -29,14 +29,14 @@
 ### Task 1: Brand assets and the software logo map
 
 **Files:**
-- Create: `DiffusionNexus.Installer.Electron/wwwroot/img/banner.png` (from `DiffusionNexus.Installer.Electron/Banner.png`)
+- Create: `DiffusionNexus.Installer.Electron/wwwroot/img/banner.jpg` (from `DiffusionNexus.Installer.Electron/Banner.png`)
 - Create: `DiffusionNexus.Installer.Electron/wwwroot/img/software/*.png` (6 files copied from the 2.x repo)
 - Create: `DiffusionNexus.Installer.Core/Gallery/SoftwareBranding.cs`
 - Test: `DiffusionNexus.Installer.Tests/Gallery/SoftwareBrandingTests.cs` (create)
 - Delete: `DiffusionNexus.Installer.Electron/Banner.png` (moves into wwwroot)
 
 **Interfaces:**
-- Produces: `static class SoftwareBranding` with `static string DisplayName(RepositoryType type)` and `static string? LogoPath(RepositoryType type)` (a `wwwroot`-relative URL such as `img/software/comfyui.png`, or null when there is no logo).
+- Produces: `static class SoftwareBranding` with `static string DisplayName(RepositoryType type)` and `static string? LogoPath(RepositoryType type)` (a `wwwroot`-relative URL such as `img/software/comfyui.jpg`, or null when there is no logo).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -136,12 +136,12 @@ public static class SoftwareBranding
     /// </summary>
     public static string? LogoPath(RepositoryType type) => type switch
     {
-        RepositoryType.ComfyUI => "img/software/comfyui.png",
-        RepositoryType.A1111 => "img/software/automatic1111.png",
-        RepositoryType.Forge => "img/software/forge.png",
-        RepositoryType.AIToolkit => "img/software/ai-toolkit.png",
-        RepositoryType.Fooocus => "img/software/fooocus.png",
-        RepositoryType.AceStep => "img/software/ace-step.png",
+        RepositoryType.ComfyUI => "img/software/comfyui.jpg",
+        RepositoryType.A1111 => "img/software/automatic1111.jpg",
+        RepositoryType.Forge => "img/software/forge.jpg",
+        RepositoryType.AIToolkit => "img/software/ai-toolkit.jpg",
+        RepositoryType.Fooocus => "img/software/fooocus.jpg",
+        RepositoryType.AceStep => "img/software/ace-step.jpg",
         _ => null
     };
 }
@@ -414,7 +414,7 @@ public class SoftwareGalleryBuilderTests
                 Id = Guid.NewGuid(),
                 Name = name,
                 WorkflowType = WorkflowType.Image,
-                Repository = new RepositoryConfiguration { Type = software }
+                Repository = new MainRepositorySettings { Type = software }
             },
             installable,
             WorkloadCapability.None,
@@ -477,7 +477,7 @@ public class SoftwareGalleryBuilderTests
         var software = Build(Entry(RepositoryType.AIToolkit, "AI-Toolkit")).Single();
 
         software.DisplayName.Should().Be("AI Toolkit");
-        software.LogoPath.Should().Be("img/software/ai-toolkit.png");
+        software.LogoPath.Should().Be("img/software/ai-toolkit.jpg");
     }
 
     [Fact]
@@ -1107,7 +1107,7 @@ public class WorkloadCardTests : BunitContext
                 Name = "Krea-2-Turbo",
                 WorkflowType = type,
                 ThumbnailPath = thumbnailPath,
-                Repository = new RepositoryConfiguration { Type = RepositoryType.ComfyUI }
+                Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI }
             },
             installable,
             WorkloadCapability.None,
@@ -1377,7 +1377,7 @@ public class WelcomePageTests : BunitContext
         Id = Guid.NewGuid(),
         Name = name,
         WorkflowType = WorkflowType.Image,
-        Repository = new RepositoryConfiguration { Type = software }
+        Repository = new MainRepositorySettings { Type = software }
     };
 
     private void Arrange(params InstallationConfiguration[] workloads)
@@ -1401,7 +1401,7 @@ public class WelcomePageTests : BunitContext
         var cut = Render<Welcome>();
 
         cut.WaitForAssertion(() =>
-            cut.Find(".welcome-banner img").GetAttribute("src").Should().Be("img/banner.png"));
+            cut.Find(".welcome-banner img").GetAttribute("src").Should().Be("img/banner.jpg"));
         cut.Find(".welcome-title").TextContent.Should().Contain("Easy Workload Installer");
     }
 
@@ -1527,7 +1527,7 @@ Create `DiffusionNexus.Installer.Electron/Components/Pages/Welcome.razor`:
 
 <div class="welcome">
     <div class="welcome-banner">
-        <img src="img/banner.png" alt="Into The Latent" />
+        <img src="img/banner.jpg" alt="Into The Latent" />
     </div>
 
     <h1 class="welcome-title">Easy Workload Installer</h1>
@@ -1854,7 +1854,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         Id = Guid.NewGuid(),
         Name = name,
         WorkflowType = type,
-        Repository = new RepositoryConfiguration { Type = software }
+        Repository = new MainRepositorySettings { Type = software }
     };
 
     private void Arrange(params InstallationConfiguration[] workloads)
