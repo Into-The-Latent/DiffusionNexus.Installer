@@ -38,7 +38,12 @@ else if (_run is null)
 }
 else
 {
-    <h1>@_run.Plan.Selection.Workload.Name</h1>
+    @* The hero names the workload itself, at size and beside its artwork, so a plain <h1> above
+       it would say the same thing twice. *@
+    @if (!ShowHero)
+    {
+        <h1>@_run.Plan.Selection.Workload.Name</h1>
+    }
     <ol class="stage-strip">
         @foreach (var stage in _run.Plan.Stages)
         {
@@ -59,6 +64,11 @@ else
     }
     else
     {
+        @if (ShowHero)
+        {
+            <WorkloadHero Workload="_run.Plan.Selection.Workload" />
+        }
+
         @if (_run.CurrentStage == WizardStage.Confirm)
         {
             <ConfirmStage Run="_run" />
@@ -124,6 +134,12 @@ else
 
     private WizardRun? _run;
     private string? _busyWith;
+
+    /// <summary>
+    /// True when this workload is the only one its software offers, so the user reached the wizard
+    /// straight from the welcome tile and never saw a workload screen.
+    /// </summary>
+    private bool _onlyWorkloadOfItsSoftware;
     private EventCallback _moduleChanged;
     private EventCallback _backToGallery;
     private readonly CancellationTokenSource _pageCts = new();
@@ -167,6 +183,11 @@ else
             Nav.NavigateTo("/");
             return;
         }
+
+        // Counted over the same list the welcome screen groups into software cards, so this asks
+        // exactly the question that screen answered: did picking the tile open a workload screen,
+        // or come straight here?
+        _onlyWorkloadOfItsSoftware = workloads.Count(w => w.Repository.Type == workload.Repository.Type) == 1;
 
         var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload });
 
@@ -279,6 +300,18 @@ else
         _settingsNotice = null;
         _run!.Back();
     }
+
+    /// <summary>
+    /// Whether to open with the "here is what you picked" hero.
+    ///
+    /// First stage only, and only for a software whose tile came straight here. A user who chose
+    /// from ComfyUI's workload screen has just seen that workload's own card and description, and
+    /// repeating it would push the install folder below the fold for the 16 workloads that carry
+    /// the longest descriptions. Later stages drop it because by then the question it answers --
+    /// "did I click the right thing?" -- has been answered.
+    /// </summary>
+    private bool ShowHero =>
+        _onlyWorkloadOfItsSoftware && _run is { Plan.Stages: [var first, ..] } && _run.CurrentStage == first;
 
     private void GoToGallery() => Nav.NavigateTo("/");
 

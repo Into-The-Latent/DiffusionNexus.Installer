@@ -76,6 +76,30 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void the_welcome_screen_keeps_its_height_budget()
+    {
+        // The point of the strip is that a 16:9 window shows the banner, the title, the software
+        // and the community links at once. Two rules pay for that, and each has an obvious-looking
+        // "simplification" that silently spends the budget again: letting the banner span the
+        // column (it is a 16:9 image, so a full-width strip runs ~260px tall AND crops the
+        // wordmark), and letting the cards wrap to a second row.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var banner = Regex.Match(css, @"\.welcome-banner\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        banner.Should().Contain("width: min(100%, 480px)", "the banner is capped by width, not cropped harder");
+
+        var track = Regex.Match(css, @"\.jukebox-track\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        track.Should().Contain("display: flex").And.Contain("overflow-x: auto");
+        track.Should().NotContain("flex-wrap", "a strip that wraps is the grid this replaced");
+
+        Regex.IsMatch(css, @"\.software-grid\s*\{").Should().BeFalse("the wrapping grid is gone, so its rule must go too");
+
+        // The welcome screen is the one page that opts out of the shared 1000px column.
+        var wider = Regex.Match(css, @"\.screen-body:has\(>\s*\.welcome\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        wider.Should().Contain("max-width: 1240px");
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");

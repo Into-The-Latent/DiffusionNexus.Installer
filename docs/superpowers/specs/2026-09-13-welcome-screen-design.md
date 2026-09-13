@@ -372,6 +372,10 @@ prove. These go into `docs/manual-smoke.md` as a new section.
 under the figure sits near the bottom of the frame and may clip. Mitigated by `object-position`
 being tunable and the original file staying uncropped, but it needs a human to look at it.
 
+> **This risk landed.** At 3.83:1 the retained band runs from 27% to 73% of the image's height,
+> which clips the runner's head, the portal ring beneath it, and the top and bottom of the
+> wordmark. §12 replaces the crop rather than tuning `object-position` around it.
+
 **`Gallery.razor` splitting into three files** is the largest behavioural risk in the slice: the
 catalog-failure and diagnostics rules were written once for one page and now apply to two. The
 tests above pin them on both.
@@ -386,3 +390,82 @@ going back, and picking a different software must not leave filter state from th
 - Slice 2's manual smoke (§2.2, §2.6–2.8, §3.6–3.7) has never been run, and slice 2 has never
   been released — the latest public build is still v3.0.5, which is slice 1.
 - User settings are read but only `ComfyFoldersModule` writes them.
+
+## 12. Revision, 2026-09-14: one strip, and a hero on the first stage
+
+The screen above shipped and works, but two things were wrong with it in use.
+
+### 12.1 It did not fit a 16:9 window
+
+The six software cards were a `repeat(auto-fill, minmax(220px, 1fr))` grid, so at any realistic
+width they wrapped to a second row and pushed "Join the Community" — the whole reason the footer
+exists — below the fold. The banner made it worse: a 16:9 image stretched across a 1000px column
+and cropped to a strip is still 260px tall, a third of the height budget, for artwork that is
+decoration.
+
+**The strip.** One row of fixed-width (200px) tiles in a horizontal scroll container, with `<` and
+`>` buttons in grid columns either side of it. Fixed width so a page is a whole number of tiles and
+the scroll-snap points line up; arrows beside the track rather than floated over it, because an
+overlay covers the artwork of the first and last visible tile, which is what the tile is for.
+
+The track is an ordinary scroll container, so a wheel, a trackpad and the keyboard all move it
+whether or not the buttons work. The buttons drive it through `wwwroot/js/jukebox.js` — this app's
+first JavaScript — whose two functions scroll one page and report whether the strip is against
+either end, so an arrow that can do nothing is disabled rather than merely inert. `step` reports
+the edges of the position it scrolls **to**, not the one it leaves: `scrollTo` with smooth
+behaviour returns long before the scroll lands, so reading `scrollLeft` afterwards would leave the
+buttons one click behind.
+
+**The banner** is capped by width (`min(100%, 480px)`, centred) at a 3.4:1 crop rather than
+stretched and cropped to 3.83:1. 3.4:1 is the ratio at which the whole logo survives — see the
+note under §10 — and the width cap is what turns 260px of height into 141px without cropping
+harder. `object-position: center 54%` keeps the portal ring in frame.
+
+**The welcome screen alone** widens to 1240px (`.screen-body:has(> .welcome)`); every other screen
+keeps the shared 1000px column. A wider column shows more of the strip per page, which is height
+bought back sideways.
+
+Verified by rendering the components' own markup against the committed stylesheet at 1280×720:
+content ends 33px above the fold. It still scrolls at the app's hard-minimum 900×650 window, which
+is not a 16:9 shape and is not what this promises; the default 1100×800 window fits with ~95px to
+spare.
+
+### 12.2 Nothing confirmed what the user had picked
+
+Five of the six softwares go straight to the wizard, so the welcome tile was the only thing the
+user ever saw before being asked where to install. Someone who misclicks has no way to notice.
+
+A **hero** now opens the wizard's first stage: the same tile artwork at 200px, the workload's name
+beside it, and the catalog's own description under that — directly above the install-location
+panel that was already there. No new route: this is the `Location` stage, which those five
+softwares already land on.
+
+Shown only when the software has exactly one offerable workload, counted over the same list the
+welcome screen groups into cards. ComfyUI is excluded because its workload screen has already
+shown that workload's card, thumbnail and description one navigation ago. It is also first stage
+only — past that, the question it answers has been answered, and repeating it would push each
+stage's actual question down the page.
+
+The software's name appears above the workload's only when they differ: A1111's single workload is
+"Stable Diffusion web UI" under a tile labelled "Automatic 1111", and the eyebrow is the only thing
+connecting the two.
+
+### 12.3 Descriptions are Markdown, and nothing rendered it
+
+The catalog authors descriptions in Markdown; before this they appeared only in a `title`
+tooltip, where the raw `**` did not matter. On the hero they do.
+
+The subset was counted across all 25 `workload.json` files rather than assumed: bold (22 files),
+bullet lists (13), italic (4), inline code (5), and **nothing else** — no links, headings, numbered
+lists, blockquotes, tables or raw HTML — with the longest description at 659 characters.
+
+`Core/Text/DescriptionMarkdown.cs` parses exactly that into blocks, and
+`Components/Shared/MarkdownText.razor` renders them as elements through `AddContent`, which
+escapes. Markdig was the alternative and was rejected on three counts: a new dependency, the
+`THIRD-PARTY-NOTICES.txt` regeneration and CI gate that comes with one, and an HTML string the UI
+would have to trust. Catalog content becoming markup the browser executes is the failure mode
+worth designing out, and a tree of blocks cannot reach it.
+
+Anything outside the subset degrades to the literal characters the author typed. That is the
+contract: a description is content, and content must not disappear because the parser did not
+recognise it.

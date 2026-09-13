@@ -194,6 +194,13 @@ h2 {
     padding-inline: 24px;
 }
 
+/* The welcome screen is the one that has to fit a whole 16:9 window -- banner, title, software
+   strip and community links, with nothing below the fold. It buys that height back sideways: a
+   wider column shows more of the strip at once, so there is less of it to page through. */
+.screen-body:has(> .welcome) {
+    max-width: 1240px;
+}
+
 /* The updates page brings its own width and padding; don't apply them twice. */
 .page .shell {
     padding: 0;
@@ -816,15 +823,15 @@ progress {
 
 .community {
     border-top: 1px solid var(--border);
-    margin-top: 8px;
-    padding-top: 18px;
+    margin-top: 4px;
+    padding-top: 14px;
     text-align: center;
 }
 
 .community h4 {
     font-size: 14px;
     font-weight: 700;
-    margin: 0 0 12px;
+    margin: 0 0 10px;
     color: var(--text);
 }
 
@@ -954,15 +961,23 @@ progress {
 /* ---------- Welcome screen ---------- */
 
 .welcome {
-    padding-block: 26px 28px;
+    padding-block: 18px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 14px;
 }
 
+/* Sized by WIDTH, not by cropping harder.
+   banner.jpg is a 16:9 image (1600x900), and the whole screen has a height budget. Stretching it
+   across the column and cropping it to a strip cost 260px of that budget AND cut the artwork: at
+   3.83:1 the centred band runs from 27% to 73% of the image, which clips the runner's head, the
+   portal ring under it, and the top and bottom of the wordmark. Capping the width instead keeps
+   the strip 141px tall at a ratio the art survives, with the focus nudged below centre so the
+   ring stays in frame. */
 .welcome-banner {
-    aspect-ratio: 3.83 / 1;
-    width: 100%;
+    aspect-ratio: 3.4 / 1;
+    width: min(100%, 480px);
+    margin-inline: auto;
     border-radius: 10px;
     overflow: hidden;
 }
@@ -972,14 +987,14 @@ progress {
     height: 100%;
     max-width: 100%;
     object-fit: cover;
-    object-position: center;
+    object-position: center 54%;
     display: block;
 }
 
 .welcome-title {
     margin: 0;
     text-align: center;
-    font-size: 32px;
+    font-size: 28px;
     font-weight: 800;
     letter-spacing: -0.02em;
     background: linear-gradient(96deg, #8b7bf0 6%, #5b8def 62%, var(--accent) 100%);
@@ -989,19 +1004,69 @@ progress {
 }
 
 .welcome-subtitle {
-    margin: -12px 0 0;
+    margin: -8px 0 0;
     text-align: center;
     font-size: 13px;
     color: var(--muted);
 }
 
-.software-grid {
+/* ---------- Software strip ("jukebox") ---------- */
+
+/* Arrows in their own columns rather than floated over the track: overlaying them covers the
+   artwork of the first and last visible tile, which is the one thing the tile is for. */
+.jukebox {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+/* An ordinary scroll container, so a wheel, a trackpad and the keyboard move it even if the
+   buttons' script never loads. The buttons drive it through wwwroot/js/jukebox.js. */
+.jukebox-track {
+    display: flex;
     gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    /* Room for the tiles' focus ring, which a clipping container would otherwise cut. */
+    padding-block: 2px;
+    scrollbar-width: none;
+}
+
+.jukebox-track::-webkit-scrollbar {
+    display: none;
+}
+
+.jukebox-arrow {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.jukebox-arrow:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+/* Both ends dim when every software already fits, which is the honest way to say "that is all
+   of them" -- the alternative, hiding the buttons, shifts the strip sideways as tiles are added. */
+.jukebox-arrow:disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 
 .software-card {
+    /* Fixed width, so a page is a whole number of tiles and the snap points line up. */
+    flex: 0 0 200px;
+    scroll-snap-align: start;
     border: 1px solid var(--border);
     border-radius: 11px;
     background: var(--panel);
@@ -1038,8 +1103,8 @@ progress {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 5px;
-    padding: 11px 13px 13px;
+    gap: 4px;
+    padding: 9px 12px 11px;
 }
 
 .software-card-name {
@@ -1053,6 +1118,111 @@ progress {
     margin: 0;
     font-size: 11.5px;
     color: var(--muted);
+}
+
+/* ---------- Workload hero (first wizard stage) ---------- */
+
+/* Shown for a software whose tile came straight to the wizard. Same shape as .panel -- it is one
+   of the stack of panels the stage renders -- with the artwork beside the text rather than above
+   it, so the install-folder box below stays on screen without scrolling. */
+.hero {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.hero-art {
+    width: 200px;
+    aspect-ratio: 1 / 1;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+}
+
+.hero-art img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.hero-art-fallback {
+    padding: 12px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+/* The software's own name, when the workload is called something else -- "Stable Diffusion web UI"
+   under a tile labelled "Automatic 1111". */
+.hero-software {
+    margin: 0 0 .2rem;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.hero-name {
+    margin: 0 0 .55rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+}
+
+/* Capped and scrollable: descriptions are catalog content and the longest today is 659
+   characters, but nothing stops a future one being longer, and this panel must not be allowed to
+   push the install folder off the screen. */
+.hero-desc {
+    max-height: 240px;
+    overflow-y: auto;
+    font-size: .88rem;
+    line-height: 1.5;
+}
+
+.hero-desc p {
+    margin: 0 0 .6rem;
+}
+
+.hero-desc ul {
+    margin: 0 0 .6rem;
+    padding-left: 1.1rem;
+}
+
+.hero-desc li {
+    margin: .15rem 0;
+    color: var(--muted);
+}
+
+.hero-desc code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: .85em;
+    color: var(--accent);
+}
+
+/* Narrow windows stack rather than squeeze the description into a gutter. The Electron window
+   cannot go below 900px wide, so this is reached by the browser-hosted build and by a user who
+   zooms the app. */
+@media (max-width: 760px) {
+    .hero {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .hero-art {
+        width: 140px;
+    }
 }
 
 /* ---------- Workload selection screen ---------- */

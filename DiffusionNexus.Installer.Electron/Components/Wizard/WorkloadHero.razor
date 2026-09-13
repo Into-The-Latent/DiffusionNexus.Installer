@@ -1,0 +1,47 @@
+@using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.Electron.Components.Shared
+@using DiffusionNexus.Installer.Electron.Services
+@using DiffusionNexus.Installer.SDK.Models.Configuration
+
+@* "Did I click the right thing?" answered before anything is asked of the user.
+
+   Shown at the top of the first wizard stage for a software that skipped the workload screen --
+   one workload, so the welcome tile was the only thing the user ever saw. It repeats that tile at
+   size, next to what the catalog says the software actually does. *@
+
+<section class="hero">
+    <div class="hero-art">
+        @* The SOFTWARE logo, not the workload thumbnail: this is the picture the user clicked on
+           the welcome screen one navigation ago, so it is the one that confirms the choice. *@
+        @if (SoftwareLogos.PathFor(Workload.Repository.Type) is { } logo)
+        {
+            <img src="@logo" alt="@SoftwareName" />
+        }
+        else
+        {
+            <span class="hero-art-fallback">@SoftwareName</span>
+        }
+    </div>
+
+    <div class="hero-text">
+        @* Suppressed when it would merely repeat the heading. Fooocus's single workload is called
+           "Fooocus"; A1111's is called "Stable Diffusion web UI", and there the eyebrow is the
+           only thing tying the screen back to the tile labelled "Automatic 1111". *@
+        @if (!string.Equals(SoftwareName, Workload.Name, StringComparison.CurrentCultureIgnoreCase))
+        {
+            <p class="hero-software">@SoftwareName</p>
+        }
+
+        <h1 class="hero-name">@Workload.Name</h1>
+
+        <div class="hero-desc">
+            <MarkdownText Text="@Workload.Description" />
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public InstallationConfiguration Workload { get; set; } = default!;
+
+    private string SoftwareName => SoftwareBranding.DisplayName(Workload.Repository.Type);
+}

@@ -159,13 +159,22 @@ public 3.x release. Slice 1 is run from a dev build.
 1. Launch. **Expect:** a top bar with the version on the left and Feedback, Licences,
    Check for Updates on the right (plus Developer tools in a Debug build only); the Into The
    Latent banner as a wide strip, not a 16:9 block; "Easy Workload Installer" in the gradient
-   wordmark; six software cards with their logos; and a "Join the Community" footer with
-   YouTube, Patreon and Civitai.
-   **Look at the banner crop specifically** — it is cropped from a 16:9 source and the portal
-   ring at the bottom may clip.
+   wordmark; six software cards in **one row** with their logos; and a "Join the Community" footer
+   with YouTube, Patreon and Civitai.
+   **Look at the banner crop specifically** — it is cropped from a 16:9 source. The crop was re-cut
+   to 3.4:1 with the focus below centre, so the runner's head, the portal ring under it and both
+   lines of the wordmark should all be whole.
+   **Size the window to 16:9** (1280×720 or larger) and confirm the community pills are on screen
+   without scrolling. At the app's hard-minimum 900×650 window the page does scroll: that is not a
+   16:9 shape and is not what this promises.
 2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
    A card whose single workload is blocked would read "1 workload" instead, never "straight to
    setup" — that card has no link behind it at all.
+2a. **The strip.** Click `>`. **Expect:** it scrolls one page, smoothly, and `<` becomes usable.
+   Keep clicking. **Expect:** at the far end `>` dims and stops responding; `<` walks back the same
+   way and dims at the start. Widen the window until all six tiles are visible at once.
+   **Expect:** both arrows dim — there is nowhere left to go in either direction. Also scroll the
+   strip with the mouse wheel over it: it must move even though the arrows were not touched.
 3. Click a community link. **Expect:** it opens in your normal browser. The installer window must
    NOT navigate to it — if the app itself turns into a web page, that is the bug this was written
    to catch.
@@ -184,7 +193,17 @@ public 3.x release. Slice 1 is run from a dev build.
    rather than by hand.
    Hover a workload card. **Expect:** a tooltip with the catalog's description for that workload —
    the tile has no room for it and this is now the only place in the app it appears.
-6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen.
+6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen — and its first stage
+   opens with the hero: the same tile artwork at size, "Fooocus" beside it, the catalog's
+   description under that with **bold** actually bold and the bullets as bullets (no stray `**` or
+   `-` characters anywhere), and the install-location box below it, all without scrolling.
+   Press Next. **Expect:** the hero is gone from every later stage.
+   Now go back to `/` and click **Automatic 1111**. **Expect:** the same hero, with the heading
+   "Stable Diffusion web UI" and a small teal "AUTOMATIC 1111" above it — that line is what ties
+   the screen back to the tile you clicked, and it appears only when the two names differ (Fooocus
+   has no such line).
+   Finally click **ComfyUI** and open any workload from its list. **Expect:** no hero — that screen
+   already showed you the card, its artwork and its description.
 7. Navigate to `/software/Nonsense` by hand. **Expect:** "That software is not in the catalog"
    and a link back, not an error page.
 8. Click Feedback, send a report with a summary and details. **Expect:** a GitHub issue URL comes
