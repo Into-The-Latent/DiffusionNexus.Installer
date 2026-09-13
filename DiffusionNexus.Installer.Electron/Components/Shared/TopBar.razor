@@ -1,0 +1,51 @@
+@using System.Reflection
+
+<div class="top-bar">
+    <span class="top-bar-version">v@AppVersion</span>
+
+    <div class="top-bar-actions">
+        <button class="top-bar-btn top-bar-feedback" type="button" @onclick="OnFeedback">Feedback</button>
+        <a class="top-bar-btn" href="/licenses">Licences</a>
+        @if (ShowDeveloperTools)
+        {
+            <a class="top-bar-btn top-bar-dev" href="/debug">Developer tools</a>
+        }
+        <a class="top-bar-btn" href="/updates">Check for Updates</a>
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Raised when the user asks to send feedback. A callback rather than a route: the dialog is
+    /// owned by the hosting page, which knows what context to attach.
+    /// </summary>
+    [Parameter] public EventCallback OnFeedback { get; set; }
+
+    /// <summary>
+    /// The developer tools page is compiled out of Release builds entirely (see the csproj), so
+    /// the link has to disappear with it. A #if in Razor MARKUP is not a thing -- preprocessor
+    /// directives are only legal inside the @code block, so the flag lives here.
+    /// </summary>
+    private const bool ShowDeveloperTools =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>
+    /// InformationalVersion carries a "+&lt;commit sha&gt;" suffix in CI builds. That is build
+    /// metadata; the user wants a version number.
+    /// </summary>
+    private static string AppVersion
+    {
+        get
+        {
+            var raw = typeof(Program).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? "unknown";
+            var plus = raw.IndexOf('+');
+            return plus < 0 ? raw : raw[..plus];
+        }
+    }
+}
