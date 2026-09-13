@@ -484,7 +484,7 @@ public class SoftwareGalleryBuilderTests
     [Fact]
     public void Orders_softwares_by_how_much_they_offer_then_by_name()
     {
-        // ComfyUI carries 20 of 25 workloads; it belongs first rather than wherever the enum
+        // ComfyUI carries 16 of the 21 offerable workloads; it belongs first rather than wherever
         // happens to place it.
         var result = Build(
             Entry(RepositoryType.Fooocus, "Fooocus"),
@@ -564,7 +564,7 @@ public sealed class SoftwareGalleryBuilder(GalleryBuilder inner)
             SoftwareBranding.DisplayName(g.Key),
             SoftwareBranding.LogoPath(g.Key),
             g.ToList()))
-        // Most-offering first: ComfyUI carries 20 of 25 workloads and belongs at the top, not
+        // Most-offering first: ComfyUI carries 16 of the 21 offerable workloads and belongs at the top,
         // wherever the enum's declaration order puts it.
         .OrderByDescending(s => s.WorkloadCount)
         .ThenBy(s => s.DisplayName, StringComparer.CurrentCultureIgnoreCase)
@@ -2692,13 +2692,13 @@ In `docs/manual-smoke.md`:
    YouTube, Patreon and Civitai.
    **Look at the banner crop specifically** — it is cropped from a 16:9 source and the portal
    ring at the bottom may clip.
-2. **Expect:** the ComfyUI card reads "20 workloads"; the other five read "straight to setup".
+2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
 3. Click a community link. **Expect:** it opens in your normal browser. The installer window must
    NOT navigate to it — if the app itself turns into a web page, that is the bug this was written
    to catch.
 4. Click Licences, then come back. Click Check for Updates, then come back. **Expect:** both pages
    still work from the top bar.
-5. Click ComfyUI. **Expect:** the Select workload screen, with 20 cards showing their artwork,
+5. Click ComfyUI. **Expect:** the Select workload screen, with 16 cards showing their artwork,
    an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** four
    cards. Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
 6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen.

@@ -69,7 +69,8 @@ sit behind it:
 - Exactly one → "straight to setup", and the card navigates directly to `/install/{workloadId}`,
   skipping a screen that would offer a choice of one.
 
-The counts today are ComfyUI 20 and one each for A1111, Forge, Fooocus, AI-Toolkit and ACE-Step,
+The counts today are ComfyUI 16 and one each for A1111, Forge, Fooocus, AI-Toolkit and ACE-Step
+(21 offerable of 25 catalogued — the other 4 target DiffusionNexusCore and are never offered here),
 so five of the six cards take the direct path. This is a property of the catalog, not a
 hardcoded special case — a second Fooocus workload would give Fooocus a selection screen with no
 code change.
