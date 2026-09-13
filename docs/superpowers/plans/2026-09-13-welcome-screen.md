@@ -484,8 +484,8 @@ public class SoftwareGalleryBuilderTests
     [Fact]
     public void Orders_softwares_by_how_much_they_offer_then_by_name()
     {
-        // ComfyUI carries 16 of the 21 offerable workloads; it belongs first rather than wherever
-        // happens to place it.
+        // ComfyUI carries 16 of the 21 offerable workloads; it belongs first rather than
+        // wherever the catalog's own order happens to place it.
         var result = Build(
             Entry(RepositoryType.Fooocus, "Fooocus"),
             Entry(RepositoryType.ComfyUI, "Krea-2-Turbo"),
@@ -564,8 +564,8 @@ public sealed class SoftwareGalleryBuilder(GalleryBuilder inner)
             SoftwareBranding.DisplayName(g.Key),
             SoftwareBranding.LogoPath(g.Key),
             g.ToList()))
-        // Most-offering first: ComfyUI carries 16 of the 21 offerable workloads and belongs at the top,
-        // wherever the enum's declaration order puts it.
+        // Most-offering first: ComfyUI carries 16 of the 21 offerable workloads and belongs at
+        // the top, not wherever the catalog's own order happens to put it.
         .OrderByDescending(s => s.WorkloadCount)
         .ThenBy(s => s.DisplayName, StringComparer.CurrentCultureIgnoreCase)
         .ToList();
