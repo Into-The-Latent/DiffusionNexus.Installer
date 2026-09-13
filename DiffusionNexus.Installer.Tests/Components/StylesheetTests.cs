@@ -76,27 +76,48 @@ public class StylesheetTests
     }
 
     [Fact]
-    public void the_welcome_screen_keeps_its_height_budget()
+    public void the_welcome_screen_fills_the_window_it_is_given()
     {
-        // The point of the strip is that a 16:9 window shows the banner, the title, the software
-        // and the community links at once. Two rules pay for that, and each has an obvious-looking
-        // "simplification" that silently spends the budget again: letting the banner span the
-        // column (it is a 16:9 image, so a full-width strip runs ~260px tall AND crops the
-        // wordmark), and letting the cards wrap to a second row.
+        // This screen is the whole window, and it went wrong in both directions before it was
+        // right. First everything wrapped and the community links fell off a 16:9 window; then
+        // everything was pinned to the size that fit a 720p one, so a maximised window showed a
+        // small screen marooned in the top-left with dead space around it. Each rule below is one
+        // of those two failures, and each has an obvious-looking "simplification" that restores it.
         var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
 
+        // The banner is a 16:9 image. Spanning the column makes it ~260px tall AND crops the
+        // wordmark, so it is capped by width -- and that cap scales, or it is a 480px postage
+        // stamp on a 4K display.
         var banner = Regex.Match(css, @"\.welcome-banner\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
-        banner.Should().Contain("width: min(100%, 480px)", "the banner is capped by width, not cropped harder");
+        banner.Should().Contain("width: min(100%, clamp(440px, 38vw, 820px))");
+
+        var welcome = Regex.Match(css, @"\.welcome\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        welcome.Should().Contain("--tile: clamp(190px, 14vw, 264px)", "the tile width is what scales the strip");
+        welcome.Should().Contain("flex: 1").And.Contain("justify-content: center",
+            "leftover height belongs evenly above and below the content, not all of it underneath");
+
+        // A tile that grows or shrinks resizes its own artwork as the page count changes.
+        var card = Regex.Match(css, @"\.software-card\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        card.Should().Contain("flex: 0 0 var(--tile)");
 
         var track = Regex.Match(css, @"\.jukebox-track\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
         track.Should().Contain("display: flex").And.Contain("overflow-x: auto");
         track.Should().NotContain("flex-wrap", "a strip that wraps is the grid this replaced");
+        track.Should().Contain("justify-content: safe center",
+            "plain `center` pushes the first tile past the scroll start, where it cannot be reached");
+        track.Should().NotContain("scroll-snap",
+            "mandatory snapping re-snapped on its own and opened the strip at its far end");
 
         Regex.IsMatch(css, @"\.software-grid\s*\{").Should().BeFalse("the wrapping grid is gone, so its rule must go too");
 
-        // The welcome screen is the one page that opts out of the shared 1000px column.
+        // The shell has to have height before a screen can fill it.
+        var screen = Regex.Match(css, @"\.screen\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        screen.Should().Contain("min-height: 100vh").And.Contain("flex-direction: column");
+
+        // And the welcome screen is the one page that opts out of the shared 1000px column: at
+        // 1000px the six tiles can never all be on screen however large the window gets.
         var wider = Regex.Match(css, @"\.screen-body:has\(>\s*\.welcome\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
-        wider.Should().Contain("max-width: 1240px");
+        wider.Should().Contain("max-width: 1800px").And.Contain("flex: 1");
     }
 
     [Fact]

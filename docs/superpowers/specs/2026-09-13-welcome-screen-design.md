@@ -416,19 +416,58 @@ the edges of the position it scrolls **to**, not the one it leaves: `scrollTo` w
 behaviour returns long before the scroll lands, so reading `scrollLeft` afterwards would leave the
 buttons one click behind.
 
-**The banner** is capped by width (`min(100%, 480px)`, centred) at a 3.4:1 crop rather than
-stretched and cropped to 3.83:1. 3.4:1 is the ratio at which the whole logo survives — see the
-note under §10 — and the width cap is what turns 260px of height into 141px without cropping
-harder. `object-position: center 54%` keeps the portal ring in frame.
+**The banner** is capped by width at a 3.4:1 crop rather than stretched and cropped to 3.83:1.
+3.4:1 is the ratio at which the whole logo survives — see the note under §10 — and the width cap is
+what turns 260px of height into 141px without cropping harder. `object-position: center 54%` keeps
+the portal ring in frame.
 
-**The welcome screen alone** widens to 1240px (`.screen-body:has(> .welcome)`); every other screen
-keeps the shared 1000px column. A wider column shows more of the strip per page, which is height
-bought back sideways.
+### 12.1.1 Correction: the first version fitted 720p and then stopped
 
-Verified by rendering the components' own markup against the committed stylesheet at 1280×720:
-content ends 33px above the fold. It still scrolls at the app's hard-minimum 900×650 window, which
-is not a 16:9 shape and is not what this promises; the default 1100×800 window fits with ~95px to
-spare.
+It was built to a fixed size — 200px tiles, a 480px banner, 28px type, a 1240px column — so a
+maximised 1938×1010 window rendered a 720p screen marooned in the middle of it, with dead space
+down both sides and across the whole bottom half. Fitting the smallest supported window is not the
+same as fitting every window, and this only did the first.
+
+Everything is now sized from the window. `--tile` on `.welcome` is the keystone — the artwork is
+square, so the tile width sets the height of the entire strip — and the banner, the type and the
+gaps scale alongside it or the composition comes apart at the extremes:
+
+| | floor | tracks the window | ceiling |
+|---|---|---|---|
+| `--tile` | 190px | 14vw | 264px |
+| banner width | 440px | 38vw | 820px |
+| title | 26px | 2.6vw | 46px |
+| vertical gap | 12px | 1.8vh | 26px |
+
+The tile ceiling is arithmetic, not taste: the column caps at 1800px, of which 136px goes to
+padding, arrows and their gaps, leaving 1664px of track; six tiles and five 14px gaps fit that at
+264px each. Larger, and the widest window overflows a strip that had room to spare.
+
+`.screen` takes `min-height: 100vh` so a screen can fill the window at all, and `.welcome` takes
+that height with `flex: 1` and **centres** its content — leftover height on a tall window belongs
+evenly above and below, not all of it underneath. The column widens to 1800px: at 1240px the six
+tiles could never all be on screen however large the window got.
+
+Measured against the committed stylesheet with the components' own markup:
+
+| window | six tiles fit? | content bottom |
+|---|---|---|
+| 2560×1380 | yes | 1071 |
+| 1938×1010 | yes | 863 |
+| 1600×830 | yes | 727 |
+| 1280×688 | no — 119px over, arrows live | 639 |
+| 900×620 (hard minimum) | no — 499px over | 619 |
+
+Everything is on screen at every size, including the 900×650 minimum the earlier version
+overflowed by 53px. The minimum window still shows ~13px of scroll for the bottom padding alone.
+
+**The strip also opened scrolled to its far end**, slicing the first tile in half — visible in the
+packaged app, never in a headless repro, because it needs contents that settle after first layout.
+The cause was `scroll-snap-type: x mandatory` re-snapping on its own. Snapping bought nothing here
+(the buttons scroll by a computed page, not by nudging toward a snap point) so it is gone, and
+`observe` now explicitly opens the strip at zero. Centring the tiles uses `justify-content: safe
+center`: plain `center` pushes the first tile out past the scroll container's start edge, where
+nothing can bring it back.
 
 ### 12.2 Nothing confirmed what the user had picked
 

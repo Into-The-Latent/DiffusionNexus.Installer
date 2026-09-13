@@ -27,6 +27,12 @@ export function observe(track, owner) {
         owner.invokeMethodAsync('OnEdgesChanged', next);
     };
 
+    // Open at the first tile. The strip has no memory worth restoring -- it is rebuilt on every
+    // visit to this screen -- and the packaged app was found opening it scrolled to the far end
+    // with the first tile sliced in half. `auto`, not smooth: this is where the strip starts, not
+    // somewhere it travels to.
+    track.scrollTo({ left: 0, behavior: 'auto' });
+
     track.addEventListener('scroll', report, { passive: true });
 
     // Catches a resized window and a changed tile count alike: both change how much of the strip

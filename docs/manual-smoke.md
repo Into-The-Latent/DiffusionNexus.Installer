@@ -164,13 +164,20 @@ public 3.x release. Slice 1 is run from a dev build.
    **Look at the banner crop specifically** — it is cropped from a 16:9 source. The crop was re-cut
    to 3.4:1 with the focus below centre, so the runner's head, the portal ring under it and both
    lines of the wordmark should all be whole.
-   **Size the window to 16:9** (1280×720 or larger) and confirm the community pills are on screen
-   without scrolling. At the app's hard-minimum 900×650 window the page does scroll: that is not a
-   16:9 shape and is not what this promises.
+   **Resize the window from its 900×650 minimum up to maximised** and watch the screen follow:
+   the banner, the title and the tiles all scale with it, and the content stays vertically centred
+   rather than stacking at the top over a void. The community pills stay on screen throughout
+   (the 900×650 minimum shows a few px of scroll for the bottom padding, nothing more).
+   **Maximised on a 1080p display, all six tiles are visible at once and both arrows are dim.**
+   That was the shape of the first attempt's failure — everything pinned to the size that fitted a
+   720p window, adrift in a big one — so it is worth looking at deliberately.
 2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
    A card whose single workload is blocked would read "1 workload" instead, never "straight to
    setup" — that card has no link behind it at all.
-2a. **The strip.** Click `>`. **Expect:** it scrolls one page, smoothly, and `<` becomes usable.
+2a. **The strip.** **First: it must open showing ComfyUI whole, at the left-hand end.** A packaged
+   build once opened it scrolled to the far end with the first tile sliced in half, and no headless
+   render reproduced it — it needs contents that settle after the first layout. Then click `>`.
+   **Expect:** it scrolls one page, smoothly, and `<` becomes usable.
    Keep clicking. **Expect:** at the far end `>` dims and stops responding; `<` walks back the same
    way and dims at the start. Widen the window until all six tiles are visible at once.
    **Expect:** both arrows dim — there is nowhere left to go in either direction. Also scroll the

@@ -187,6 +187,14 @@ h2 {
     padding: 0;
 }
 
+/* Full window height, so a screen that wants to use the whole of it can. Without this the shell
+   is only as tall as its content and a maximised window is content at the top over a void. */
+.screen {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
 /* One copy of the centring, in the shell, rather than one per screen. */
 .screen-body {
     max-width: 1000px;
@@ -194,11 +202,14 @@ h2 {
     padding-inline: 24px;
 }
 
-/* The welcome screen is the one that has to fit a whole 16:9 window -- banner, title, software
-   strip and community links, with nothing below the fold. It buys that height back sideways: a
-   wider column shows more of the strip at once, so there is less of it to page through. */
+/* The welcome screen is the whole window: banner, title, software strip and community links, with
+   nothing below the fold and nothing stranded above a void either. It takes the height the shell
+   now has, and a much wider column -- at 1000px the six tiles could never all be on screen at
+   once no matter how large the window got. */
 .screen-body:has(> .welcome) {
-    max-width: 1240px;
+    max-width: 1800px;
+    display: flex;
+    flex: 1;
 }
 
 /* The updates page brings its own width and padding; don't apply them twice. */
@@ -960,11 +971,30 @@ progress {
 
 /* ---------- Welcome screen ---------- */
 
+/* Everything on this screen is sized from the window, not pinned to the size that happened to fit
+   a 720p one. The tile width is the keystone -- the artwork is square, so it sets the height of
+   the whole strip -- and it is declared here, once, because the banner and the type have to scale
+   with it or the composition comes apart at the extremes.
+
+   Each clamp is a real three-way decision: the floor is what still works in the 900x650 window the
+   app refuses to go below, the middle term tracks the window, and the ceiling is arithmetic --
+   the column caps at 1800px, of which 136px goes to padding, arrows and their gaps, leaving
+   1664px of track; six tiles and five 14px gaps fit that at 264px each. Any larger and the widest
+   window overflows a strip that had room to spare. 14vw reaches that ceiling at about 1890px, so
+   every window from roughly 1600px up shows all six at once -- which is where the arrows have
+   nothing left to do and say so by dimming. */
 .welcome {
-    padding-block: 18px;
+    --tile: clamp(190px, 14vw, 264px);
+    --welcome-gap: clamp(12px, 1.8vh, 26px);
+
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    /* Centred rather than top-aligned: the leftover height on a tall window belongs evenly above
+       and below the content, not all of it underneath. */
+    justify-content: center;
+    gap: var(--welcome-gap);
+    padding-block: clamp(14px, 2.5vh, 40px);
 }
 
 /* Sized by WIDTH, not by cropping harder.
@@ -976,7 +1006,7 @@ progress {
    ring stays in frame. */
 .welcome-banner {
     aspect-ratio: 3.4 / 1;
-    width: min(100%, 480px);
+    width: min(100%, clamp(440px, 38vw, 820px));
     margin-inline: auto;
     border-radius: 10px;
     overflow: hidden;
@@ -994,7 +1024,7 @@ progress {
 .welcome-title {
     margin: 0;
     text-align: center;
-    font-size: 28px;
+    font-size: clamp(26px, 2.6vw, 46px);
     font-weight: 800;
     letter-spacing: -0.02em;
     background: linear-gradient(96deg, #8b7bf0 6%, #5b8def 62%, var(--accent) 100%);
@@ -1004,9 +1034,11 @@ progress {
 }
 
 .welcome-subtitle {
-    margin: -8px 0 0;
+    /* Pulled back up under the title: they read as one block, and the screen's own gap would
+       otherwise space them like two. */
+    margin: calc(-1 * var(--welcome-gap) + 4px) 0 0;
     text-align: center;
-    font-size: 13px;
+    font-size: clamp(13px, 1vw, 16px);
     color: var(--muted);
 }
 
@@ -1022,12 +1054,22 @@ progress {
 }
 
 /* An ordinary scroll container, so a wheel, a trackpad and the keyboard move it even if the
-   buttons' script never loads. The buttons drive it through wwwroot/js/jukebox.js. */
+   buttons' script never loads. The buttons drive it through wwwroot/js/jukebox.js.
+
+   `safe center` and not plain `center`: a centred flex row whose content overflows pushes the
+   first item out past the scroll container's own start edge, where it cannot be scrolled back
+   into view. `safe` falls back to start alignment exactly when that would happen, which is what
+   makes the six tiles sit centred on a wide window and flush left on a narrow one.
+
+   No scroll-snap. Mandatory snapping re-snaps on its own when the container's contents settle --
+   in the packaged app that meant the strip opening scrolled to its far end with the first tile
+   sliced in half -- and it buys nothing here, because the buttons scroll by a computed page
+   rather than by nudging towards a snap point. */
 .jukebox-track {
     display: flex;
+    justify-content: safe center;
     gap: 14px;
     overflow-x: auto;
-    scroll-snap-type: x mandatory;
     scroll-behavior: smooth;
     /* Room for the tiles' focus ring, which a clipping container would otherwise cut. */
     padding-block: 2px;
@@ -1064,9 +1106,10 @@ progress {
 }
 
 .software-card {
-    /* Fixed width, so a page is a whole number of tiles and the snap points line up. */
-    flex: 0 0 200px;
-    scroll-snap-align: start;
+    /* One width for every tile, scaled from the window -- see --tile on .welcome. Neither
+       grow nor shrink: a strip whose tiles resize as the page count changes is a strip whose
+       artwork changes size when you press an arrow. */
+    flex: 0 0 var(--tile);
     border: 1px solid var(--border);
     border-radius: 11px;
     background: var(--panel);
