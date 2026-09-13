@@ -202,6 +202,39 @@ public class SoftwareWorkloadsPageTests : BunitContext
             cut.Markup.Should().Contain("CAT001").And.Contain("catalog.zip is corrupt"));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Every_dead_end_on_this_page_offers_a_route_home(bool thrown)
+    {
+        // Both no-content states in one test on purpose: they were written independently and the
+        // thrown-failure branch shipped without a way out. This page is deep-linkable -- it is
+        // where an Electron window refresh lands -- and TopBar carries no home control, so a dead
+        // end here strands a user who has no address bar. One test so the two cannot drift apart.
+        var source = new Mock<IWorkloadSource>();
+        if (thrown)
+        {
+            source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+                  .ThrowsAsync(new IOException("catalog.zip is locked"));
+        }
+        else
+        {
+            source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        }
+
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = RenderFor("ComfyUI");
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll("a[href='/']").Should().NotBeEmpty("a screen with no content still needs a way back"));
+    }
+
     [Fact]
     public void Reports_a_thrown_catalog_failure_instead_of_propagating_it()
     {

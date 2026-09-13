@@ -90,8 +90,8 @@ public class SoftwareGalleryBuilderTests
     [Fact]
     public void Orders_softwares_by_how_much_they_offer_then_by_name()
     {
-        // ComfyUI carries 20 of 25 workloads; it belongs first rather than wherever the enum
-        // happens to place it.
+        // ComfyUI carries 16 of the 21 workloads this installer can offer; it belongs first
+        // rather than wherever the catalog's own order happens to place it.
         var result = Build(
             Entry(RepositoryType.Fooocus, "Fooocus"),
             Entry(RepositoryType.ComfyUI, "Krea-2-Turbo"),

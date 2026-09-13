@@ -85,6 +85,11 @@ public class DependencyInjectionTests
         var builder = provider.GetRequiredService<GalleryBuilder>();
 
         builder.Should().NotBeNull();
+
+        // SoftwareGalleryBuilder too, and for the same reason: it is what the welcome screen --
+        // the actual first screen -- injects. Every bUnit test registers it by hand, so dropping
+        // its AddSingleton would leave the whole suite green and throw on the app's first render.
+        provider.GetRequiredService<SoftwareGalleryBuilder>().Should().NotBeNull();
     }
 
     [Fact]

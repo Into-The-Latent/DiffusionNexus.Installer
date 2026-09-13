@@ -1,5 +1,5 @@
-@using System.Reflection
 @using System.Runtime.InteropServices
+@using DiffusionNexus.Installer.Electron.Services
 @using DiffusionNexus.Installer.SDK.Shared.Services.Feedback
 @inject IFeedbackReportingService Feedback
 
@@ -91,7 +91,7 @@
             ScreenshotPng = null,
             LogTail = null,
 
-            AppVersion = AppVersion,
+            AppVersion = AppVersion.Display,
             Os = RuntimeInformation.OSDescription,
             TimestampUtc = DateTimeOffset.UtcNow
         };
@@ -120,18 +120,11 @@
         _title = string.Empty;
         _description = string.Empty;
         _email = string.Empty;
-        await OnClose.InvokeAsync();
-    }
 
-    private static string AppVersion
-    {
-        get
-        {
-            var raw = typeof(Program).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                ?? "unknown";
-            var plus = raw.IndexOf('+');
-            return plus < 0 ? raw : raw[..plus];
-        }
+        // The type too: a user who filed a bug, closed the dialog and reopened it to send praise
+        // would otherwise have the praise land labelled as a bug.
+        _reportType = FeedbackReportType.Feedback;
+
+        await OnClose.InvokeAsync();
     }
 }

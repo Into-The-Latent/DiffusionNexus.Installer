@@ -239,15 +239,6 @@ h2 {
     margin-bottom: .6rem;
 }
 
-.filter-label {
-    color: var(--muted);
-    font-size: .78rem;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    font-weight: 600;
-    min-width: 5rem;
-}
-
 .filter,
 .filter-active {
     background: transparent;
@@ -1015,8 +1006,8 @@ progress {
     text-decoration: none;
 }
 
-/* Mirrors .workload-card-disabled: the single-workload card has no <a> wrapper, so
-   without this an uninstallable workload looks exactly as clickable as an installable one. */
+/* Mirrors .workload-card-disabled: an uninstallable single-workload card is the one card
+   with no <a> wrapper, so without this it looks exactly as clickable as the rest. */
 .software-card-disabled {
     opacity: 0.55;
 }
@@ -1068,20 +1059,8 @@ progress {
     color: var(--muted);
 }
 
-/* Duplicated from .workload-card-install / .workload-card-unavailable rather than shared: those
-   classes belong to WorkloadCard.razor, and Task 8 restyles the workload grid independently. */
-.software-card-install {
-    margin-top: 2px;
-    padding: 6px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    background: rgba(31, 184, 166, 0.15);
-    color: var(--text);
-    font-size: 12.5px;
-    font-weight: 600;
-    cursor: pointer;
-}
-
+/* Duplicated from .workload-card-unavailable rather than shared: that class belongs to
+   WorkloadCard.razor, and the workload grid is styled independently. */
 .software-card-unavailable {
     margin: 0;
     font-size: 11.5px;

@@ -1,5 +1,4 @@
 @page "/updates"
-@using System.Reflection
 @using DiffusionNexus.Installer.Electron.Services
 @using ElectronNET.API
 @inject UpdaterLog Log
@@ -10,9 +9,9 @@
 <div class="shell">
     <header>
         <h1>DiffusionNexus Installer</h1>
-        <p class="version">Version @AppVersion</p>
+        <p class="version">Version @AppVersion.Display</p>
         <p class="host">@HostDescription</p>
-        <p><a href="/">Back to workloads</a></p>
+        <p><a href="/">Back to all software</a></p>
     </header>
 
     <section class="actions">
@@ -47,12 +46,30 @@
 @code {
     private bool _busy;
 
-    private static bool ElectronActive => HybridSupport.IsElectronActive;
-
-    private static string AppVersion =>
-        typeof(Program).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? "unknown";
+    /// <summary>
+    /// HybridSupport.IsElectronActive reads an AssemblyMetadataAttribute the ElectronNET build
+    /// step stamps onto the Electron project's own output. Under bUnit the entry assembly is the
+    /// test host, which carries no such attribute, and the property THROWS rather than returning
+    /// false. That is not a signal the app is inside Electron, so it is treated the same as "no" --
+    /// consistent with this codebase's other Electron probes (e.g. CommunityLinks,
+    /// VcRuntimeDetectionService) failing open rather than taking a screen down over a detection
+    /// gap. A thrown static constructor also poisons the type for the whole process, so the first
+    /// test to render this page would take every later Electron probe with it.
+    /// </summary>
+    private static bool ElectronActive
+    {
+        get
+        {
+            try
+            {
+                return HybridSupport.IsElectronActive;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+    }
 
     private static string HostDescription => ElectronActive
         ? "Running inside the Electron shell."

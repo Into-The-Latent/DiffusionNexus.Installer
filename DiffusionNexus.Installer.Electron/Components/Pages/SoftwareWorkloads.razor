@@ -16,7 +16,13 @@
 <div class="workload-screen">
     @if (_loadError is not null)
     {
-        <p class="gallery-error">The catalog could not be read: @_loadError</p>
+        @* Same way out as the not-found branch below. This page is deep-linkable and an Electron
+           window refresh lands straight on it, and TopBar carries no home control, so a dead end
+           here leaves the user with no address bar to escape through. *@
+        <div class="software-not-found">
+            <p class="gallery-error">The catalog could not be read: @_loadError</p>
+            <a href="/">Back to all software</a>
+        </div>
     }
     else if (!_loaded)
     {

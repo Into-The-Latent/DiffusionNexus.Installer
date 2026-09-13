@@ -19,8 +19,9 @@ public sealed class SoftwareGalleryBuilder(GalleryBuilder inner)
             SoftwareBranding.DisplayName(g.Key),
             SoftwareBranding.LogoPath(g.Key),
             g.ToList()))
-        // Most-offering first: ComfyUI carries 20 of 25 workloads and belongs at the top, not
-        // wherever the enum's declaration order puts it.
+        // Most-offering first: ComfyUI carries 16 of the 21 workloads this installer can offer
+        // (the catalog holds 25, but four target DiffusionNexusCore and never reach here), so it
+        // belongs at the top rather than wherever the catalog's own order happens to put it.
         .OrderByDescending(s => s.WorkloadCount)
         .ThenBy(s => s.DisplayName, StringComparer.CurrentCultureIgnoreCase)
         .ToList();

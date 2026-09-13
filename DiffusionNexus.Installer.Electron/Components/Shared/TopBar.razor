@@ -1,7 +1,7 @@
-@using System.Reflection
+@using DiffusionNexus.Installer.Electron.Services
 
 <div class="top-bar">
-    <span class="top-bar-version">v@AppVersion</span>
+    <span class="top-bar-version">v@AppVersion.Display</span>
 
     <div class="top-bar-actions">
         <button class="top-bar-btn top-bar-feedback" type="button" @onclick="OnFeedback">Feedback</button>
@@ -32,20 +32,4 @@
 #else
         false;
 #endif
-
-    /// <summary>
-    /// InformationalVersion carries a "+&lt;commit sha&gt;" suffix in CI builds. That is build
-    /// metadata; the user wants a version number.
-    /// </summary>
-    private static string AppVersion
-    {
-        get
-        {
-            var raw = typeof(Program).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                ?? "unknown";
-            var plus = raw.IndexOf('+');
-            return plus < 0 ? raw : raw[..plus];
-        }
-    }
 }

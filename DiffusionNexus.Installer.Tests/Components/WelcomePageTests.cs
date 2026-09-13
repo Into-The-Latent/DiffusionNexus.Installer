@@ -94,8 +94,12 @@ public class WelcomePageTests : BunitContext
 
         var cut = Render<Welcome>();
 
-        // No /software/Fooocus link: a screen offering a choice of one should not exist.
+        // No /software/Fooocus link: a screen offering a choice of one should not exist. The whole
+        // card is the actuator, exactly as it is for a multi-workload software -- five of the six
+        // cards take this path, so a card whose only clickable pixel is a small button would make
+        // "not clickable" the majority behaviour.
         cut.WaitForAssertion(() => cut.FindAll("a[href='/software/Fooocus']").Should().BeEmpty());
+        cut.Find(".software-card > a").GetAttribute("href").Should().Be($"/install/{fooocus.Id}");
         cut.Find(".software-card-count").TextContent.Should().Contain("straight to setup");
     }
 
@@ -122,7 +126,12 @@ public class WelcomePageTests : BunitContext
 
         cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().ContainSingle());
         cut.Find(".software-card-unavailable").TextContent.Should().NotBeNullOrWhiteSpace();
-        cut.FindAll(".software-card-install").Should().BeEmpty();
+
+        // No anchor at all: there must be no click-through to an install that cannot succeed, and
+        // app.css gates the hover cue on `.software-card:has(> a)`, so this is also what stops the
+        // card advertising a target it does not have.
+        cut.FindAll(".software-card a").Should().BeEmpty();
+        cut.Find(".software-card").ClassName.Should().Contain("software-card-disabled");
     }
 
     [Fact]

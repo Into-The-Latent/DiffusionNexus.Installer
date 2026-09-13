@@ -100,8 +100,9 @@ filters, card rendering and the footer in 168 lines. After the split:
 
 - `Welcome.razor` — regions 1–5 above.
 - `SoftwareWorkloads.razor` — §3.2.
-- `WorkloadCard.razor` — the card, shared by both (the welcome screen renders one for a
-  single-workload software's disabled state).
+- `WorkloadCard.razor` — the card the workload screen renders for each workload. Not shared with
+  the welcome screen: `Welcome.razor` inlines its own software-card markup, including the
+  single-workload disabled state.
 
 Catalog loading, the diagnostics-before-empty-message rule and the `_loadError` guard move into a
 shared component or base so that **both** screens keep today's behaviour: a hard catalog failure

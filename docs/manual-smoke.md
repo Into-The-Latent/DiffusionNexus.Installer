@@ -5,17 +5,24 @@ real run can prove. Use a scratch install folder, never a real one.
 
 ## 0. Before anything else
 
-1. **Expect:** the gallery is *styled* — dark background, teal accents, cards in a grid.
+1. **Expect:** the welcome screen is *styled* — dark background, teal accents, cards in a grid.
    If it renders as plain serif text on white, static web assets are not being served: check the
    console for `StaticAssetsInvoker` warnings. That failure also kills `blazor.web.js`, so no
    button on any page will respond — the app looks alive but is completely inert.
 
-## 1. Gallery
+## 1. Catalog and the workload lists
+
+There is no single gallery of every workload any more. `/` (§6) asks which software; the workload
+list lives behind each multi-workload software card, at `/software/{type}`. These steps check that
+the catalog reaches those lists correctly.
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
-   **Expect:** the gallery populates from the embedded seed; no error, no empty state.
-2. **Expect:** every card is enabled except Config535 — 20 of 21. The DiffusionNexusCore
-   workloads (Captioning, Inpainting, Outpainting, Upscaling-Z-Image-Turbo) are not listed at all.
+   **Expect:** the welcome screen populates from the embedded seed — six software cards, no error,
+   no empty state.
+2. Click ComfyUI. **Expect:** 16 cards, every one enabled except Config535 — 15 of 16. The catalog
+   holds 25 workloads but only 21 target the installer: the four DiffusionNexusCore ones
+   (Captioning, Inpainting, Outpainting, Upscaling-Z-Image-Turbo) are ComfyUI-typed and must not
+   appear here or anywhere else in the app.
    **Config535 is the exception:** it is disabled with a torch message, not a "Coming soon" one —
    its catalog entry pairs torch 2.8.0 with CUDA 13.0, for which no wheel exists, so the pipeline
    would refuse it before step 1. That is a catalog data fix, not a missing module.
@@ -26,15 +33,17 @@ real run can prove. Use a scratch install folder, never a real one.
    ComfyUI workload screen, and that is correct — the only Audio workload belongs to ACE-Step,
    which is a single-workload software and goes straight to setup. The filter is catalog-derived,
    so an Audio button appears there by itself the day a ComfyUI workload declares it.
-4. Filter by software ComfyUI. **Expect:** only ComfyUI-based cards remain, and the software
-   filter offers exactly the software the catalog actually contains — no empty options.
+4. **Expect:** the type filter is the only filter on this screen. There is deliberately no software
+   filter — the welcome screen already answered which software, so a second control for it would be
+   a dead one.
 5. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
-   **Expect:** the gallery reflects that checkout.
+   **Expect:** the software cards and the workload lists behind them reflect that checkout.
 6. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a folder that does not exist and relaunch.
    **Expect:** the app still starts and falls back to the installed catalog. It must not crash.
 7. Navigate to `/updates`. **Expect:** the version/updater screen appears (version string,
-   "Check for updates" button, updater log). Click "Back to workloads". **Expect:** the
-   gallery returns.
+   "Check for updates" button, updater log). **Expect:** the version it shows matches the one in
+   the top bar exactly — no `+<commit sha>` suffix on either. Click "Back to all software".
+   **Expect:** the welcome screen returns.
 
 ## 2. Wizard stages
 
@@ -78,7 +87,7 @@ real run can prove. Use a scratch install folder, never a real one.
    **Expect:** the run ends as Cancelled, not Failed, and no bug-report prompt appears.
 3. Start an install, then resize/minimise and restore the window several times to force a circuit
    reconnect. **Expect:** the install keeps running and the log continues where it left off.
-4. While an install is running, reconnect by navigating away and back to the gallery, then
+4. While an install is running, reconnect by navigating away and back to the welcome screen, then
    reopen the same workload's wizard. **Expect:** you return to the install's report stage,
    not the wizard's first screen.
 5. Start an install, let it finish, then reconnect to the same workload by navigating away and
@@ -116,13 +125,13 @@ public 3.x release. Slice 1 is run from a dev build.
    YouTube, Patreon and Civitai.
    **Look at the banner crop specifically** — it is cropped from a 16:9 source and the portal
    ring at the bottom may clip.
-2. **Expect:** the ComfyUI card reads "20 workloads"; the other five read "straight to setup".
+2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
 3. Click a community link. **Expect:** it opens in your normal browser. The installer window must
    NOT navigate to it — if the app itself turns into a web page, that is the bug this was written
    to catch.
 4. Click Licences, then come back. Click Check for Updates, then come back. **Expect:** both pages
    still work from the top bar.
-5. Click ComfyUI. **Expect:** the Select workload screen, with 20 cards showing their artwork,
+5. Click ComfyUI. **Expect:** the Select workload screen, with 16 cards showing their artwork,
    an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** four
    cards. Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
 6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen.

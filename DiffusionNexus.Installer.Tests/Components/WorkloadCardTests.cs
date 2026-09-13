@@ -10,7 +10,8 @@ using Xunit;
 namespace DiffusionNexus.Installer.Tests.Components;
 
 /// <summary>
-/// The card shared by the welcome screen (single-workload softwares) and the workload screen.
+/// The card the workload screen renders for each of a software's workloads. Not shared with the
+/// welcome screen: Welcome.razor inlines its own software-card markup and never uses this.
 /// </summary>
 public class WorkloadCardTests : BunitContext
 {
