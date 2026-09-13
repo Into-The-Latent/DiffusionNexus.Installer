@@ -316,7 +316,7 @@ SOFTWARE.
 Notice files that ship inside the .NET runtime packs embedded by self-contained
 publishing, and inside any package that carries its own, reproduced verbatim.
 
-### Microsoft.AspNetCore.App.Runtime.win-x64 10.0.11 (runtime pack)
+### Microsoft.AspNetCore.App.Runtime.win-x64 10.0.12 (runtime pack)
 Source: THIRD-PARTY-NOTICES.TXT
 
 .NET Core uses third-party libraries or other resources that may be
@@ -1432,7 +1432,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-### Microsoft.NETCore.App.Runtime.win-x64 10.0.11 (runtime pack)
+### Microsoft.NETCore.App.Runtime.win-x64 10.0.12 (runtime pack)
 Source: THIRD-PARTY-NOTICES.TXT
 
 .NET Runtime uses third-party libraries or other resources that may be
