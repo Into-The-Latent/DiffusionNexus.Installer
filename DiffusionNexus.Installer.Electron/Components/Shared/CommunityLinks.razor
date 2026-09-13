@@ -1,5 +1,5 @@
 @using DiffusionNexus.Installer.Core.Gallery
-@using ElectronNET.API
+@using DiffusionNexus.Installer.Electron.Services
 
 <div class="community">
     <h4>Join the Community</h4>
@@ -11,35 +11,12 @@
                target="_blank"
                rel="noopener noreferrer"
                @onclick="() => OpenAsync(link.Url)"
-               @onclick:preventDefault="@ElectronActive">@link.Name</a>
+               @onclick:preventDefault="@ElectronHost.IsActive">@link.Name</a>
         }
     </div>
 </div>
 
 @code {
-    /// <summary>
-    /// HybridSupport.IsElectronActive reads an AssemblyMetadataAttribute the ElectronNET build
-    /// step stamps onto the Electron project's own output. Under bUnit the entry assembly is the
-    /// test host, which carries no such attribute, and the property THROWS rather than returning
-    /// false. That is not a signal the app is inside Electron, so it is treated the same as "no" --
-    /// consistent with this codebase's other Electron probes (e.g. VcRuntimeDetectionService)
-    /// failing open rather than taking a screen down over a detection gap.
-    /// </summary>
-    private static bool ElectronActive
-    {
-        get
-        {
-            try
-            {
-                return HybridSupport.IsElectronActive;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-    }
-
     /// <summary>
     /// Inside Electron a plain anchor navigates the APP's own window to the target, stranding the
     /// user in an installer that has become a browser with no address bar. Hand the URL to the
@@ -48,11 +25,11 @@
     /// </summary>
     private async Task OpenAsync(string url)
     {
-        if (!ElectronActive) return;
+        if (!ElectronHost.IsActive) return;
 
         try
         {
-            await Electron.Shell.OpenExternalAsync(url);
+            await ElectronNET.API.Electron.Shell.OpenExternalAsync(url);
         }
         catch (Exception)
         {

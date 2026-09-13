@@ -1,0 +1,26 @@
+@* The chrome every top-level screen shares: the bar across the top, the dialog its Feedback
+   button opens, and the centred column the page's own content sits in.
+
+   A component the pages wrap themselves in, rather than markup in MainLayout, because the bar
+   belongs on the welcome and workload screens and NOT on /install/{id}, /updates, /licenses or
+   /debug -- hosting it in the layout would mean the layout inspecting the current route to decide.
+
+   It exists at all because the three moving parts were hand-assembled per page: a third screen
+   that added <TopBar> and forgot <FeedbackDialog> would get a Feedback button that silently did
+   nothing, and no test would have caught it. *@
+
+<div class="screen">
+    <TopBar OnFeedback="() => _feedbackOpen = true" />
+
+    <div class="screen-body">
+        @ChildContent
+    </div>
+
+    <FeedbackDialog Visible="_feedbackOpen" OnClose="() => _feedbackOpen = false" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+
+    private bool _feedbackOpen;
+}

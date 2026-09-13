@@ -2,6 +2,7 @@ using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Electron.Endpoints;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using FluentAssertions;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Moq;
@@ -48,8 +49,8 @@ public class ThumbnailEndpointTests
         var workloadId = Guid.NewGuid();
         var workloads = new Mock<IWorkloadSource>(MockBehavior.Strict);
         workloads
-            .Setup(w => w.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<InstallationConfiguration>)[]);
+            .Setup(w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((InstallationConfiguration?)null);
 
         var result = await ThumbnailEndpoint.HandleAsync(
             workloadId, workloads.Object, new DefaultHttpContext().Response, CancellationToken.None);
@@ -58,9 +59,36 @@ public class ThumbnailEndpointTests
 
         // MockBehavior.Strict means an unexpected GetThumbnailAsync call throws instead of
         // returning a default -- so if the handler ever reads bytes before checking the
-        // installer-filtered list, this test fails on that call rather than merely on the status
+        // installer-filtered lookup, this test fails on that call rather than merely on the status
         // code.
         workloads.Verify(w => w.GetThumbnailAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Asks_for_one_workload_by_id_rather_than_cloning_the_whole_catalog()
+    {
+        // The authorization gate answers "is this id one of ours", and the ComfyUI screen renders
+        // 16 cards: 16 requests, each of which used to deep-copy all 25 catalogued workloads and
+        // their nested model-download lists just to find one id. MockBehavior.Strict with only the
+        // by-id member configured means a fallback to the list member throws.
+        var workloadId = Guid.NewGuid();
+        var workloads = new Mock<IWorkloadSource>(MockBehavior.Strict);
+        workloads
+            .Setup(w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(InstallerWorkload(workloadId, @"C:\catalog\workloads\krea\thumbnail.png"));
+        workloads
+            .Setup(w => w.GetThumbnailAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([1, 2, 3]);
+
+        await ThumbnailEndpoint.HandleAsync(
+            workloadId, workloads.Object, new DefaultHttpContext().Response, CancellationToken.None);
+
+        workloads.Verify(
+            w => w.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the whole installer workload list must never be built to answer a single-id question");
+        workloads.Verify(
+            w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -74,8 +102,8 @@ public class ThumbnailEndpointTests
         var workloadId = Guid.NewGuid();
         var workloads = new Mock<IWorkloadSource>(MockBehavior.Strict);
         workloads
-            .Setup(w => w.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<InstallationConfiguration>)[]);
+            .Setup(w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((InstallationConfiguration?)null);
         workloads
             .Setup(w => w.GetThumbnailAsync(workloadId, It.IsAny<CancellationToken>()))
             .ReturnsAsync([1, 2, 3]);
@@ -94,8 +122,8 @@ public class ThumbnailEndpointTests
         var workload = InstallerWorkload(workloadId, @"C:\catalog\workloads\krea\thumbnail.webp");
         var workloads = new Mock<IWorkloadSource>(MockBehavior.Strict);
         workloads
-            .Setup(w => w.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<InstallationConfiguration>)[workload]);
+            .Setup(w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(workload);
         workloads
             .Setup(w => w.GetThumbnailAsync(workloadId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((byte[]?)null);
@@ -106,6 +134,43 @@ public class ThumbnailEndpointTests
         result.Should().BeOfType<NotFound>();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_404_here_does_not_re_execute_the_pipeline_into_the_blazor_not_found_page(bool knownId)
+    {
+        // Program.cs wraps every endpoint in UseStatusCodePagesWithReExecute("/not-found"), which
+        // fires on any 400-599 with an empty body and no content type. Without this opt-out a
+        // missing thumbnail re-entered the pipeline, routed to Pages.NotFound, and served a whole
+        // text/html Blazor document -- rendered through an InteractiveServer component -- as the
+        // body of an <img> request. Once per broken tile, on every cache-missing render.
+        //
+        // Both 404 paths are covered: the unknown/unauthorized id and the known id with no bytes.
+        var workloadId = Guid.NewGuid();
+        var workloads = new Mock<IWorkloadSource>(MockBehavior.Strict);
+        workloads
+            .Setup(w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(knownId ? InstallerWorkload(workloadId, "thumbnail.webp") : null);
+        if (knownId)
+        {
+            workloads
+                .Setup(w => w.GetThumbnailAsync(workloadId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((byte[]?)null);
+        }
+
+        var context = new DefaultHttpContext();
+        var statusCodePages = new StatusCodePagesFeature();
+        statusCodePages.Enabled.Should().BeTrue("the middleware is on by default for every request");
+        context.Features.Set<IStatusCodePagesFeature>(statusCodePages);
+
+        var result = await ThumbnailEndpoint.HandleAsync(
+            workloadId, workloads.Object, context.Response, CancellationToken.None);
+
+        result.Should().BeOfType<NotFound>("the status code itself must survive -- the card's alt text depends on it");
+        statusCodePages.Enabled.Should().BeFalse(
+            "a missing thumbnail must not render the whole not-found PAGE as the image response");
+    }
+
     [Fact]
     public async Task Installer_workload_with_bytes_returns_a_file_result_with_the_derived_content_type_and_cache_header()
     {
@@ -114,8 +179,8 @@ public class ThumbnailEndpointTests
         var bytes = new byte[] { 1, 2, 3, 4 };
         var workloads = new Mock<IWorkloadSource>(MockBehavior.Strict);
         workloads
-            .Setup(w => w.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<InstallationConfiguration>)[workload]);
+            .Setup(w => w.GetInstallerWorkloadAsync(workloadId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(workload);
         workloads
             .Setup(w => w.GetThumbnailAsync(workloadId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(bytes);

@@ -7,6 +7,19 @@ namespace DiffusionNexus.Installer.Core.Catalog;
 public interface IWorkloadSource
 {
     Task<IReadOnlyList<InstallationConfiguration>> GetInstallerWorkloadsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// One workload by id, or null when the catalog has no such workload OR it is not one this
+    /// installer offers. Same filter as <see cref="GetInstallerWorkloadsAsync"/>, asked about a
+    /// single id.
+    ///
+    /// Separate from the list member because the list member is expensive: the catalog hands back
+    /// a deep copy of EVERY catalogued workload, nested model-download lists included. The
+    /// thumbnail endpoint only needs to answer "is this id one of ours", and a 16-card grid asks
+    /// it 16 times per render.
+    /// </summary>
+    Task<InstallationConfiguration?> GetInstallerWorkloadAsync(Guid id, CancellationToken ct = default);
+
     Task<byte[]?> GetThumbnailAsync(Guid workloadId, CancellationToken ct = default);
 
     /// <summary>

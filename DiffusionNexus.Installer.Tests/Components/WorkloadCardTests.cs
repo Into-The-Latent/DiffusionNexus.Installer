@@ -20,7 +20,8 @@ public class WorkloadCardTests : BunitContext
     private static GalleryEntry Entry(
         bool installable = true,
         string? thumbnailPath = @"C:\catalog\workloads\krea\thumbnail.webp",
-        WorkflowType type = WorkflowType.Image) =>
+        WorkflowType type = WorkflowType.Image,
+        string? description = "Text to image plus upscale, tuned for Krea 2 Turbo.") =>
         new(
             new InstallationConfiguration
             {
@@ -28,6 +29,7 @@ public class WorkloadCardTests : BunitContext
                 Name = "Krea-2-Turbo",
                 WorkflowType = type,
                 ThumbnailPath = thumbnailPath,
+                Description = description ?? string.Empty,
                 Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI }
             },
             installable,
@@ -75,6 +77,28 @@ public class WorkloadCardTests : BunitContext
         cut.Find(".workload-card-install").Click();
 
         installed.Should().BeSameAs(entry);
+    }
+
+    [Fact]
+    public void Carries_the_catalogs_description_where_the_user_can_still_reach_it()
+    {
+        // The deleted Gallery.razor card rendered the description as body text; this tile has no
+        // room for it, and after the split nothing in the app showed it at all -- the wizard does
+        // not either. The tooltip is the cheap way to keep it reachable before committing to an
+        // install.
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
+
+        cut.Find(".workload-card").GetAttribute("title")
+            .Should().Be("Text to image plus upscale, tuned for Krea 2 Turbo.");
+    }
+
+    [Fact]
+    public void Has_no_tooltip_at_all_when_the_catalog_gives_no_description()
+    {
+        // An empty tooltip is worse than none: it opens a blank box over the card.
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry(description: null)));
+
+        cut.Find(".workload-card").HasAttribute("title").Should().BeFalse();
     }
 
     [Fact]

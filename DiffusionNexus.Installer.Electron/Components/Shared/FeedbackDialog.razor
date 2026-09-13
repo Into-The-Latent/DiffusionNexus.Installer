@@ -97,10 +97,21 @@
         };
 
         // SubmitAsync never throws except on real cancellation; failures arrive as Success == false
-        // with a message meant to be shown directly.
-        var result = await Feedback.SubmitAsync(report);
-
-        _busy = false;
+        // with a message meant to be shown directly. The finally is for the narrow paths where it
+        // does throw -- its ArgumentException.ThrowIfNullOrWhiteSpace guards run before its own try
+        // block, and its cancellation filter rethrows. _busy is the one field that can strand this
+        // dialog: Cancel is disabled="@_busy", Send needs !_busy to be enabled, and there is no
+        // backdrop click or Escape handler, so a _busy left true makes the modal unclosable and the
+        // whole app is stuck behind it.
+        FeedbackSubmissionResult result;
+        try
+        {
+            result = await Feedback.SubmitAsync(report);
+        }
+        finally
+        {
+            _busy = false;
+        }
 
         if (result.Success)
         {
@@ -117,6 +128,11 @@
     {
         _error = null;
         _issueUrl = null;
+
+        // Belt and braces alongside the finally in SubmitAsync: a reopened dialog whose Send button
+        // is permanently disabled is indistinguishable from a broken one.
+        _busy = false;
+
         _title = string.Empty;
         _description = string.Empty;
         _email = string.Empty;

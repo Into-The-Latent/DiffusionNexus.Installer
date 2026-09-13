@@ -266,6 +266,39 @@ accepted that this is hidden for now and self-resolving.
 workload ships in the embedded catalog". The seed refresh is that moment, so the note is
 discharged and the step rewritten to state that no Audio filter is expected under ComfyUI and why.
 
+### 8.1 Correction: the refresh reaches cold starts only
+
+Added after review. The section above, and commit `8ad4db6`'s message, say the refresh fixes the
+ACE-Step typing. That is true **only on a cold start with no installed catalog**. It is not true for
+anyone who has already run a 3.x build, and they are the majority.
+
+`CatalogLocator.StaleSections` re-seeds from the embedded archive only when the embedded
+`catalogVersion` is strictly greater than the installed one:
+
+```csharp
+if (embeddedVersion > (state.Workloads?.CatalogVersion ?? 0)) stale |= CatalogSections.Workloads;
+```
+
+The regenerated `manifest.json` changed `commit`, `archive.sha256` and ACE-Step-1.5's
+`subVersion`/`hash`, but left `catalogVersion` at `1`. An existing
+`%LocalAppData%\DiffusionNexus\catalog` also says `1`, `1 > 1` is false, and `SeedFromEmbedded`
+never runs. `docs/manual-smoke.md` §1.1 tells the tester to delete that folder, so the smoke pass
+could not have seen it either — §1.4 now exists to exercise the upgrade path deliberately.
+
+**Bumping `catalogVersion` to 2 here is the wrong fix and was rejected.** On the stable channel the
+number comes from the catalog repo's git tag (`VERSION=${GITHUB_REF_NAME#v}` in its `release.yml`)
+and no `v2` has been cut — the latest stable tag is still `v1`. `CatalogUpdateService` gates remote
+updates on `remote.CatalogVersion > local`, so seeding local to `2` against a remote still on `1`
+blocks remote catalog updates outright, and keeps blocking them once `v2` does ship, because
+`2 > 2` is false. That is a silent permanent freeze — strictly worse than one stale workload type
+that nothing in the UI currently surfaces.
+
+**The real fix lives in another repo and is a release action, not a code change here:** tag `v2` in
+`Into-The-Latent/DiffusionNexus.Catalog`, then regenerate the embedded seed with `--version 2` so
+the strict `>` finally holds. Until then, upgraders keep ACE-Step-1.5 typed `Image`. Nothing in the
+UI shows that type today (no Audio filter exists on any reachable screen — §8 above), so the visible
+cost of the wait is zero.
+
 ## 9. Testing
 
 bUnit 2.8.6 is already in the test project, with existing component tests under `Tests/Components`

@@ -2,88 +2,86 @@
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Electron.Components.Shared
+@using DiffusionNexus.Installer.Electron.Services
 @using DiffusionNexus.Installer.SDK.Catalog
 @inject SoftwareGalleryBuilder Builder
 @inject IWorkloadSource Workloads
 
 <PageTitle>DiffusionNexus Installer</PageTitle>
 
-<TopBar OnFeedback="() => _feedbackOpen = true" />
+<ScreenShell>
+    <div class="welcome">
+        <div class="welcome-banner">
+            <img src="img/banner.jpg" alt="Into The Latent" />
+        </div>
 
-<div class="welcome">
-    <div class="welcome-banner">
-        <img src="img/banner.jpg" alt="Into The Latent" />
-    </div>
+        <h1 class="welcome-title">Easy Workload Installer</h1>
+        <p class="welcome-subtitle">Choose which AI application you want to install.</p>
 
-    <h1 class="welcome-title">Easy Workload Installer</h1>
-    <p class="welcome-subtitle">Choose which AI application you want to install.</p>
-
-    @* Error first, loading second -- the same order SoftwareWorkloads.razor uses. Testing
-       "not loaded yet" first would make the error state depend on the catch block also having
-       assigned _software, which is a long way from here and easy to delete. *@
-    @if (_loadError is not null)
-    {
-        <p class="gallery-error">The catalog could not be read: @_loadError</p>
-    }
-    else if (_software is null)
-    {
-        <p>Loading the catalog...</p>
-    }
-    else if (_software.Count == 0)
-    {
-        @* Diagnostics before the bland empty message. The SDK reports a missing or unreadable
-           catalog as Error diagnostics on a successfully-returned empty snapshot -- never as an
-           exception -- so without this a hard failure on a cold start is indistinguishable from
-           "nothing to install". *@
-        @if (_errors.Count > 0)
+        @* Error first, loading second -- the same order SoftwareWorkloads.razor uses. Testing
+           "not loaded yet" first would make the error state depend on the catch block also having
+           assigned _software, which is a long way from here and easy to delete. *@
+        @if (_loadError is not null)
         {
-            <p class="gallery-error">The catalog could not be loaded:</p>
-            <ul class="gallery-error">
-                @foreach (var diagnostic in _errors)
-                {
-                    <li>@diagnostic.Code: @diagnostic.Message</li>
-                }
-            </ul>
+            <p class="gallery-error">The catalog could not be read: @_loadError</p>
+        }
+        else if (_software is null)
+        {
+            <p>Loading the catalog...</p>
+        }
+        else if (_software.Count == 0)
+        {
+            @* Diagnostics before the bland empty message. The SDK reports a missing or unreadable
+               catalog as Error diagnostics on a successfully-returned empty snapshot -- never as an
+               exception -- so without this a hard failure on a cold start is indistinguishable from
+               "nothing to install". *@
+            @if (_errors.Count > 0)
+            {
+                <p class="gallery-error">The catalog could not be loaded:</p>
+                <ul class="gallery-error">
+                    @foreach (var diagnostic in _errors)
+                    {
+                        <li>@diagnostic.Code: @diagnostic.Message</li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p>No workloads are available.</p>
+            }
         }
         else
         {
-            <p>No workloads are available.</p>
+            <div class="software-grid">
+                @foreach (var software in _software)
+                {
+                    var href = CardHref(software);
+
+                    @if (href is not null)
+                    {
+                        <div class="software-card">
+                            <a href="@href">@Card(software)</a>
+                        </div>
+                    }
+                    else
+                    {
+                        @* No anchor: there must be no click-through to an install that cannot
+                           succeed. app.css gates the accent hover on `.software-card:has(> a)`, so
+                           dropping the anchor is also what stops this card advertising a target. *@
+                        <div class="software-card software-card-disabled">@Card(software)</div>
+                    }
+                }
+            </div>
         }
-    }
-    else
-    {
-        <div class="software-grid">
-            @foreach (var software in _software)
-            {
-                var href = CardHref(software);
 
-                @if (href is not null)
-                {
-                    <div class="software-card">
-                        <a href="@href">@Card(software)</a>
-                    </div>
-                }
-                else
-                {
-                    @* No anchor: there must be no click-through to an install that cannot
-                       succeed. app.css gates the accent hover on `.software-card:has(> a)`, so
-                       dropping the anchor is also what stops this card advertising a target. *@
-                    <div class="software-card software-card-disabled">@Card(software)</div>
-                }
-            }
-        </div>
-    }
-
-    <CommunityLinks />
-</div>
-
-<FeedbackDialog Visible="_feedbackOpen" OnClose="() => _feedbackOpen = false" />
+        <CommunityLinks />
+    </div>
+</ScreenShell>
 
 @code {
     private IReadOnlyList<SoftwareEntry>? _software;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
-    private bool _feedbackOpen;
 
     protected override async Task OnInitializedAsync()
     {
@@ -119,15 +117,33 @@
     };
 
     /// <summary>
+    /// The line under the software's name.
+    ///
+    /// "straight to setup" is a promise that the card actually goes somewhere, so it tracks
+    /// GoesStraightToSetup -- which is false for a single workload that cannot be installed. That
+    /// card would otherwise read "straight to setup" directly above the reason it cannot be set up,
+    /// with no anchor to take the user anywhere. The singular exists for the same card: "1
+    /// workloads" is not a thing anyone should have to read.
+    /// </summary>
+    private static string CountLabel(SoftwareEntry software) => software switch
+    {
+        { GoesStraightToSetup: true } => "straight to setup",
+        { WorkloadCount: 1 } => "1 workload",
+        var other => $"{other.WorkloadCount} workloads"
+    };
+
+    /// <summary>
     /// The inside of a card. One fragment rather than one copy per arm: the arms differ only in
     /// the element that wraps them, and two copies of this markup drift.
     /// </summary>
     private RenderFragment Card(SoftwareEntry software) =>
         @<text>
-            <div class="software-card-art">
-                @if (software.LogoPath is not null)
+            <div class="card-art software-card-art">
+                @* Resolved here, not carried on SoftwareEntry: the file lives in THIS project's
+                   wwwroot, and Installer.Core has no business naming it. *@
+                @if (SoftwareLogos.PathFor(software.Type) is { } logo)
                 {
-                    <img src="@software.LogoPath" alt="@software.DisplayName" />
+                    <img src="@logo" alt="@software.DisplayName" />
                 }
                 else
                 {
@@ -136,12 +152,10 @@
             </div>
             <div class="software-card-meta">
                 <p class="software-card-name">@software.DisplayName</p>
-                <p class="software-card-count">@(software.GoesStraightToSetup
-                    ? "straight to setup"
-                    : $"{software.WorkloadCount} workloads")</p>
+                <p class="software-card-count">@CountLabel(software)</p>
                 @if (software.SingleWorkload is { IsInstallable: false } blocked)
                 {
-                    <p class="software-card-unavailable">@blocked.UnavailableReason</p>
+                    <p class="card-unavailable software-card-unavailable">@blocked.UnavailableReason</p>
                 }
             </div>
         </text>;

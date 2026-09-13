@@ -1,6 +1,7 @@
 using DiffusionNexus.Installer.Core;
 using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Gallery;
+using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
@@ -12,6 +13,7 @@ using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -31,8 +33,12 @@ public class DependencyInjectionTests
         services.AddDiffusionNexusUserSettings(Path.Combine(Path.GetTempPath(), $"dn-{Guid.NewGuid():N}.json"));
         services.AddDiffusionNexusCatalog(o =>
             o.InstalledCatalogPath = Path.Combine(Path.GetTempPath(), $"dn-catalog-{Guid.NewGuid():N}"));
-        services.AddSingleton<Core.Host.IMismatchedFilePrompt>(new Core.Host.MismatchPromptService());
         services.AddInstallerCore();
+
+        // Exactly what Program.cs calls, so this container is the app's container. The prompt
+        // registration used to be duplicated here by hand, which is how the rest of what
+        // Program.cs registers stayed uncovered.
+        services.AddInstallerHostServices();
         return services.BuildServiceProvider();
     }
 
@@ -90,6 +96,33 @@ public class DependencyInjectionTests
         // the actual first screen -- injects. Every bUnit test registers it by hand, so dropping
         // its AddSingleton would leave the whole suite green and throw on the app's first render.
         provider.GetRequiredService<SoftwareGalleryBuilder>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Host_services_the_screens_depend_on_resolve()
+    {
+        // The hole the gallery-builder guard below does not cover. Program.cs is top-level
+        // statements in an executable -- no test can reach what it registers -- and
+        // IFeedbackReportingService lived only there, while both ScreenShell-hosted screens depend
+        // on it through <FeedbackDialog>. Deleting those lines left this whole suite green (every
+        // bUnit fixture registers its own mock) and threw
+        // "Cannot provide a value for property 'Feedback'" on the app's very first screen.
+        //
+        // Registrations now live in AddInstallerHostServices, which Program.cs calls and Build()
+        // calls, so the two cannot diverge.
+        using var provider = Build();
+
+        provider.GetRequiredService<IFeedbackReportingService>().Should().NotBeNull();
+        provider.GetRequiredService<UpdaterLog>().Should().NotBeNull();
+        provider.GetRequiredService<IFolderPicker>().Should().NotBeNull();
+
+        // Both spellings resolve to ONE instance: the modal component subscribes to the concrete
+        // service and the wizard raises through the interface, so two instances mean a prompt that
+        // is raised and never shown.
+        provider.GetRequiredService<IUserPrompt>().Should()
+            .BeSameAs(provider.GetRequiredService<ModalPromptService>());
+        provider.GetRequiredService<IMismatchedFilePrompt>().Should()
+            .BeSameAs(provider.GetRequiredService<MismatchPromptService>());
     }
 
     [Fact]

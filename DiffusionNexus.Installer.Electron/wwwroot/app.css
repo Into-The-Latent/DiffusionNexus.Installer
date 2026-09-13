@@ -177,12 +177,21 @@ h2 {
     padding: 2rem 2rem 3rem;
 }
 
-/* A screen with a top bar owns its full width: the bar spans the window and the
-   page's own wrapper (.welcome / .workload-screen) provides the centring instead. */
-.page:has(> .top-bar) {
+/* A screen built on ScreenShell owns its own layout: the top bar spans the window edge
+   to edge and .screen-body does the centring .page would otherwise do. A child cannot
+   undo a parent's max-width, so the opt-out has to be expressed here -- but it is keyed
+   on the shell's own element, not on an incidental descendant of it. */
+.page:has(> .screen) {
     max-width: none;
     margin: 0;
     padding: 0;
+}
+
+/* One copy of the centring, in the shell, rather than one per screen. */
+.screen-body {
+    max-width: 1000px;
+    margin-inline: auto;
+    padding-inline: 24px;
 }
 
 /* The updates page brings its own width and padding; don't apply them twice. */
@@ -851,6 +860,38 @@ progress {
     gap: 14px;
 }
 
+/* ---------- Card artwork and status text, shared by both grids ---------- */
+
+/* The software tiles and the workload tiles are the same card at two widths. These rules
+   were byte-identical copies under four class names, so a change to the crop or the border
+   had to be made twice and the pair silently drifted apart in between. Each component keeps
+   its own class ON the element -- they are still independently targetable -- they just no
+   longer each carry a copy of the same declarations. Only the -art-fallback text differs
+   (size and weight), so that one stays per-component below. */
+.card-art {
+    aspect-ratio: 1 / 1;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+    place-items: center;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+
+.card-art img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.card-unavailable {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
 .workload-card {
     display: flex;
     flex-direction: column;
@@ -862,24 +903,6 @@ progress {
 
 .workload-card-disabled {
     opacity: 0.55;
-}
-
-.workload-card-art {
-    aspect-ratio: 1 / 1;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    overflow: hidden;
-    place-items: center;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-}
-
-.workload-card-art img {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    object-fit: cover;
-    display: block;
 }
 
 .workload-card-art-fallback {
@@ -928,18 +951,9 @@ progress {
     cursor: pointer;
 }
 
-.workload-card-unavailable {
-    margin: 0;
-    font-size: 11.5px;
-    color: var(--muted);
-}
-
 /* ---------- Welcome screen ---------- */
 
 .welcome {
-    max-width: 1000px;
-    margin-inline: auto;
-    padding-inline: 24px;
     padding-block: 26px 28px;
     display: flex;
     flex-direction: column;
@@ -1012,24 +1026,6 @@ progress {
     opacity: 0.55;
 }
 
-.software-card-art {
-    aspect-ratio: 1 / 1;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    overflow: hidden;
-    place-items: center;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-}
-
-.software-card-art img {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    object-fit: cover;
-    display: block;
-}
-
 .software-card-art-fallback {
     padding: 12px;
     text-align: center;
@@ -1059,20 +1055,9 @@ progress {
     color: var(--muted);
 }
 
-/* Duplicated from .workload-card-unavailable rather than shared: that class belongs to
-   WorkloadCard.razor, and the workload grid is styled independently. */
-.software-card-unavailable {
-    margin: 0;
-    font-size: 11.5px;
-    color: var(--muted);
-}
-
 /* ---------- Workload selection screen ---------- */
 
 .workload-screen {
-    max-width: 1000px;
-    margin-inline: auto;
-    padding-inline: 24px;
     padding-block: 22px 28px;
     display: flex;
     flex-direction: column;

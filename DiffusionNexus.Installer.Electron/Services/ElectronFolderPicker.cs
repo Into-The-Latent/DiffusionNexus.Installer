@@ -6,7 +6,9 @@ using ElectronNET.API.Entities;
 // `Electron` written inside DiffusionNexus.Installer.Electron.Services resolves to that
 // namespace segment, not to the ElectronNET.API.Electron static class -- the same collision
 // Program.cs already documents for `App`. Aliased instead of fully qualifying inline everywhere.
-using ElectronHost = ElectronNET.API.Electron;
+// NOT aliased to `ElectronHost`: this namespace now HAS a type by that name, and a type in the
+// enclosing namespace beats a using alias, so that spelling silently binds to the wrong thing.
+using ElectronApi = ElectronNET.API.Electron;
 
 namespace DiffusionNexus.Installer.Electron.Services;
 
@@ -20,7 +22,7 @@ public sealed class ElectronFolderPicker : IFolderPicker
     {
         if (!HybridSupport.IsElectronActive) return null;
 
-        var window = ElectronHost.WindowManager.BrowserWindows.FirstOrDefault();
+        var window = ElectronApi.WindowManager.BrowserWindows.FirstOrDefault();
         if (window is null) return null;
 
         var options = new OpenDialogOptions
@@ -39,7 +41,7 @@ public sealed class ElectronFolderPicker : IFolderPicker
         if (!string.IsNullOrWhiteSpace(startIn) && Directory.Exists(startIn))
             options.DefaultPath = startIn;
 
-        var paths = await ElectronHost.Dialog.ShowOpenDialogAsync(window, options);
+        var paths = await ElectronApi.Dialog.ShowOpenDialogAsync(window, options);
         return paths is { Length: > 0 } ? paths[0] : null;
     }
 }

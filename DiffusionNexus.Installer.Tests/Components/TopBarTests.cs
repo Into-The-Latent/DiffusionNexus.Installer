@@ -1,5 +1,6 @@
 using Bunit;
 using DiffusionNexus.Installer.Electron.Components.Shared;
+using DiffusionNexus.Installer.Electron.Services;
 using FluentAssertions;
 using Xunit;
 
@@ -21,15 +22,19 @@ public class TopBarTests : BunitContext
     }
 
     [Fact]
-    public void Shows_the_app_version()
+    public void Shows_the_app_version_the_rest_of_the_app_shows()
     {
         var cut = Render<TopBar>();
 
-        // Whatever the assembly reports, it must not be the raw informational version with its
-        // "+<commit sha>" suffix -- that is build metadata, not something to show a user.
-        var version = cut.Find(".top-bar-version").TextContent;
-        version.Should().StartWith("v");
-        version.Should().NotContain("+");
+        // Asserted against AppVersion.Display, not against "contains no +". The bar, /updates and
+        // the feedback report must agree, and the only way they can is by reading the one
+        // accessor -- this fails the moment the bar grows its own copy of the two lines.
+        //
+        // The old "NotContain(\"+\")" assertion passed vacuously: Directory.Build.props sets
+        // IncludeSourceRevisionInInformationalVersion=false, so no build of this repo produces a
+        // suffix to strip. The stripping itself is covered where it can actually be exercised,
+        // in Services/AppVersionTests.
+        cut.Find(".top-bar-version").TextContent.Should().Be($"v{AppVersion.Display}");
     }
 
     [Fact]

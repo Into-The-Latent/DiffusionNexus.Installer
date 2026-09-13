@@ -79,12 +79,13 @@ public class SoftwareGalleryBuilderTests
     }
 
     [Fact]
-    public void Carries_the_display_name_and_logo_for_each_software()
+    public void Carries_the_display_name_for_each_software()
     {
+        // Name only. The artwork is resolved by the component from Type, out of the Electron
+        // project that actually serves the file -- see Services/SoftwareLogosTests.cs.
         var software = Build(Entry(RepositoryType.AIToolkit, "AI-Toolkit")).Single();
 
         software.DisplayName.Should().Be("AI Toolkit");
-        software.LogoPath.Should().Be("img/software/ai-toolkit.jpg");
     }
 
     [Fact]

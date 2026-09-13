@@ -17,6 +17,13 @@ public sealed class CatalogWorkloadSource(ICatalog catalog) : IWorkloadSource
         return all.Where(w => w.WorkloadTarget == WorkloadTargetType.Installer).ToList();
     }
 
+    public async Task<InstallationConfiguration?> GetInstallerWorkloadAsync(Guid id, CancellationToken ct = default)
+    {
+        // One clone, not twenty-five: ICatalog.GetWorkloadAsync copies only the match.
+        var workload = await catalog.GetWorkloadAsync(id, ct).ConfigureAwait(false);
+        return workload?.WorkloadTarget == WorkloadTargetType.Installer ? workload : null;
+    }
+
     public Task<byte[]?> GetThumbnailAsync(Guid workloadId, CancellationToken ct = default)
         => catalog.ReadThumbnailAsync(workloadId, ct);
 

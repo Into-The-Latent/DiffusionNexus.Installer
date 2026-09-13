@@ -19,8 +19,9 @@ public class WelcomePageTests : BunitContext
 {
     public WelcomePageTests()
     {
-        // Welcome hosts <FeedbackDialog> unconditionally (it only renders markup when opened), so
-        // the component still needs IFeedbackReportingService resolvable at construction time.
+        // Welcome wraps itself in <ScreenShell>, which hosts <FeedbackDialog> (it only renders
+        // markup when opened), so the page still needs IFeedbackReportingService resolvable at
+        // construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
     }
 
@@ -101,6 +102,45 @@ public class WelcomePageTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("a[href='/software/Fooocus']").Should().BeEmpty());
         cut.Find(".software-card > a").GetAttribute("href").Should().Be($"/install/{fooocus.Id}");
         cut.Find(".software-card-count").TextContent.Should().Contain("straight to setup");
+    }
+
+    [Fact]
+    public void Shows_the_artwork_that_ships_for_a_software()
+    {
+        // The logo is resolved by this component from Type -- the paths live in the Electron
+        // project next to the files they name, not on SoftwareEntry -- so the card is where the
+        // wiring can actually be checked.
+        Arrange(Workload(RepositoryType.Fooocus, "Fooocus"));
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.Find(".software-card-art img")
+            .GetAttribute("src").Should().Be("img/software/fooocus.jpg"));
+        cut.FindAll(".software-card-art-fallback").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Does_not_promise_setup_on_a_card_that_goes_nowhere()
+    {
+        // Same fixture as the test below, asserting the half it never looked at. CardHref already
+        // returns null for a single uninstallable workload, so the card renders with NO anchor --
+        // and used to read "straight to setup" directly above the reason it cannot be set up.
+        var fooocus = Workload(RepositoryType.Fooocus, "Fooocus");
+        fooocus.ModelDownloads.Add(new ModelDownload
+        {
+            Name = "checkpoint",
+            Url = "https://example.com/model.safetensors"
+        });
+
+        Arrange(fooocus);
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().ContainSingle());
+
+        var count = cut.Find(".software-card-count").TextContent.Trim();
+        count.Should().NotContain("straight to setup", "this card has no anchor to take anyone anywhere");
+        count.Should().Be("1 workload", "and \"1 workloads\" is not a thing anyone should have to read");
     }
 
     [Fact]

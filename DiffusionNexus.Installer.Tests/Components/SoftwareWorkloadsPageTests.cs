@@ -18,9 +18,9 @@ public class SoftwareWorkloadsPageTests : BunitContext
 {
     public SoftwareWorkloadsPageTests()
     {
-        // SoftwareWorkloads hosts <FeedbackDialog> unconditionally (it only renders markup when
-        // opened), so the component still needs IFeedbackReportingService resolvable at
-        // construction time.
+        // SoftwareWorkloads wraps itself in <ScreenShell>, which hosts <FeedbackDialog> (it only
+        // renders markup when opened), so the page still needs IFeedbackReportingService
+        // resolvable at construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
     }
 
@@ -32,7 +32,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         Repository = new MainRepositorySettings { Type = software }
     };
 
-    private void Arrange(params InstallationConfiguration[] workloads)
+    private Mock<IWorkloadSource> Arrange(params InstallationConfiguration[] workloads)
     {
         var source = new Mock<IWorkloadSource>();
         source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
@@ -42,6 +42,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         Services.AddSingleton(source.Object);
         Services.AddSingleton(gallery);
         Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+        return source;
     }
 
     private IRenderedComponent<SoftwareWorkloads> RenderFor(string software) =>
@@ -167,6 +168,37 @@ public class SoftwareWorkloadsPageTests : BunitContext
         // be applied here and only Fooocus-Video would show.
         cut.WaitForAssertion(() => cut.FindAll(".workload-card").Should().HaveCount(2));
         cut.Markup.Should().Contain("Fooocus-Image").And.Contain("Fooocus-Video");
+    }
+
+    [Fact]
+    public void Keeps_the_chosen_filter_when_the_same_parameters_are_supplied_again()
+    {
+        // The other half of the test above. OnParametersSetAsync runs whenever the parent hands
+        // this component parameters, not only when Software CHANGES: the SSR-prerender plus
+        // interactive-circuit pair already makes that twice on a plain page load, and a router
+        // re-render, a cascading value change or a reconnect adds more. Resetting unconditionally
+        // threw the user's chosen filter away and re-read the whole catalog -- a deep copy of every
+        // catalogued workload -- flashing the grid back through "Loading the catalog...".
+        var source = Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image),
+            Workload(RepositoryType.ComfyUI, "Wan 2.2 - GGUF", WorkflowType.Video));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => cut.FindAll(".workload-card").Should().HaveCount(2));
+
+        cut.FindAll(".filters button").Single(b => b.TextContent.Trim() == "Video").Click();
+        cut.FindAll(".workload-card").Should().ContainSingle();
+
+        // Same Software, supplied again -- exactly what a re-render does.
+        cut.Render(p => p.Add(x => x.Software, "ComfyUI"));
+
+        cut.FindAll(".workload-card").Should().ContainSingle("the chosen filter must survive a re-render");
+        cut.Markup.Should().Contain("Wan 2.2 - GGUF").And.NotContain("Krea-2-Turbo");
+
+        source.Verify(
+            s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()),
+            Times.Once,
+            "re-supplying the same Software must not re-read the catalog");
     }
 
     [Fact]

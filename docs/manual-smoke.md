@@ -29,18 +29,41 @@ the catalog reaches those lists correctly.
 3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
    Wan 2.2 - GGUF appear (all enabled now — LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3 and
    Wan 2.2 - GGUF are Content-stage workloads); the Image cards do not.
-   The embedded seed now carries ACE-Step-1.5 as Audio. Note that no Audio filter appears on the
+   The embedded seed carries ACE-Step-1.5 as Audio, **which you only see because step 1 told you to
+   delete the installed catalog first** — see step 4. Note that no Audio filter appears on the
    ComfyUI workload screen, and that is correct — the only Audio workload belongs to ACE-Step,
    which is a single-workload software and goes straight to setup. The filter is catalog-derived,
    so an Audio button appears there by itself the day a ComfyUI workload declares it.
-4. **Expect:** the type filter is the only filter on this screen. There is deliberately no software
+4. **The upgrade path. Step 1 can never show you this, because it deletes the catalog first.**
+   Leave the catalog the previous steps installed in place — do NOT delete
+   `%LocalAppData%\DiffusionNexus\catalog` — and relaunch. Go to ACE-Step.
+   **Expect:** ACE-Step-1.5 still reads **Image**, not Audio.
+
+   That is expected, and it is the honest reading of commit `8ad4db6`: the refreshed seed fixes the
+   typing **on a cold start with no installed catalog, and only there**. The SDK re-seeds from the
+   embedded archive only when the embedded `catalogVersion` is strictly greater than the installed
+   one, and both are `1`, so `1 > 1` is false and the new seed is never applied to an existing
+   install. Anyone who has run a 3.x build before keeps the old snapshot.
+
+   **Do not "fix" this by bumping `catalogVersion` in
+   `DiffusionNexus.Installer.Electron/Assets/Catalog/manifest.json`.** On the stable channel that
+   number comes from the catalog repo's own git tag (`VERSION=${GITHUB_REF_NAME#v}` in its
+   `release.yml`) and the latest stable tag is still `v1`. A local `2` against a remote still on `1`
+   makes `remote.CatalogVersion > local` false and blocks remote catalog updates outright — and
+   keeps blocking them after `v2` finally ships, because `2 > 2` is false too. A silent permanent
+   freeze is worse than one stale workload type.
+
+   **The real fix is a release action in another repo:** tag `v2` in
+   `Into-The-Latent/DiffusionNexus.Catalog`, then regenerate the embedded seed with `--version 2`.
+   Until that happens, upgraders keep the old ACE-Step typing and this step is expected to "fail".
+5. **Expect:** the type filter is the only filter on this screen. There is deliberately no software
    filter — the welcome screen already answered which software, so a second control for it would be
    a dead one.
-5. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
+6. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
    **Expect:** the software cards and the workload lists behind them reflect that checkout.
-6. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a folder that does not exist and relaunch.
+7. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a folder that does not exist and relaunch.
    **Expect:** the app still starts and falls back to the installed catalog. It must not crash.
-7. Navigate to `/updates`. **Expect:** the version/updater screen appears (version string,
+8. Navigate to `/updates`. **Expect:** the version/updater screen appears (version string,
    "Check for updates" button, updater log). **Expect:** the version it shows matches the one in
    the top bar exactly — no `+<commit sha>` suffix on either. Click "Back to all software".
    **Expect:** the welcome screen returns.
@@ -126,6 +149,8 @@ public 3.x release. Slice 1 is run from a dev build.
    **Look at the banner crop specifically** — it is cropped from a 16:9 source and the portal
    ring at the bottom may clip.
 2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
+   A card whose single workload is blocked would read "1 workload" instead, never "straight to
+   setup" — that card has no link behind it at all.
 3. Click a community link. **Expect:** it opens in your normal browser. The installer window must
    NOT navigate to it — if the app itself turns into a web page, that is the bug this was written
    to catch.
@@ -134,6 +159,10 @@ public 3.x release. Slice 1 is run from a dev build.
 5. Click ComfyUI. **Expect:** the Select workload screen, with 16 cards showing their artwork,
    an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** four
    cards. Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
+   With Video still selected, resize the window a few times to force re-renders. **Expect:** the
+   filter stays on Video and the grid does not flash back through "Loading the catalog...".
+   Hover a workload card. **Expect:** a tooltip with the catalog's description for that workload —
+   the tile has no room for it and this is now the only place in the app it appears.
 6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen.
 7. Navigate to `/software/Nonsense` by hand. **Expect:** "That software is not in the catalog"
    and a link back, not an error page.

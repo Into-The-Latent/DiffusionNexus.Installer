@@ -17,7 +17,6 @@ public sealed class SoftwareGalleryBuilder(GalleryBuilder inner)
         .Select(g => new SoftwareEntry(
             g.Key,
             SoftwareBranding.DisplayName(g.Key),
-            SoftwareBranding.LogoPath(g.Key),
             g.ToList()))
         // Most-offering first: ComfyUI carries 16 of the 21 workloads this installer can offer
         // (the catalog holds 25, but four target DiffusionNexusCore and never reach here), so it

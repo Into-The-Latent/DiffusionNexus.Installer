@@ -1,7 +1,10 @@
 @using DiffusionNexus.Installer.Core.Gallery
 
-<div class="workload-card @(Entry.IsInstallable ? "" : "workload-card-disabled")">
-    <div class="workload-card-art">
+@* The catalog ships a description for every workload and the tile has no room for it, so it goes
+   on the title: hovering a card is the only place in the app the text is now reachable. Null when
+   blank -- Blazor omits an attribute whose value is null, and an empty tooltip is worse than none. *@
+<div class="workload-card @(Entry.IsInstallable ? "" : "workload-card-disabled")" title="@Description">
+    <div class="card-art workload-card-art">
         @if (Entry.Workload.ThumbnailPath is not null)
         {
             @* Through the endpoint, never the disk path: ThumbnailPath is absolute and
@@ -26,7 +29,7 @@
         }
         else
         {
-            <p class="workload-card-unavailable">@Entry.UnavailableReason</p>
+            <p class="card-unavailable workload-card-unavailable">@Entry.UnavailableReason</p>
         }
     </div>
 </div>
@@ -36,4 +39,9 @@
 
     /// <summary>Raised with this card's entry when the user chooses to install it.</summary>
     [Parameter] public EventCallback<GalleryEntry> OnInstall { get; set; }
+
+    /// <summary>The catalog's own description, or null when it has none worth showing.</summary>
+    private string? Description => string.IsNullOrWhiteSpace(Entry.Workload.Description)
+        ? null
+        : Entry.Workload.Description;
 }

@@ -104,6 +104,40 @@ public class FeedbackDialogTests : BunitContext
     }
 
     [Fact]
+    public void A_submit_that_throws_does_not_strand_the_dialog_open_forever()
+    {
+        // _busy is the one field that can lock this modal shut: Cancel is disabled="@_busy", Send
+        // needs !_busy, and there is no backdrop click or Escape handler. It used to be cleared
+        // only on the normal return path, so any throw out of SubmitAsync left the modal
+        // permanently unclosable with the whole app behind it. SubmitAsync's own
+        // ArgumentException.ThrowIfNullOrWhiteSpace guards run before its try block, and its
+        // cancellation filter rethrows, so the path is narrow but real.
+        var service = new Mock<IFeedbackReportingService>();
+        service.Setup(s => s.SubmitAsync(It.IsAny<FeedbackReport>(), It.IsAny<CancellationToken>()))
+               .ThrowsAsync(new InvalidOperationException("the relay client blew up"));
+        Services.AddSingleton(service.Object);
+
+        var cut = Open();
+        cut.Find("#feedback-title").Change("Install fails");
+        cut.Find("#feedback-description").Change("It stops at step 3.");
+
+        try
+        {
+            cut.Find(".feedback-submit").Click();
+        }
+        catch (InvalidOperationException)
+        {
+            // Propagating is this component's choice -- it is not a failure it can explain. What
+            // it must not do is leave the modal in a state the user cannot get out of.
+        }
+
+        cut.Find(".feedback-cancel").HasAttribute("disabled").Should().BeFalse(
+            "a modal with no backdrop and no Escape handler must always keep its Cancel usable");
+        cut.Find("#feedback-title").GetAttribute("value").Should().Be(
+            "Install fails", "and the only copy of what the user typed is still in here");
+    }
+
+    [Fact]
     public async Task Closes_when_cancelled()
     {
         Arrange(FeedbackSubmissionResult.Succeeded("https://github.com/x/y/issues/1"));
