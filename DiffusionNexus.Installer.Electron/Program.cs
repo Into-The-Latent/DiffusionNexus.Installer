@@ -1,5 +1,6 @@
 using DiffusionNexus.Installer.Core;
 using DiffusionNexus.Installer.Core.Host;
+using DiffusionNexus.Installer.Electron.Endpoints;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Services;
@@ -131,6 +132,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapWorkloadThumbnails();
 app.MapRazorComponents<BlazorApp>()
     .AddInteractiveServerRenderMode();
 
