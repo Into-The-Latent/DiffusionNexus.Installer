@@ -1,0 +1,165 @@
+@page "/software/{Software}"
+@using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.Electron.Components.Shared
+@using DiffusionNexus.Installer.SDK.Catalog
+@using DiffusionNexus.Installer.SDK.Models.Configuration
+@using DiffusionNexus.Installer.SDK.Models.Enums
+@inject SoftwareGalleryBuilder Builder
+@inject IWorkloadSource Workloads
+@inject NavigationManager Nav
+
+<PageTitle>Select workload</PageTitle>
+
+<ScreenShell>
+    <div class="workload-screen">
+        @if (_loadError is not null)
+        {
+            @* Same way out as the not-found branch below. This page is deep-linkable and an Electron
+               window refresh lands straight on it, and TopBar carries no home control, so a dead end
+               here leaves the user with no address bar to escape through. *@
+            <div class="software-not-found">
+                <p class="gallery-error">The catalog could not be read: @_loadError</p>
+                <a href="/">Back to all software</a>
+            </div>
+        }
+        else if (!_loaded)
+        {
+            <p>Loading the catalog...</p>
+        }
+        else if (_entry is null)
+        {
+            <div class="software-not-found">
+                @if (_errors.Count > 0)
+                {
+                    <p>The catalog could not be loaded:</p>
+                    <ul class="gallery-error">
+                        @foreach (var diagnostic in _errors)
+                        {
+                            <li>@diagnostic.Code: @diagnostic.Message</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p>That software is not in the catalog.</p>
+                }
+                <a href="/">Back to all software</a>
+            </div>
+        }
+        else
+        {
+            <a class="workload-screen-back" href="/">&larr; All software</a>
+
+            <div class="workload-screen-head">
+                <h1>Select workload</h1>
+                <p>Choose what you want @_entry.DisplayName set up for. You can install more later.</p>
+            </div>
+
+            <div class="filters">
+                <button class="@TypeClass(null)" type="button" @onclick="() => _type = null">All</button>
+                @foreach (var type in AvailableTypes())
+                {
+                    @* No `var captured = type` copy: foreach iteration variables have been
+                       per-iteration since C# 5, so this lambda already closes over a fresh one. *@
+                    <button class="@TypeClass(type)" type="button" @onclick="() => _type = type">@type</button>
+                }
+            </div>
+
+            <div class="workload-grid">
+                @foreach (var workload in Filtered())
+                {
+                    <WorkloadCard Entry="workload" OnInstall="Install" />
+                }
+            </div>
+        }
+    </div>
+</ScreenShell>
+
+@code {
+    /// <summary>The RepositoryType name from the route. Not parsed into the enum by the router:
+    /// an unrecognised value must render the not-found state, not a 404 or an exception.</summary>
+    [Parameter] public string? Software { get; set; }
+
+    private SoftwareEntry? _entry;
+    private bool _loaded;
+    private WorkflowType? _type;
+    private IReadOnlyList<CatalogDiagnostic> _errors = [];
+    private string? _loadError;
+
+    /// <summary>
+    /// The Software value the state below was built for. Null until the first load completes.
+    /// </summary>
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Keyed on the parameter actually changing, not on merely being handed parameters again.
+        // OnParametersSetAsync runs on EVERY re-supply, and rebuilding unconditionally threw the
+        // user's chosen type filter away and re-read the whole catalog (a deep copy of all 25
+        // workloads) each time, flashing the grid back through "Loading the catalog...". What this
+        // guards is a re-supply within one component instance: a router re-render, a cascading value
+        // change, a reconnect.
+        //
+        // It does NOT collapse the prerender/interactive pair. App.razor renders <Routes> with
+        // @rendermode="InteractiveServer" and prerendering left on, so those are two separate
+        // component INSTANCES -- a per-instance field cannot span them, and the catalog is still
+        // read twice on a plain page load. Known and accepted: the second read is the one whose
+        // result the user sees, and suppressing it would mean caching across instances (or
+        // prerender: false, which costs first paint).
+        if (_loaded && string.Equals(_loadedFor, Software, StringComparison.OrdinalIgnoreCase)) return;
+
+        _loadedFor = Software;
+
+        // Filter state is per-software: arriving at a different software must not inherit the
+        // previous one's chosen type.
+        _type = null;
+        _entry = null;
+        _loaded = false;
+        _errors = [];
+        _loadError = null;
+
+        try
+        {
+            var all = await Builder.BuildAsync();
+
+            // Read after the build: the catalog populates diagnostics during the load the build
+            // triggers, so asking earlier reports on a catalog that has not been resolved yet.
+            _errors = Workloads.Diagnostics.Where(d => d.IsError).ToList();
+
+            if (Enum.TryParse<RepositoryType>(Software, ignoreCase: true, out var parsed))
+            {
+                _entry = all.FirstOrDefault(s => s.Type == parsed);
+            }
+        }
+        catch (Exception ex)
+        {
+            // A catalog failure must say why the page is empty rather than take it down with an
+            // unhandled exception out of the component lifecycle. This page is deep-linkable --
+            // an Electron window refresh mid-flow lands here directly -- so it needs the same
+            // care as the welcome screen's first load.
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private IEnumerable<GalleryEntry> Filtered() => _entry!.Workloads
+        .Where(e => _type is null || e.Workload.WorkflowType == _type);
+
+    /// <summary>
+    /// Derived from this software's own workloads, so the button set answers "what can ComfyUI
+    /// make", not "what types exist somewhere in the catalog". A filter that can only ever return
+    /// nothing is a dead control.
+    /// </summary>
+    private IEnumerable<WorkflowType> AvailableTypes() => _entry!.Workloads
+        .Select(e => e.Workload.WorkflowType)
+        .Distinct()
+        .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
+
+    private string TypeClass(WorkflowType? type) => _type == type ? "filter-active" : "filter";
+
+    private void Install(GalleryEntry entry) => Nav.NavigateTo($"/install/{entry.Workload.Id}");
+}

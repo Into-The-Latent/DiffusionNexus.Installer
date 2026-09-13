@@ -171,15 +171,15 @@ public class InstallPageTests : BunitContext
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Cancel installation");
-        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Back to workloads");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Back to all software");
 
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
         session.Raise(s => s.Changed += null);
 
-        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Back to workloads");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Back to all software");
         page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Cancel installation");
 
-        page.FindAll("button").Single(b => b.TextContent.Trim() == "Back to workloads").Click();
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Back to all software").Click();
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/");
     }
 

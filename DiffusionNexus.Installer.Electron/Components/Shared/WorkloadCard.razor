@@ -1,0 +1,47 @@
+@using DiffusionNexus.Installer.Core.Gallery
+
+@* The catalog ships a description for every workload and the tile has no room for it, so it goes
+   on the title: hovering a card is the only place in the app the text is now reachable. Null when
+   blank -- Blazor omits an attribute whose value is null, and an empty tooltip is worse than none. *@
+<div class="workload-card @(Entry.IsInstallable ? "" : "workload-card-disabled")" title="@Description">
+    <div class="card-art workload-card-art">
+        @if (Entry.Workload.ThumbnailPath is not null)
+        {
+            @* Through the endpoint, never the disk path: ThumbnailPath is absolute and
+               unloadable in a browser. A 404 leaves the alt text, which is the workload name. *@
+            <img src="thumbnail/@Entry.Workload.Id" alt="@Entry.Workload.Name" loading="lazy" />
+        }
+        else
+        {
+            <span class="workload-card-art-fallback">@Entry.Workload.Name</span>
+        }
+    </div>
+
+    <div class="workload-card-meta">
+        <p class="workload-card-name">@Entry.Workload.Name</p>
+        <span class="workload-card-badge">@Entry.Workload.WorkflowType</span>
+
+        @if (Entry.IsInstallable)
+        {
+            <button class="workload-card-install" type="button" @onclick="() => OnInstall.InvokeAsync(Entry)">
+                Install
+            </button>
+        }
+        else
+        {
+            <p class="card-unavailable workload-card-unavailable">@Entry.UnavailableReason</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GalleryEntry Entry { get; set; } = default!;
+
+    /// <summary>Raised with this card's entry when the user chooses to install it.</summary>
+    [Parameter] public EventCallback<GalleryEntry> OnInstall { get; set; }
+
+    /// <summary>The catalog's own description, or null when it has none worth showing.</summary>
+    private string? Description => string.IsNullOrWhiteSpace(Entry.Workload.Description)
+        ? null
+        : Entry.Workload.Description;
+}

@@ -1,5 +1,5 @@
 using DiffusionNexus.Installer.Core;
-using DiffusionNexus.Installer.Core.Host;
+using DiffusionNexus.Installer.Electron.Endpoints;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Services;
@@ -28,7 +28,6 @@ builder.WebHost.UseStaticWebAssets();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddElectron();
-builder.Services.AddSingleton<UpdaterLog>();
 
 // SDK core services. IGitService/IPythonService/IProcessRunner are not registered by
 // AddInstallationServices -- the host owns them, exactly as the 2.x app does.
@@ -53,11 +52,14 @@ builder.Services.AddDiffusionNexusCatalog(options =>
 });
 
 builder.Services.AddInstallerCore();
-builder.Services.AddSingleton<ModalPromptService>();
-builder.Services.AddSingleton<IUserPrompt>(sp => sp.GetRequiredService<ModalPromptService>());
-builder.Services.AddSingleton<MismatchPromptService>();
-builder.Services.AddSingleton<IMismatchedFilePrompt>(sp => sp.GetRequiredService<MismatchPromptService>());
-builder.Services.AddSingleton<IFolderPicker, ElectronFolderPicker>();
+
+// The host-owned services -- prompts, the folder picker, the updater log, the feedback relay.
+// In an extension method rather than loose statements here, because nothing in this file is
+// reachable from a test: it is top-level statements in an executable with its own generated Main.
+// Dropping the feedback registration used to leave the whole suite green (every bUnit fixture
+// registers its own mock) while the app threw on the first screen. See
+// DependencyInjectionTests.Host_services_the_screens_depend_on_resolve.
+builder.Services.AddInstallerHostServices();
 
 // The Electron shell is only spun up when the app is launched through Electron; running the
 // project directly still serves the Blazor UI in a browser, which keeps plain `dotnet run`
@@ -131,6 +133,7 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapWorkloadThumbnails();
 app.MapRazorComponents<BlazorApp>()
     .AddInteractiveServerRenderMode();
 

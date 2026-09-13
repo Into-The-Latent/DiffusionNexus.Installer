@@ -32,6 +32,50 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void the_two_card_grids_share_one_artwork_rule_instead_of_copying_it()
+    {
+        // Review finding: .workload-card-art / .software-card-art, their img rules and their
+        // -unavailable rules were three byte-identical PAIRS. The two grids are the same tile at
+        // two widths, so a change to the crop or the border had to be made twice -- and the pair
+        // was free to drift apart in between with nothing to notice.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        Regex.Matches(css, @"\.card-art\s*\{").Count.Should().Be(1, "one shared artwork rule, not one per grid");
+        Regex.Matches(css, @"\.card-unavailable\s*\{").Count.Should().Be(1);
+
+        // The component-specific classes stay ON the elements as hooks, but must carry no
+        // declarations of their own -- that is what re-introduces the copy.
+        foreach (var duplicate in new[] { "workload-card-art", "software-card-art", "workload-card-unavailable", "software-card-unavailable" })
+        {
+            Regex.IsMatch(css, $@"\.{duplicate}\s*\{{").Should().BeFalse(
+                $".{duplicate} must not redeclare what .card-art / .card-unavailable already say");
+        }
+    }
+
+    [Fact]
+    public void the_screen_shell_owns_the_layout_of_the_pages_that_use_it()
+    {
+        // The shell cancels .page's centring (a child cannot undo a parent's max-width) and does
+        // the centring once, in .screen-body. Both halves have to be present or the welcome screen
+        // renders either double-padded or edge-to-edge.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var optOut = Regex.Match(css, @"\.page:has\(>\s*\.screen\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        optOut.Should().Contain("max-width: none").And.Contain("padding: 0");
+
+        var body = Regex.Match(css, @"\.screen-body\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        body.Should().Contain("max-width: 1000px").And.Contain("margin-inline: auto").And.Contain("padding-inline: 24px");
+
+        // And the screens themselves must NOT carry their own copy of it any more.
+        foreach (var screen in new[] { "welcome", "workload-screen" })
+        {
+            var rule = Regex.Match(css, $@"\.{screen}\s*\{{(?<body>[^}}]*)\}}").Groups["body"].Value;
+            rule.Should().NotBeNullOrEmpty();
+            rule.Should().NotContain("margin-inline: auto", $".{screen} must not re-centre what .screen-body centres");
+        }
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");

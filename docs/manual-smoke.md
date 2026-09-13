@@ -1,39 +1,87 @@
-# Manual smoke checklist — Installer 3.x wizard (slice 1)
+# Manual smoke checklist — Installer 3.x wizard and welcome screen
 
 Automated tests cover the module logic, the gate and the session. These are the things only a
 real run can prove. Use a scratch install folder, never a real one.
 
 ## 0. Before anything else
 
-1. **Expect:** the gallery is *styled* — dark background, teal accents, cards in a grid.
+1. **Expect:** the welcome screen is *styled* — dark background, teal accents, cards in a grid.
    If it renders as plain serif text on white, static web assets are not being served: check the
    console for `StaticAssetsInvoker` warnings. That failure also kills `blazor.web.js`, so no
    button on any page will respond — the app looks alive but is completely inert.
 
-## 1. Gallery
+## 1. Catalog and the workload lists
+
+There is no single gallery of every workload any more. `/` (§6) asks which software; the workload
+list lives behind each multi-workload software card, at `/software/{type}`. These steps check that
+the catalog reaches those lists correctly.
 
 1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
-   **Expect:** the gallery populates from the embedded seed; no error, no empty state.
-2. **Expect:** every card is enabled except Config535 — 20 of 21. The DiffusionNexusCore
-   workloads (Captioning, Inpainting, Outpainting, Upscaling-Z-Image-Turbo) are not listed at all.
+   **Expect:** the welcome screen populates from the embedded seed — six software cards, no error,
+   no empty state.
+2. Click ComfyUI. **Expect:** 16 cards, every one enabled except Config535 — 15 of 16. The catalog
+   holds 25 workloads but only 21 target the installer: the four DiffusionNexusCore ones
+   (Captioning, Inpainting, Outpainting, Upscaling-Z-Image-Turbo) are ComfyUI-typed and must not
+   appear here or anywhere else in the app.
    **Config535 is the exception:** it is disabled with a torch message, not a "Coming soon" one —
    its catalog entry pairs torch 2.8.0 with CUDA 13.0, for which no wheel exists, so the pipeline
    would refuse it before step 1. That is a catalog data fix, not a missing module.
 3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
    Wan 2.2 - GGUF appear (all enabled now — LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3 and
    Wan 2.2 - GGUF are Content-stage workloads); the Image cards do not.
-   Note: the embedded seed predates the catalog's Audio workflow type, so no workload in it is
-   tagged Audio yet (ACE-Step-1.5 is still `Image` in this snapshot) and no Audio filter button
-   renders. Re-check this step once an Audio-tagged workload ships in the embedded catalog.
-4. Filter by software ComfyUI. **Expect:** only ComfyUI-based cards remain, and the software
-   filter offers exactly the software the catalog actually contains — no empty options.
-5. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
-   **Expect:** the gallery reflects that checkout.
-6. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a folder that does not exist and relaunch.
+   The embedded seed carries ACE-Step-1.5 as Audio, **which you only see because step 1 told you to
+   delete the installed catalog first, and only until the first update check** — see steps 4 and 5.
+   Note that no Audio filter appears on the
+   ComfyUI workload screen, and that is correct — the only Audio workload belongs to ACE-Step,
+   which is a single-workload software and goes straight to setup. The filter is catalog-derived,
+   so an Audio button appears there by itself the day a ComfyUI workload declares it.
+4. **The upgrade path. Step 1 can never show you this, because it deletes the catalog first.**
+   Leave the catalog the previous steps installed in place — do NOT delete
+   `%LocalAppData%\DiffusionNexus\catalog` — and relaunch. Go to ACE-Step.
+   **Expect:** ACE-Step-1.5 still reads **Image**, not Audio.
+
+   That is expected, and it is the honest reading of commit `8ad4db6`: the refreshed seed fixes the
+   typing **on a cold start with no installed catalog, and only there**. `CatalogLocator` re-seeds
+   from the embedded archive only when the embedded `catalogVersion` is strictly greater than the
+   installed one, and both are `1`, so `1 > 1` is false and the new seed is never applied to an
+   existing install. Anyone who has run a 3.x build before keeps the old snapshot.
+
+5. **And the cold-start fix does not survive an update check either. Check this too.** On the
+   machine from step 1 — the one that *did* get ACE-Step-1.5 as Audio — let the app run an update
+   check against the stable channel and apply what it offers. Relaunch and look at ACE-Step again.
+   **Expect:** it has reverted to `Image`.
+
+   That is not a bug in the update path; it is the seed being ahead of the tag. The embedded seed is
+   packed from catalog commit `3847a24`, which is **newer than the `v1` tag** (`8dcff11`), and `v1`
+   is what the stable channel actually serves. `CatalogDiff` compares item hashes and is deliberately
+   version-agnostic, so the older remote copy still reads as an update and overwrites the newer
+   local one.
+
+6. **Do not "fix" either of the two steps above by bumping `catalogVersion` in
+   `DiffusionNexus.Installer.Electron/Assets/Catalog/manifest.json`.** On the stable channel that
+   number comes from the catalog repo's own git tag (`VERSION=${GITHUB_REF_NAME#v}` in its
+   `release.yml`) and the latest stable tag is still `v1`, so a local `2` would be claiming a version
+   the remote does not have. Applying a remote v1 stamps `SectionState(remote.CatalogVersion, ...)`,
+   writing the installed state back down to `1`; the next launch then sees embedded `2 > 1` and
+   re-seeds; the update check offers v1 again. That is a reseed/update ping-pong in which every
+   apply undoes the ACE-Step fix, and it is worse than the fix simply not arriving.
+
+   **The real fix is a release action in another repo:** tag `v2` in
+   `Into-The-Latent/DiffusionNexus.Catalog` — which publishes the content the seed was already
+   packed from — then regenerate the embedded seed with `--version 2`. Note that this is needed not
+   only to reach upgraders but to stop the fix being undone on the machines that *did* get it.
+   Until then, both steps above are expected to "fail".
+7. **Expect:** the type filter is the only filter on this screen. There is deliberately no software
+   filter — the welcome screen already answered which software, so a second control for it would be
+   a dead one.
+8. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
+   **Expect:** the software cards and the workload lists behind them reflect that checkout.
+9. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a folder that does not exist and relaunch.
    **Expect:** the app still starts and falls back to the installed catalog. It must not crash.
-7. Navigate to `/updates`. **Expect:** the version/updater screen appears (version string,
-   "Check for updates" button, updater log). Click "Back to workloads". **Expect:** the
-   gallery returns.
+10. Navigate to `/updates`. **Expect:** the version/updater screen appears (version string,
+   "Check for updates" button, updater log). **Expect:** the version it shows matches the one in
+   the top bar exactly — no `+<commit sha>` suffix on either. Click "Back to all software".
+   **Expect:** the welcome screen returns.
 
 ## 2. Wizard stages
 
@@ -77,7 +125,7 @@ real run can prove. Use a scratch install folder, never a real one.
    **Expect:** the run ends as Cancelled, not Failed, and no bug-report prompt appears.
 3. Start an install, then resize/minimise and restore the window several times to force a circuit
    reconnect. **Expect:** the install keeps running and the log continues where it left off.
-4. While an install is running, reconnect by navigating away and back to the gallery, then
+4. While an install is running, reconnect by navigating away and back to the welcome screen, then
    reopen the same workload's wizard. **Expect:** you return to the install's report stage,
    not the wizard's first screen.
 5. Start an install, let it finish, then reconnect to the same workload by navigating away and
@@ -105,3 +153,41 @@ The install itself never restarts; the first workload's session continues runnin
 Launching the packaged Electron exe directly still exits instantly — only the .NET entry point
 under `resources/bin` works. This blocks any Start Menu shortcut and must be fixed before a
 public 3.x release. Slice 1 is run from a dev build.
+
+## 6. Welcome screen
+
+1. Launch. **Expect:** a top bar with the version on the left and Feedback, Licences,
+   Check for Updates on the right (plus Developer tools in a Debug build only); the Into The
+   Latent banner as a wide strip, not a 16:9 block; "Easy Workload Installer" in the gradient
+   wordmark; six software cards with their logos; and a "Join the Community" footer with
+   YouTube, Patreon and Civitai.
+   **Look at the banner crop specifically** — it is cropped from a 16:9 source and the portal
+   ring at the bottom may clip.
+2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
+   A card whose single workload is blocked would read "1 workload" instead, never "straight to
+   setup" — that card has no link behind it at all.
+3. Click a community link. **Expect:** it opens in your normal browser. The installer window must
+   NOT navigate to it — if the app itself turns into a web page, that is the bug this was written
+   to catch.
+4. Click Licences, then come back. Click Check for Updates, then come back. **Expect:** both pages
+   still work from the top bar.
+5. Click ComfyUI. **Expect:** the Select workload screen, with 16 cards showing their artwork,
+   an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** four
+   cards. Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
+   Now the filter-persistence half: from ComfyUI's screen with Video selected, use the browser/window
+   Back and Forward controls (or navigate to `/software/Fooocus` and back to `/software/ComfyUI` by
+   hand). **Expect:** re-entering ComfyUI's screen shows All — filter state is per software — and at
+   no point does a screen you are already on flash back through "Loading the catalog...". There is no
+   manual gesture that re-supplies parameters to the *same* screen (Blazor Server has no resize hook
+   and this app registers no resize interop), so that half of the guard is covered by
+   `SoftwareWorkloadsPageTests.Keeps_the_chosen_filter_when_the_same_parameters_are_supplied_again`
+   rather than by hand.
+   Hover a workload card. **Expect:** a tooltip with the catalog's description for that workload —
+   the tile has no room for it and this is now the only place in the app it appears.
+6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen.
+7. Navigate to `/software/Nonsense` by hand. **Expect:** "That software is not in the catalog"
+   and a link back, not an error page.
+8. Click Feedback, send a report with a summary and details. **Expect:** a GitHub issue URL comes
+   back. Check the issue exists in the Feedback repo and is labelled as coming from the installer.
+9. Disconnect from the network and click Feedback again. **Expect:** the dialog stays open, shows
+   the failure reason, and your typed text is still there.

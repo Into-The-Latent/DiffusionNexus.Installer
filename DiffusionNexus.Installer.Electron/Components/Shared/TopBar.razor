@@ -1,0 +1,38 @@
+@using DiffusionNexus.Installer.Electron.Services
+
+<div class="top-bar">
+    @* Parenthesised, and it matters: Razor's @ disambiguation treats `v@AppVersion.Display`
+       as an EMAIL ADDRESS -- non-space, @, dotted text -- and emits it verbatim, so the bar
+       literally read "v@AppVersion.Display". An explicit expression removes the ambiguity. *@
+    <span class="top-bar-version">v@(AppVersion.Display)</span>
+
+    <div class="top-bar-actions">
+        <button class="top-bar-btn top-bar-feedback" type="button" @onclick="OnFeedback">Feedback</button>
+        <a class="top-bar-btn" href="/licenses">Licences</a>
+        @if (ShowDeveloperTools)
+        {
+            <a class="top-bar-btn top-bar-dev" href="/debug">Developer tools</a>
+        }
+        <a class="top-bar-btn" href="/updates">Check for Updates</a>
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Raised when the user asks to send feedback. A callback rather than a route: the dialog is
+    /// owned by the hosting page, which knows what context to attach.
+    /// </summary>
+    [Parameter] public EventCallback OnFeedback { get; set; }
+
+    /// <summary>
+    /// The developer tools page is compiled out of Release builds entirely (see the csproj), so
+    /// the link has to disappear with it. A #if in Razor MARKUP is not a thing -- preprocessor
+    /// directives are only legal inside the @code block, so the flag lives here.
+    /// </summary>
+    private const bool ShowDeveloperTools =
+#if DEBUG
+        true;
+#else
+        false;
+#endif
+}

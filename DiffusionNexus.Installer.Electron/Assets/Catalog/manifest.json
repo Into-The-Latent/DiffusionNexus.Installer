@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "catalogVersion": 1,
   "channel": "Stable",
-  "commit": "8dcff119b2c8f791cc61640250816737834832d0",
-  "generatedAt": "2026-08-22T22:26:42.1400974+00:00",
+  "commit": "3847a2403322276ef990a556091ebb313f8d5fb6",
+  "generatedAt": "2026-09-13T16:59:23.2751788+00:00",
   "archive": {
     "name": "catalog.zip",
-    "sha256": "bdb928ec23c5e04bbdb42a0ffdd92b3344b3de40dcd1b1960d26bd9087bb7ceb",
-    "bytes": 2474504
+    "sha256": "3d96300c341925735e67ee4aa83c7176a7b1895785999ce05408f27620819804",
+    "bytes": 2474503
   },
   "workloads": [
     {
@@ -70,9 +70,9 @@
       "id": "5a0e080a-2dc3-4d48-98db-28c3b3aff7a7",
       "name": "ACE-Step-1.5",
       "version": 1,
-      "subVersion": 2,
+      "subVersion": 4,
       "isReleaseConfig": true,
-      "hash": "b286418a7d136d8e9e10686e304752da386669d960abaa0243f2e9182782808c"
+      "hash": "82c1e9a055a85ad9c0a1e86806622ad9b828edac95b3e1ffc882ae70d141b3e2"
     },
     {
       "id": "6bc68a3f-2e93-4866-9827-25d666d4249a",

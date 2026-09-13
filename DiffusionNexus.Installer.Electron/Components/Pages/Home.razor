@@ -1,5 +1,4 @@
 @page "/updates"
-@using System.Reflection
 @using DiffusionNexus.Installer.Electron.Services
 @using ElectronNET.API
 @inject UpdaterLog Log
@@ -10,9 +9,9 @@
 <div class="shell">
     <header>
         <h1>DiffusionNexus Installer</h1>
-        <p class="version">Version @AppVersion</p>
+        <p class="version">Version @AppVersion.Display</p>
         <p class="host">@HostDescription</p>
-        <p><a href="/">Back to workloads</a></p>
+        <p><a href="/">Back to all software</a></p>
     </header>
 
     <section class="actions">
@@ -47,12 +46,7 @@
 @code {
     private bool _busy;
 
-    private static bool ElectronActive => HybridSupport.IsElectronActive;
-
-    private static string AppVersion =>
-        typeof(Program).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-        ?? "unknown";
+    private static bool ElectronActive => ElectronHost.IsActive;
 
     private static string HostDescription => ElectronActive
         ? "Running inside the Electron shell."

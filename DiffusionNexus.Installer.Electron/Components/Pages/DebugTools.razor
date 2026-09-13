@@ -31,7 +31,7 @@
         <button class="btn-secondary" disabled="@_busy" @onclick="ExportAll">
             Export all (@_workloads.Count)
         </button>
-        <button class="btn-secondary" @onclick="@(() => Nav.NavigateTo("/"))">Back to workloads</button>
+        <button class="btn-secondary" @onclick="@(() => Nav.NavigateTo("/"))">Back to all software</button>
     </div>
 
     @if (_workloads.Count > 0)

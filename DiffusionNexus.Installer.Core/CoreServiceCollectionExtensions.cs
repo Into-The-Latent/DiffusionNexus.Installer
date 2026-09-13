@@ -55,6 +55,7 @@ public static class CoreServiceCollectionExtensions
 
         services.AddSingleton<DevTools.LauncherScriptPreview>();
         services.AddSingleton<Gallery.GalleryBuilder>();
+        services.AddSingleton<Gallery.SoftwareGalleryBuilder>();
         services.AddSingleton(sp => new WizardModuleRegistry(() => sp.GetServices<IWizardModule>()));
 
         return services;
