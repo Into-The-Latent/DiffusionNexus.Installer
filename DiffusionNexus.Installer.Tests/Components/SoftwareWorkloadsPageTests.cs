@@ -161,6 +161,39 @@ public class SoftwareWorkloadsPageTests : BunitContext
     }
 
     [Fact]
+    public void Shows_catalog_diagnostics_instead_of_the_generic_not_found_message()
+    {
+        // Mirrors WelcomePageTests.Says_why_it_is_empty_rather_than_taking_the_app_down. The mock
+        // is deliberately discriminating rather than returning the error list unconditionally:
+        // Diagnostics is empty until GetInstallerWorkloadsAsync has actually been invoked, and
+        // only populated afterwards. That is the real SDK's behaviour -- diagnostics are produced
+        // during the load the build triggers -- and it is what makes this test able to tell "read
+        // after the build" apart from "read before it": a page that read Diagnostics too early
+        // would see the empty list and fall back to the generic "not in the catalog" message
+        // instead of CAT001.
+        var loaded = false;
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .Callback(() => loaded = true)
+              .ReturnsAsync([]);
+        source.SetupGet(s => s.Diagnostics).Returns(() => loaded
+            ? new[] { new CatalogDiagnostic(CatalogDiagnosticSeverity.Error, "CAT001", "catalog.zip is corrupt", "catalog.zip") }
+            : Array.Empty<CatalogDiagnostic>());
+
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        // No ComfyUI workload in this catalog at all, so _entry resolves to null the same way it
+        // would for any other not-found case -- the diagnostic is what tells the two apart.
+        var cut = RenderFor("ComfyUI");
+
+        cut.WaitForAssertion(() =>
+            cut.Markup.Should().Contain("CAT001").And.Contain("catalog.zip is corrupt"));
+    }
+
+    [Fact]
     public void Reports_a_thrown_catalog_failure_instead_of_propagating_it()
     {
         // Mirrors Welcome.razor's contract: this page is deep-linkable, so a refresh mid-flow can
