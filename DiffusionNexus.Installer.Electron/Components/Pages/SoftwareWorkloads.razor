@@ -95,11 +95,18 @@
     protected override async Task OnParametersSetAsync()
     {
         // Keyed on the parameter actually changing, not on merely being handed parameters again.
-        // OnParametersSetAsync runs on every re-supply -- the SSR-prerender plus interactive-circuit
-        // pair already makes that twice on a plain page load, and a router re-render, a cascading
-        // value change or a circuit reconnect adds more. Rebuilding unconditionally threw the user's
-        // chosen type filter away and re-read the whole catalog (a deep copy of all 25 workloads)
-        // each time, flashing the grid back through "Loading the catalog...".
+        // OnParametersSetAsync runs on EVERY re-supply, and rebuilding unconditionally threw the
+        // user's chosen type filter away and re-read the whole catalog (a deep copy of all 25
+        // workloads) each time, flashing the grid back through "Loading the catalog...". What this
+        // guards is a re-supply within one component instance: a router re-render, a cascading value
+        // change, a reconnect.
+        //
+        // It does NOT collapse the prerender/interactive pair. App.razor renders <Routes> with
+        // @rendermode="InteractiveServer" and prerendering left on, so those are two separate
+        // component INSTANCES -- a per-instance field cannot span them, and the catalog is still
+        // read twice on a plain page load. Known and accepted: the second read is the one whose
+        // result the user sees, and suppressing it would mean caching across instances (or
+        // prerender: false, which costs first paint).
         if (_loaded && string.Equals(_loadedFor, Software, StringComparison.OrdinalIgnoreCase)) return;
 
         _loadedFor = Software;

@@ -266,7 +266,7 @@ accepted that this is hidden for now and self-resolving.
 workload ships in the embedded catalog". The seed refresh is that moment, so the note is
 discharged and the step rewritten to state that no Audio filter is expected under ComfyUI and why.
 
-### 8.1 Correction: the refresh reaches cold starts only
+### 8.1 Correction: the refresh does not reach an existing install
 
 Added after review. The section above, and commit `8ad4db6`'s message, say the refresh fixes the
 ACE-Step typing. That is true **only on a cold start with no installed catalog**. It is not true for
@@ -285,19 +285,48 @@ The regenerated `manifest.json` changed `commit`, `archive.sha256` and ACE-Step-
 never runs. `docs/manual-smoke.md` §1.1 tells the tester to delete that folder, so the smoke pass
 could not have seen it either — §1.4 now exists to exercise the upgrade path deliberately.
 
-**Bumping `catalogVersion` to 2 here is the wrong fix and was rejected.** On the stable channel the
-number comes from the catalog repo's git tag (`VERSION=${GITHUB_REF_NAME#v}` in its `release.yml`)
-and no `v2` has been cut — the latest stable tag is still `v1`. `CatalogUpdateService` gates remote
-updates on `remote.CatalogVersion > local`, so seeding local to `2` against a remote still on `1`
-blocks remote catalog updates outright, and keeps blocking them once `v2` does ship, because
-`2 > 2` is false. That is a silent permanent freeze — strictly worse than one stale workload type
-that nothing in the UI currently surfaces.
+Cold starts are not safe either, for a different reason — §8.2.
+
+### 8.2 The seed is ahead of the tag, and that undoes the fix where it did land
+
+Worse than the upgrader gap, and true **today** with nothing bumped. The embedded seed is packed
+from catalog commit `3847a24`, which is **newer than the `v1` tag** (`8dcff11`) — and `v1` is what
+the stable channel serves. At `v1`, `workloads/ace-step-1-5/workload.json` still says
+`"workflowType": "Image"`.
+
+So a machine that cold-starts, gets `Audio` from the seed, and then runs its first update check is
+offered that older remote copy and takes it: `CatalogDiff.Compute` is item-hash-level and
+deliberately version-agnostic ("a changed hash counts as Updated even when the author forgot to bump
+the version"), so a *differing* hash is an update regardless of direction. Applying it reverts
+ACE-Step-1.5 to `Image`.
+
+Tagging catalog `v2` is therefore not a nice-to-have for upgraders. It is what stops the fix being
+undone on the machines that did receive it.
+
+### 8.3 Why bumping `catalogVersion` in the seed was rejected
+
+Not, as an earlier draft of this section claimed, because it would freeze remote updates.
+`CatalogUpdateService.cs:84`'s `remote.CatalogVersion > local` test is only one arm of an `||`; the
+other is the hash diff above, which ignores versions entirely. A local `2` against a remote `1`
+would not block updates.
+
+It was rejected for two concrete reasons:
+
+1. **Reseed/update ping-pong.** `CatalogUpdateService.cs:132` stamps
+   `new SectionState(check.Remote.CatalogVersion, ...)` when an apply succeeds, so applying the
+   remote v1 writes the installed state back down to `1`. `CatalogLocator.cs:79` then sees embedded
+   `2 > 1` and re-seeds on the next launch; the next check offers v1 again. Every apply undoes the
+   ACE-Step fix, forever, and the machine oscillates.
+2. **It claims a version that does not exist.** On the stable channel the number comes from the
+   catalog repo's git tag (`VERSION=${GITHUB_REF_NAME#v}` in its `release.yml`), and no `v2` has
+   been cut. A seed asserting `2` is asserting a release nobody can fetch.
 
 **The real fix lives in another repo and is a release action, not a code change here:** tag `v2` in
-`Into-The-Latent/DiffusionNexus.Catalog`, then regenerate the embedded seed with `--version 2` so
-the strict `>` finally holds. Until then, upgraders keep ACE-Step-1.5 typed `Image`. Nothing in the
-UI shows that type today (no Audio filter exists on any reachable screen — §8 above), so the visible
-cost of the wait is zero.
+`Into-The-Latent/DiffusionNexus.Catalog` — which publishes the content the seed was already packed
+from, resolving §8.2 at the same time — then regenerate the embedded seed with `--version 2`. Until
+then, upgraders keep ACE-Step-1.5 typed `Image` and cold starts lose it again at their first update
+check. Nothing in the UI shows that type today (no Audio filter exists on any reachable screen —
+§8 above), so the visible cost of the wait is zero.
 
 ## 9. Testing
 
