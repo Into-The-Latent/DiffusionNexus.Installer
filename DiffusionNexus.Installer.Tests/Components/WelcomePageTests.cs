@@ -5,6 +5,7 @@ using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,13 +94,27 @@ public class WelcomePageTests : BunitContext
     [Fact]
     public void Keeps_a_software_whose_only_workload_cannot_be_installed()
     {
-        // Registering no modules makes every workload with blocking capabilities uninstallable;
-        // the card must still render so the reason is visible somewhere.
-        Arrange(Workload(RepositoryType.Fooocus, "Fooocus"));
+        // A populated ModelDownloads list is one of WorkloadCapabilities.Blocking -- with no
+        // modules registered nothing can satisfy it, so this workload is genuinely uninstallable,
+        // not merely dressed up to look that way.
+        var fooocus = Workload(RepositoryType.Fooocus, "Fooocus");
+        fooocus.ModelDownloads.Add(new ModelDownload
+        {
+            Name = "checkpoint",
+            Url = "https://example.com/model.safetensors"
+        });
+
+        // Verify by construction: if this fixture ever stopped being blocking, this assertion
+        // catches it instead of the test silently exercising the installable branch below.
+        new WizardModuleRegistry(() => []).IsInstallable(fooocus).Should().BeFalse();
+
+        Arrange(fooocus);
 
         var cut = Render<Welcome>();
 
         cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().ContainSingle());
+        cut.Find(".software-card-unavailable").TextContent.Should().NotBeNullOrWhiteSpace();
+        cut.FindAll(".software-card-install").Should().BeEmpty();
     }
 
     [Fact]
@@ -107,13 +122,21 @@ public class WelcomePageTests : BunitContext
     {
         // This rule was written for the old gallery and still applies: a hard catalog failure
         // must report itself, not throw out of the component lifecycle.
+        //
+        // The mock is deliberately discriminating rather than returning the error list
+        // unconditionally: Diagnostics is empty until GetInstallerWorkloadsAsync has actually been
+        // invoked, and only populated afterwards. That is the real SDK's behaviour -- diagnostics
+        // are produced during the load the build triggers -- and it is what makes this test able to
+        // tell "read after the build" apart from "read before it": a page that read Diagnostics too
+        // early would see the empty list and render "No workloads are available" instead of CAT001.
+        var loaded = false;
         var source = new Mock<IWorkloadSource>();
         source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .Callback(() => loaded = true)
               .ReturnsAsync([]);
-        source.SetupGet(s => s.Diagnostics).Returns(new[]
-        {
-            new CatalogDiagnostic(CatalogDiagnosticSeverity.Error, "CAT001", "catalog.zip is corrupt", "catalog.zip")
-        });
+        source.SetupGet(s => s.Diagnostics).Returns(() => loaded
+            ? new[] { new CatalogDiagnostic(CatalogDiagnosticSeverity.Error, "CAT001", "catalog.zip is corrupt", "catalog.zip") }
+            : Array.Empty<CatalogDiagnostic>());
 
         var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
         Services.AddSingleton(source.Object);
@@ -123,6 +146,27 @@ public class WelcomePageTests : BunitContext
         var cut = Render<Welcome>();
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("CAT001").And.Contain("corrupt"));
+    }
+
+    [Fact]
+    public void Reports_a_thrown_catalog_failure_instead_of_propagating_it()
+    {
+        // The try/catch around OnInitializedAsync exists for a hard failure, not just an empty
+        // catalog -- a corrupt or locked catalog file can throw out of the SDK before it ever gets
+        // to report a diagnostic. The page must show the message, not crash the component.
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .ThrowsAsync(new IOException("catalog.zip is locked"));
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("catalog.zip is locked"));
     }
 
     [Fact]

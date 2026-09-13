@@ -56,7 +56,7 @@
                 @if (software.GoesStraightToSetup)
                 {
                     var only = software.SingleWorkload!;
-                    <div class="software-card">
+                    <div class="software-card @(only.IsInstallable ? "" : "software-card-disabled")">
                         <div class="software-card-art">
                             @if (software.LogoPath is not null)
                             {
@@ -72,13 +72,13 @@
                             @if (only.IsInstallable)
                             {
                                 <p class="software-card-count">straight to setup</p>
-                                <button class="workload-card-install" type="button"
+                                <button class="software-card-install" type="button"
                                         @onclick="() => Install(only)">Install</button>
                             }
                             else
                             {
                                 <p class="software-card-count">straight to setup</p>
-                                <p class="workload-card-unavailable">@only.UnavailableReason</p>
+                                <p class="software-card-unavailable">@only.UnavailableReason</p>
                             }
                         </div>
                     </div>
@@ -128,8 +128,8 @@
         }
         catch (Exception ex)
         {
-            // This is the first screen; it must say why it is empty rather than take the app down
-            // with an unhandled exception out of the component lifecycle.
+            // A catalog failure must say why the page is empty rather than take it down with an
+            // unhandled exception out of the component lifecycle.
             _loadError = ex.Message;
             _software = [];
         }
