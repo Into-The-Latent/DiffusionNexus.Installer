@@ -1,4 +1,4 @@
-# Manual smoke checklist — Installer 3.x wizard (slice 1)
+# Manual smoke checklist — Installer 3.x wizard and welcome screen
 
 Automated tests cover the module logic, the gate and the session. These are the things only a
 real run can prove. Use a scratch install folder, never a real one.
@@ -22,9 +22,10 @@ real run can prove. Use a scratch install folder, never a real one.
 3. Filter by type Video. **Expect:** LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3, and
    Wan 2.2 - GGUF appear (all enabled now — LTX-2-3-GGUF, LTX-2-3-V1.1-Director-GGUF, MiniMax H3 and
    Wan 2.2 - GGUF are Content-stage workloads); the Image cards do not.
-   Note: the embedded seed predates the catalog's Audio workflow type, so no workload in it is
-   tagged Audio yet (ACE-Step-1.5 is still `Image` in this snapshot) and no Audio filter button
-   renders. Re-check this step once an Audio-tagged workload ships in the embedded catalog.
+   The embedded seed now carries ACE-Step-1.5 as Audio. Note that no Audio filter appears on the
+   ComfyUI workload screen, and that is correct — the only Audio workload belongs to ACE-Step,
+   which is a single-workload software and goes straight to setup. The filter is catalog-derived,
+   so an Audio button appears there by itself the day a ComfyUI workload declares it.
 4. Filter by software ComfyUI. **Expect:** only ComfyUI-based cards remain, and the software
    filter offers exactly the software the catalog actually contains — no empty options.
 5. Set `DIFFUSIONNEXUS_CATALOG_PATH` to a catalog checkout and relaunch.
@@ -105,3 +106,29 @@ The install itself never restarts; the first workload's session continues runnin
 Launching the packaged Electron exe directly still exits instantly — only the .NET entry point
 under `resources/bin` works. This blocks any Start Menu shortcut and must be fixed before a
 public 3.x release. Slice 1 is run from a dev build.
+
+## 6. Welcome screen
+
+1. Launch. **Expect:** a top bar with the version on the left and Feedback, Licences,
+   Check for Updates on the right (plus Developer tools in a Debug build only); the Into The
+   Latent banner as a wide strip, not a 16:9 block; "Easy Workload Installer" in the gradient
+   wordmark; six software cards with their logos; and a "Join the Community" footer with
+   YouTube, Patreon and Civitai.
+   **Look at the banner crop specifically** — it is cropped from a 16:9 source and the portal
+   ring at the bottom may clip.
+2. **Expect:** the ComfyUI card reads "20 workloads"; the other five read "straight to setup".
+3. Click a community link. **Expect:** it opens in your normal browser. The installer window must
+   NOT navigate to it — if the app itself turns into a web page, that is the bug this was written
+   to catch.
+4. Click Licences, then come back. Click Check for Updates, then come back. **Expect:** both pages
+   still work from the top bar.
+5. Click ComfyUI. **Expect:** the Select workload screen, with 20 cards showing their artwork,
+   an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** four
+   cards. Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
+6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen.
+7. Navigate to `/software/Nonsense` by hand. **Expect:** "That software is not in the catalog"
+   and a link back, not an error page.
+8. Click Feedback, send a report with a summary and details. **Expect:** a GitHub issue URL comes
+   back. Check the issue exists in the Feedback repo and is labelled as coming from the installer.
+9. Disconnect from the network and click Feedback again. **Expect:** the dialog stays open, shows
+   the failure reason, and your typed text is still there.
