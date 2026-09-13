@@ -11,7 +11,7 @@
 
 <PageTitle>Select workload</PageTitle>
 
-<TopBar />
+<TopBar OnFeedback="() => _feedbackOpen = true" />
 
 <div class="workload-screen">
     @if (_loadError is not null)
@@ -69,6 +69,8 @@
     }
 </div>
 
+<FeedbackDialog Visible="_feedbackOpen" OnClose="() => _feedbackOpen = false" />
+
 @code {
     /// <summary>The RepositoryType name from the route. Not parsed into the enum by the router:
     /// an unrecognised value must render the not-found state, not a 404 or an exception.</summary>
@@ -79,6 +81,7 @@
     private WorkflowType? _type;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
+    private bool _feedbackOpen;
 
     protected override async Task OnParametersSetAsync()
     {

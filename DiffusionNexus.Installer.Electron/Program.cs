@@ -6,6 +6,7 @@ using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using ElectronNET.API;
 using ElectronNET.API.Entities;
 
@@ -59,6 +60,14 @@ builder.Services.AddSingleton<IUserPrompt>(sp => sp.GetRequiredService<ModalProm
 builder.Services.AddSingleton<MismatchPromptService>();
 builder.Services.AddSingleton<IMismatchedFilePrompt>(sp => sp.GetRequiredService<MismatchPromptService>());
 builder.Services.AddSingleton<IFolderPicker, ElectronFolderPicker>();
+
+// Posts to the Cloudflare Worker relay, which files the GitHub issue. Same relay the 2.x
+// installer uses; the service itself ships in SDK.Shared, already referenced.
+builder.Services.AddSingleton<IFeedbackReportingService>(_ => new FeedbackReportingService(
+    new FeedbackReportingServiceOptions
+    {
+        RelayUrl = "https://diffusionnexus-feedback-relay.diffusionnexus.workers.dev"
+    }));
 
 // The Electron shell is only spun up when the app is launched through Electron; running the
 // project directly still serves the Blazor UI in a browser, which keeps plain `dotnet run`

@@ -9,7 +9,7 @@
 
 <PageTitle>DiffusionNexus Installer</PageTitle>
 
-<TopBar />
+<TopBar OnFeedback="() => _feedbackOpen = true" />
 
 <div class="welcome">
     <div class="welcome-banner">
@@ -111,10 +111,13 @@
     <CommunityLinks />
 </div>
 
+<FeedbackDialog Visible="_feedbackOpen" OnClose="() => _feedbackOpen = false" />
+
 @code {
     private IReadOnlyList<SoftwareEntry>? _software;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
+    private bool _feedbackOpen;
 
     protected override async Task OnInitializedAsync()
     {

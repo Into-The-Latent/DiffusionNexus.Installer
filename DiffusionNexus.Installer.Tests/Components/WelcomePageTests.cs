@@ -7,6 +7,7 @@ using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
+using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -16,6 +17,13 @@ namespace DiffusionNexus.Installer.Tests.Components;
 
 public class WelcomePageTests : BunitContext
 {
+    public WelcomePageTests()
+    {
+        // Welcome hosts <FeedbackDialog> unconditionally (it only renders markup when opened), so
+        // the component still needs IFeedbackReportingService resolvable at construction time.
+        Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+    }
+
     private static InstallationConfiguration Workload(RepositoryType software, string name) => new()
     {
         Id = Guid.NewGuid(),

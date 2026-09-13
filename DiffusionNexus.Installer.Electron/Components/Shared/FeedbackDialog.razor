@@ -1,0 +1,137 @@
+@using System.Reflection
+@using System.Runtime.InteropServices
+@using DiffusionNexus.Installer.SDK.Shared.Services.Feedback
+@inject IFeedbackReportingService Feedback
+
+@if (Visible)
+{
+    <div class="modal-backdrop">
+        <div class="feedback-dialog">
+            <h3>Send feedback</h3>
+
+            @if (_issueUrl is not null)
+            {
+                <p class="feedback-success">
+                    Thanks — your report is filed as <span class="feedback-issue">@_issueUrl</span>.
+                </p>
+                <div class="feedback-actions">
+                    <button class="feedback-cancel" type="button" @onclick="CloseAsync">Close</button>
+                </div>
+            }
+            else
+            {
+                <label for="feedback-type">What is this?</label>
+                <select id="feedback-type" @bind="_reportType">
+                    <option value="@FeedbackReportType.Feedback">Feedback</option>
+                    <option value="@FeedbackReportType.Bug">Something is broken</option>
+                    <option value="@FeedbackReportType.FeatureRequest">An idea</option>
+                </select>
+
+                <label for="feedback-title">Summary</label>
+                <input id="feedback-title" value="@_title"
+                       @onchange="e => _title = e.Value?.ToString() ?? string.Empty" />
+
+                <label for="feedback-description">Details</label>
+                <textarea id="feedback-description" rows="5" value="@_description"
+                          @onchange="e => _description = e.Value?.ToString() ?? string.Empty"></textarea>
+
+                <label for="feedback-email">Your e-mail (optional, for follow-up questions)</label>
+                <input id="feedback-email" value="@_email"
+                       @onchange="e => _email = e.Value?.ToString() ?? string.Empty" />
+
+                @if (_error is not null)
+                {
+                    <p class="feedback-error">@_error</p>
+                }
+
+                <div class="feedback-actions">
+                    <button class="feedback-cancel" type="button" @onclick="CloseAsync" disabled="@_busy">Cancel</button>
+                    <button class="feedback-submit" type="button" @onclick="SubmitAsync" disabled="@(!CanSubmit)">
+                        @(_busy ? "Sending..." : "Send")
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private FeedbackReportType _reportType = FeedbackReportType.Feedback;
+    private string _title = string.Empty;
+    private string _description = string.Empty;
+    private string _email = string.Empty;
+    private string? _error;
+    private string? _issueUrl;
+    private bool _busy;
+
+    private bool CanSubmit =>
+        !_busy && !string.IsNullOrWhiteSpace(_title) && !string.IsNullOrWhiteSpace(_description);
+
+    private async Task SubmitAsync()
+    {
+        if (!CanSubmit) return;
+
+        _busy = true;
+        _error = null;
+
+        var report = new FeedbackReport
+        {
+            Product = FeedbackProduct.Installer,
+            ReportType = _reportType,
+            Title = _title,
+            Description = _description,
+            Email = string.IsNullOrWhiteSpace(_email) ? null : _email,
+
+            // 2.x does not send screenshots and this slice does not start. The log tail belongs to
+            // an install-failure report, which this screen does not have -- attaching an unrelated
+            // tail to a general comment is worse than attaching nothing.
+            ScreenshotPng = null,
+            LogTail = null,
+
+            AppVersion = AppVersion,
+            Os = RuntimeInformation.OSDescription,
+            TimestampUtc = DateTimeOffset.UtcNow
+        };
+
+        // SubmitAsync never throws except on real cancellation; failures arrive as Success == false
+        // with a message meant to be shown directly.
+        var result = await Feedback.SubmitAsync(report);
+
+        _busy = false;
+
+        if (result.Success)
+        {
+            _issueUrl = result.IssueUrl;
+        }
+        else
+        {
+            // Do NOT close: the dialog holds the only copy of what the user just typed.
+            _error = result.ErrorMessage ?? "The report could not be sent.";
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        _error = null;
+        _issueUrl = null;
+        _title = string.Empty;
+        _description = string.Empty;
+        _email = string.Empty;
+        await OnClose.InvokeAsync();
+    }
+
+    private static string AppVersion
+    {
+        get
+        {
+            var raw = typeof(Program).Assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? "unknown";
+            var plus = raw.IndexOf('+');
+            return plus < 0 ? raw : raw[..plus];
+        }
+    }
+}
