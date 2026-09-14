@@ -1,13 +1,14 @@
-@* The chrome every top-level screen shares: the bar across the top, the dialog its Feedback
-   button opens, and the centred column the page's own content sits in.
+@* The chrome every screen in the install flow shares: the bar across the top, the community
+   footer across the bottom, the dialog the bar's Feedback button opens, and the centred column
+   the page's own content sits in.
 
-   A component the pages wrap themselves in, rather than markup in MainLayout, because the bar
-   belongs on the welcome and workload screens and NOT on /install/{id}, /updates, /licenses or
-   /debug -- hosting it in the layout would mean the layout inspecting the current route to decide.
+   A component the pages wrap themselves in, rather than markup in MainLayout, because /updates,
+   /licenses and /debug are side trips rather than steps and keep their own plain page -- hosting
+   the chrome in the layout would mean the layout inspecting the current route to decide.
 
-   It exists at all because the three moving parts were hand-assembled per page: a third screen
-   that added <TopBar> and forgot <FeedbackDialog> would get a Feedback button that silently did
-   nothing, and no test would have caught it. *@
+   It exists at all because the moving parts were hand-assembled per page: a screen that added
+   <TopBar> and forgot <FeedbackDialog> would get a Feedback button that silently did nothing, and
+   no test would have caught it. *@
 
 <div class="screen">
     <TopBar OnFeedback="() => _feedbackOpen = true" />
@@ -15,6 +16,11 @@
     <div class="screen-body">
         @ChildContent
     </div>
+
+    @* The footer belongs to the shell, not to the welcome screen that used to own it, for the
+       same reason the bar does: this is the window's furniture, and furniture that appears and
+       disappears as you move through a flow reads as the app changing shape under you. *@
+    <CommunityLinks />
 
     <FeedbackDialog Visible="_feedbackOpen" OnClose="() => _feedbackOpen = false" />
 </div>

@@ -10,6 +10,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
@@ -40,7 +41,12 @@ public class InstallPageTests : BunitContext
         return w;
     }
 
-    private Mock<IInstallSession> Register(InstallationConfiguration workload)
+    /// <summary>
+    /// Registers the page's dependencies. Takes the whole catalog rather than just the workload
+    /// under test: the page counts how many workloads the chosen software offers, so a test about
+    /// the multi-workload case needs a way to say there are more.
+    /// </summary>
+    private Mock<IInstallSession> Register(params InstallationConfiguration[] workloads)
     {
         var settings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
@@ -48,7 +54,7 @@ public class InstallPageTests : BunitContext
 
         var source = new Mock<IWorkloadSource>();
         source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync([workload]);
+            .ReturnsAsync(workloads);
         source.Setup(s => s.GetLamaCppWheelsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -67,6 +73,10 @@ public class InstallPageTests : BunitContext
 
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+
+        // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
+        // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
+        Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
@@ -93,6 +103,47 @@ public class InstallPageTests : BunitContext
 
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
             .HasAttribute("disabled").Should().BeFalse("the folder is now set, so the stage validates");
+    }
+
+    [Fact]
+    public void A_software_reached_straight_from_its_tile_opens_with_the_hero()
+    {
+        // Fooocus has one workload, so the welcome tile came straight here and nothing has yet
+        // told the user what they actually picked.
+        Register(Workload());
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
+    }
+
+    [Fact]
+    public void A_software_with_a_workload_screen_of_its_own_does_not_repeat_it_here()
+    {
+        var sibling = new InstallationConfiguration { Id = Guid.NewGuid(), Name = "Fooocus Nightly" };
+        sibling.Repository.Type = RepositoryType.Fooocus;
+        Register(Workload(), sibling);
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".hero").Should().BeEmpty();
+        page.Find("h1").TextContent.Should().Be("Fooocus");
+    }
+
+    [Fact]
+    public void The_hero_is_gone_once_the_user_moves_past_the_first_stage()
+    {
+        // It answers "did I click the right thing?". Past the first stage that is answered, and
+        // carrying it along would push each stage's actual question further down the page.
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll(".hero").Should().HaveCount(1);
+
+        page.Find(".path-row input").Input(@"C:\Installs\Fooocus");
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+
+        page.FindAll(".hero").Should().BeEmpty();
     }
 
     [Fact]
@@ -262,6 +313,10 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(preflight.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+
+        // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
+        // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
+        Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),

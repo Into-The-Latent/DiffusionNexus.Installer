@@ -1,4 +1,5 @@
 @page "/"
+@implements IAsyncDisposable
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Electron.Components.Shared
@@ -6,6 +7,7 @@
 @using DiffusionNexus.Installer.SDK.Catalog
 @inject SoftwareGalleryBuilder Builder
 @inject IWorkloadSource Workloads
+@inject IJSRuntime JS
 
 <PageTitle>DiffusionNexus Installer</PageTitle>
 
@@ -52,29 +54,37 @@
         }
         else
         {
-            <div class="software-grid">
-                @foreach (var software in _software)
-                {
-                    var href = CardHref(software);
+            @* One strip rather than a wrapping grid: the whole screen has to fit a 16:9 window with
+               the community links still on it, and the second row of tiles is what pushed them off. *@
+            <div class="jukebox">
+                <button class="jukebox-arrow" type="button" aria-label="Previous software"
+                        disabled="@_atStart" @onclick="() => StepAsync(-1)">&#10094;</button>
 
-                    @if (href is not null)
+                <div class="jukebox-track" @ref="_track">
+                    @foreach (var software in _software)
                     {
-                        <div class="software-card">
-                            <a href="@href">@Card(software)</a>
-                        </div>
+                        var href = CardHref(software);
+
+                        @if (href is not null)
+                        {
+                            <div class="software-card">
+                                <a href="@href">@Card(software)</a>
+                            </div>
+                        }
+                        else
+                        {
+                            @* No anchor: there must be no click-through to an install that cannot
+                               succeed. app.css gates the accent hover on `.software-card:has(> a)`,
+                               so dropping the anchor also stops this card advertising a target. *@
+                            <div class="software-card software-card-disabled">@Card(software)</div>
+                        }
                     }
-                    else
-                    {
-                        @* No anchor: there must be no click-through to an install that cannot
-                           succeed. app.css gates the accent hover on `.software-card:has(> a)`, so
-                           dropping the anchor is also what stops this card advertising a target. *@
-                        <div class="software-card software-card-disabled">@Card(software)</div>
-                    }
-                }
+                </div>
+
+                <button class="jukebox-arrow" type="button" aria-label="More software"
+                        disabled="@_atEnd" @onclick="() => StepAsync(1)">&#10095;</button>
             </div>
         }
-
-        <CommunityLinks />
     </div>
 </ScreenShell>
 
@@ -82,6 +92,30 @@
     private IReadOnlyList<SoftwareEntry>? _software;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
+
+    private ElementReference _track;
+    private IJSObjectReference? _module;
+    private IJSObjectReference? _observer;
+    private DotNetObjectReference<Welcome>? _self;
+    private bool _observing;
+
+    /// <summary>
+    /// Set by <see cref="DisposeAsync"/>, re-checked after every await in OnAfterRenderAsync.
+    ///
+    /// Disposal runs on the same dispatcher as that method, so it can be scheduled in the gap
+    /// between its two round trips -- and it then finds every field still null and releases
+    /// nothing, while the continuation resumes on a dead component and attaches a scroll listener
+    /// and a ResizeObserver to a detached element, calling back into it forever. That is one
+    /// leaked DotNetObjectReference per fast navigation, on the app's most-travelled path
+    /// (welcome -> a software tile), and it pins the component's whole render tree.
+    /// </summary>
+    private bool _disposed;
+
+    // The strip starts at its left edge, which is the one thing that is true before it has been
+    // measured. The observer's first report corrects the other end -- including disabling both
+    // arrows when every software already fits on screen.
+    private bool _atStart = true;
+    private bool _atEnd;
 
     protected override async Task OnInitializedAsync()
     {
@@ -99,6 +133,132 @@
             // unhandled exception out of the component lifecycle.
             _loadError = ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Starts watching the strip, once the cards it is made of exist.
+    ///
+    /// Not keyed on firstRender: the catalog read is awaited in OnInitializedAsync, so the first
+    /// render is the "Loading the catalog..." one and there is no track to watch yet. Keyed on the
+    /// cards instead, and latched, because this both calls into JS and re-renders.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_observing || _disposed || _software is not { Count: > 0 }) return;
+        _observing = true;
+
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/jukebox.js");
+
+            // Checked after every await, and the locals are only published to the fields once the
+            // whole sequence is through -- so a DisposeAsync that lands mid-flight has nothing
+            // half-built to find, and this path cleans up after itself instead.
+            if (_disposed)
+            {
+                await module.DisposeAsync();
+                return;
+            }
+
+            var self = DotNetObjectReference.Create(this);
+            var observer = await module.InvokeAsync<IJSObjectReference>("observe", _track, self);
+
+            if (_disposed)
+            {
+                await observer.InvokeVoidAsync("dispose");
+                await observer.DisposeAsync();
+                await module.DisposeAsync();
+                self.Dispose();
+                return;
+            }
+
+            _module = module;
+            _self = self;
+            _observer = observer;
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away mid-import. Nothing to arrange; the page is gone.
+        }
+        catch (JSException)
+        {
+            // The module could not be loaded or ran badly -- stale published assets after an
+            // in-place update, an asset the packager missed, a parse error introduced later.
+            // This is a lifecycle method, so letting it escape replaces the app's first and
+            // most-travelled screen with the "An unhandled error has occurred" banner. The track
+            // is an ordinary scroll container, so a wheel and a trackpad still move it; only the
+            // buttons are lost, and they say so rather than sitting there looking live.
+            _atStart = _atEnd = true;
+
+            // Required: finishing OnAfterRenderAsync does not itself re-render, so without this
+            // the arrows keep the enabled state they were rendered with and the fix is invisible.
+            // Safe from recursion -- _observing is already latched, so the next pass returns at
+            // the guard above.
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Called from jukebox.js whenever the strip reaches or leaves an end -- by these buttons, by a
+    /// wheel or trackpad, or by a resize that changes how much of it fits.
+    /// </summary>
+    [JSInvokable]
+    public Task OnEdgesChanged(JukeboxEdges edges)
+    {
+        _atStart = edges.AtStart;
+        _atEnd = edges.AtEnd;
+
+        // Through the renderer's dispatcher: this arrives on a JS interop callback, not on a
+        // Blazor event, so it is not already on the synchronisation context StateHasChanged wants.
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Moves the strip one page. -1 is back, 1 is forward.</summary>
+    private async Task StepAsync(int direction)
+    {
+        if (_module is null) return;
+
+        try
+        {
+            // No return value to apply: the observer reports where the scroll lands, which is the
+            // only answer that is still true once a smooth scroll has finished.
+            await _module.InvokeVoidAsync("step", _track, direction);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Navigating away mid-click. There is no strip left to scroll.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Set first, so a render callback still awaiting its round trips sees it and tears down
+        // whatever it has built rather than publishing it to a component that is already gone.
+        _disposed = true;
+
+        try
+        {
+            // Detach the listeners before releasing the handle that owns them; the module's own
+            // reference goes last, since the handle came out of it.
+            if (_observer is not null)
+            {
+                await _observer.InvokeVoidAsync("dispose");
+                await _observer.DisposeAsync();
+            }
+
+            if (_module is not null) await _module.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException)
+        {
+            // Releasing a JS reference over a circuit that has already closed throws rather than
+            // no-opping, and there is nothing left to release on the other side anyway. JSException
+            // covers the other half: a module that failed on the way in cannot be tidied up on the
+            // way out, and a throwing DisposeAsync would be swallowed by the renderer as an
+            // unhandled error rather than doing anyone any good.
+        }
+
+        // Always: this one is a GC handle on THIS side, and leaking it pins the component.
+        _self?.Dispose();
     }
 
     /// <summary>

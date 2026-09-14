@@ -1,0 +1,48 @@
+@using DiffusionNexus.Installer.Core.Text
+
+@* Renders a catalog description as real elements.
+
+   Deliberately NOT a MarkupString: the descriptions come out of a catalog this app downloads,
+   and handing downloaded text to the browser as markup would make every workload description an
+   injection site. Every piece of text below goes through AddContent, which escapes. *@
+
+@foreach (var block in DescriptionMarkdown.Parse(Text))
+{
+    @if (block is MarkdownParagraph paragraph)
+    {
+        <p>@Spans(paragraph.Spans)</p>
+    }
+    else if (block is MarkdownBullets bullets)
+    {
+        <ul>
+            @foreach (var item in bullets.Items)
+            {
+                <li>@Spans(item)</li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    /// <summary>The Markdown to render. Null or blank renders nothing at all.</summary>
+    [Parameter] public string? Text { get; set; }
+
+    private static RenderFragment Spans(IReadOnlyList<MarkdownSpan> spans) => builder =>
+    {
+        var sequence = 0;
+
+        foreach (var span in spans)
+        {
+            // Built here rather than as eight markup branches (one per flag combination), which is
+            // what emphasis nesting would otherwise cost.
+            var tags = new List<string>(3);
+            if (span.Style.HasFlag(MarkdownStyle.Bold)) tags.Add("strong");
+            if (span.Style.HasFlag(MarkdownStyle.Italic)) tags.Add("em");
+            if (span.Style.HasFlag(MarkdownStyle.Code)) tags.Add("code");
+
+            foreach (var tag in tags) builder.OpenElement(sequence++, tag);
+            builder.AddContent(sequence++, span.Text);
+            foreach (var _ in tags) builder.CloseElement();
+        }
+    };
+}

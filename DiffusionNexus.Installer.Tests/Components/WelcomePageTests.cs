@@ -3,6 +3,7 @@ using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Pages;
+using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
@@ -10,6 +11,7 @@ using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 using Moq;
 using Xunit;
 
@@ -23,7 +25,26 @@ public class WelcomePageTests : BunitContext
         // markup when opened), so the page still needs IFeedbackReportingService resolvable at
         // construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+
+        // The software strip watches itself through wwwroot/js/jukebox.js once its cards exist.
+        // Planned here rather than per test because every render that produces cards makes the
+        // call, and bUnit's strict mode throws on an unplanned one.
+        _jukebox = JSInterop.SetupModule("./js/jukebox.js");
+        _jukebox.SetupVoid("step", _ => true).SetVoidResult();
+
+        // `observe` hands back a handle object with a dispose() on it. To bUnit anything returning
+        // an IJSObjectReference is a module, so the handle is set up as one.
+        _jukebox.SetupModule("observe", _ => true).SetupVoid("dispose", _ => true).SetVoidResult();
     }
+
+    private readonly BunitJSModuleInterop _jukebox;
+
+    /// <summary>
+    /// Plays the part of jukebox.js reporting an edge state, which is the only way the page ever
+    /// learns one: a wheel, a resize and a button click all arrive here.
+    /// </summary>
+    private static Task Report(IRenderedComponent<Welcome> cut, bool atStart, bool atEnd) =>
+        cut.InvokeAsync(() => cut.Instance.OnEdgesChanged(new JukeboxEdges(atStart, atEnd)));
 
     private static InstallationConfiguration Workload(RepositoryType software, string name) => new()
     {
@@ -172,6 +193,104 @@ public class WelcomePageTests : BunitContext
         // card advertising a target it does not have.
         cut.FindAll(".software-card a").Should().BeEmpty();
         cut.Find(".software-card").ClassName.Should().Contain("software-card-disabled");
+    }
+
+    [Fact]
+    public void The_software_cards_sit_in_one_scrollable_strip()
+    {
+        // One row, not a wrapping grid: the second row is what pushed the community links off a
+        // 16:9 window.
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"),
+            Workload(RepositoryType.Fooocus, "Fooocus"),
+            Workload(RepositoryType.AceStep, "ACE-Step-1.5"));
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".jukebox-track .software-card").Should().HaveCount(3));
+        cut.FindAll(".software-grid").Should().BeEmpty("the grid is what wrapped");
+        cut.FindAll(".jukebox-arrow").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_page_starts_watching_the_strip_once_it_has_cards_to_watch()
+    {
+        // Nothing to observe on the "Loading the catalog..." render, so this cannot be keyed on
+        // firstRender -- the catalog read is awaited, so the first render has no track in it.
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"), Workload(RepositoryType.Fooocus, "Fooocus"));
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => JSInterop.Invocations["observe"].Should().ContainSingle());
+
+        // Until the browser says otherwise the strip is against its left edge, which is the one
+        // thing true of every strip before it has been measured.
+        cut.FindAll(".jukebox-arrow")[0].HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll(".jukebox-arrow")[1].HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Both_arrows_go_dead_when_every_software_already_fits()
+    {
+        // A button that cannot do anything must not look like it can. Only the browser knows
+        // whether the strip overflows -- a card count cannot answer it -- so the page takes that
+        // answer and does not compute one.
+        Arrange(Workload(RepositoryType.Fooocus, "Fooocus"));
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => cut.FindAll(".jukebox-arrow").Should().HaveCount(2));
+
+        await Report(cut, atStart: true, atEnd: true);
+
+        cut.FindAll(".jukebox-arrow").Should().OnlyContain(a => a.HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public async Task The_arrows_follow_the_strip_even_when_nothing_was_clicked()
+    {
+        // A wheel, a trackpad and a resized window all move the strip or change how much of it
+        // fits, without any click. Reading the position once per click would leave the buttons
+        // claiming something the strip stopped agreeing with.
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"), Workload(RepositoryType.Fooocus, "Fooocus"));
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => cut.FindAll(".jukebox-arrow").Should().HaveCount(2));
+
+        await Report(cut, atStart: false, atEnd: true);
+
+        cut.FindAll(".jukebox-arrow")[0].HasAttribute("disabled").Should().BeFalse();
+        cut.FindAll(".jukebox-arrow")[1].HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Leaving_the_screen_detaches_the_listeners_it_attached()
+    {
+        // The scroll listener and the ResizeObserver live on the browser side and hold a reference
+        // back to this component. Navigating between the welcome screen and a workload screen and
+        // back is the app's most-travelled path, so leaking one per visit is not a slow leak.
+        Arrange(Workload(RepositoryType.Fooocus, "Fooocus"));
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => JSInterop.Invocations["observe"].Should().ContainSingle());
+
+        await DisposeComponentsAsync();
+
+        JSInterop.Invocations["dispose"].Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Clicking_an_arrow_pages_the_strip_in_that_direction()
+    {
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"),
+            Workload(RepositoryType.Fooocus, "Fooocus"));
+
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => cut.FindAll(".jukebox-arrow")[1].HasAttribute("disabled").Should().BeFalse());
+
+        cut.FindAll(".jukebox-arrow")[1].Click();
+
+        // 1 is forward, which is the direction the module's `step` expects. The page deliberately
+        // applies no edge state of its own here: the scroll is smooth and has not landed yet, so
+        // anything read now would be the position being left, not the one being reached.
+        JSInterop.Invocations["step"].Single().Arguments[1].Should().Be(1);
     }
 
     [Fact]

@@ -96,7 +96,7 @@ public class CapabilityAgreementTests
 
     [Theory]
     [InlineData(RepositoryType.ComfyUI, true)]
-    [InlineData(RepositoryType.AIToolkit, true)]
+    [InlineData(RepositoryType.AIToolkit, false)]
     [InlineData(RepositoryType.Fooocus, false)]
     public async Task Detect_and_AppliesTo_agree_on_the_comfy_folders_capability(
         RepositoryType type, bool expected)

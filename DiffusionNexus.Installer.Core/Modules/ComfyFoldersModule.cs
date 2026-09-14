@@ -58,9 +58,9 @@ public sealed class AdditionalFolderRow
 /// Custom model base folder and custom output folder, plus the advanced per-type folder names and
 /// additional folders that the classic 1.x Folder Settings window offered.
 /// <para>
-/// The model folder writes extra_model_paths.yaml, which both ComfyUI and AI-Toolkit post-install
-/// handlers honour. The output folder becomes --output-directory in the generated ComfyUI
-/// launcher script, so it exists for ComfyUI only.
+/// The model folder writes extra_model_paths.yaml and the output folder becomes
+/// --output-directory in the generated launcher script. Both are ComfyUI mechanisms, which is why
+/// this is a ComfyUI-only module -- see <see cref="AppliesTo"/>.
 /// </para>
 /// </summary>
 public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWizardModule
@@ -90,9 +90,6 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
     public string OutputFolder { get; set; } = string.Empty;
     public bool OverwriteExtraModelPaths { get; set; }
-
-    /// <summary>True for ComfyUI only. The UI hides the output-folder field when false.</summary>
-    public bool SupportsOutputFolder { get; private set; }
 
     /// <summary>The per-type folder names, in display order. Edit through <see cref="SetFolderType"/>.</summary>
     public IReadOnlyList<FolderTypeRow> FolderTypes => _folderTypes;
@@ -144,14 +141,28 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         return Path.Combine(RepositoryPaths.Resolve(_selection.Workload, _selection.TargetFolder.Trim()), name);
     }
 
+    /// <summary>
+    /// ComfyUI only.
+    ///
+    /// AI-Toolkit used to be here, for the model-folder half: the wizard collected a library
+    /// folder and AIToolkitPostInstallHandler wrote an extra_model_paths.yaml into the clone.
+    /// It did nothing. extra_model_paths.yaml is a ComfyUI convention and ostris/ai-toolkit does
+    /// not read it -- the name does not occur anywhere in that repository. It resolves models
+    /// through the MODELS_PATH environment variable (toolkit/paths.py), falling back to
+    /// &lt;toolkit&gt;/models, and nothing in the SDK sets that variable. Nor was there a second
+    /// route by which the answer could matter: the AI-Toolkit workload declares no model
+    /// downloads, so there is nothing whose destination it could change.
+    ///
+    /// A control that changes nothing is worse than no control, so the panel is gone until the
+    /// mechanism exists. Putting AI-Toolkit back means teaching the generated start script to
+    /// export MODELS_PATH -- an SDK change, tracked separately.
+    /// </summary>
     public bool AppliesTo(WizardSelection selection) =>
-        selection.Workload.Repository.Type is RepositoryType.ComfyUI or RepositoryType.AIToolkit;
+        selection.Workload.Repository.Type is RepositoryType.ComfyUI;
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
         _selection = selection;
-
-        SupportsOutputFolder = selection.Workload.Repository.Type == RepositoryType.ComfyUI;
 
         // Reset everything this module owns, including the fields below that are not read from
         // settings, so a re-initialized instance never carries a previous workload's answer.
@@ -160,7 +171,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         _user = user;
         ModelBaseFolder = user.DefaultModelBaseFolder;
-        OutputFolder = SupportsOutputFolder ? user.OutputFolder : string.Empty;
+        OutputFolder = user.OutputFolder;
 
         var saved = UserModelFolderMap.Build(user);
         _folderTypes.Clear();
@@ -237,7 +248,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // before this one, and writing a stale object back would undo it.
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         user.DefaultModelBaseFolder = ModelBaseFolder.Trim();
-        if (SupportsOutputFolder) user.OutputFolder = OutputFolder.Trim();
+        user.OutputFolder = OutputFolder.Trim();
 
         if (AdvancedEdited)
         {
@@ -283,9 +294,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             .Where(r => r.IsComplete)
             .Select(r => r.ToModel(_user?.UserId ?? Guid.Empty)));
 
-        draft.OutputFolder = SupportsOutputFolder && !string.IsNullOrWhiteSpace(OutputFolder)
-            ? OutputFolder
-            : null;
+        draft.OutputFolder = string.IsNullOrWhiteSpace(OutputFolder) ? null : OutputFolder;
     }
 
     public ModuleValidation Validate() => ModuleValidation.Ok();

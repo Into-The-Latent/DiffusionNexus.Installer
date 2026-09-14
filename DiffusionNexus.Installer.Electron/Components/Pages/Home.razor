@@ -1,7 +1,9 @@
 @page "/updates"
+@using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Electron.Services
 @using ElectronNET.API
 @inject UpdaterLog Log
+@inject IInstallSession Session
 @implements IDisposable
 
 <PageTitle>DiffusionNexus Installer</PageTitle>
@@ -19,9 +21,21 @@
             @(_busy ? "Checking..." : "Check for updates")
         </button>
 
-        @if (Log.UpdateReady)
+        @* Never offered while an install is running. QuitAndInstall closes the app and swaps its
+           own binary; doing that mid-install abandons a half-written install folder -- a clone
+           with no venv, a venv with no torch, a model download stopped part-way -- and this page
+           is now one click from every wizard stage, because the top bar rides along with them. *@
+        @if (Log.UpdateReady && !InstallRunning)
         {
             <button class="primary install" @onclick="InstallUpdate">Restart and install</button>
+        }
+        else if (Log.UpdateReady)
+        {
+            <p class="panel-hint">
+                An update is ready. It can be installed once <strong>@RunningWorkload</strong> has
+                finished &mdash; applying it now would restart the app mid-install and leave that
+                folder unfinished.
+            </p>
         }
     </section>
 
@@ -52,7 +66,15 @@
         ? "Running inside the Electron shell."
         : "Running as a plain web app - the updater is unavailable outside Electron.";
 
-    protected override void OnInitialized() => Log.Changed += OnLogChanged;
+    protected override void OnInitialized()
+    {
+        Log.Changed += OnLogChanged;
+
+        // Also the session: the notice below says "wait until X has finished", and without this it
+        // would still say it after X finished, with the user sitting on this page watching nothing
+        // happen.
+        Session.Changed += OnLogChanged;
+    }
 
     // Fires on Electron's socket thread, so hop back onto the circuit before re-rendering.
     private void OnLogChanged() => _ = InvokeAsync(StateHasChanged);
@@ -76,8 +98,32 @@
         }
     }
 
-    private void InstallUpdate() => Electron.AutoUpdater.QuitAndInstall(false, true);
+    /// <summary>
+    /// Whether an install is in flight. The session is a singleton, so this is true even though
+    /// the wizard that started it is not the component on screen.
+    /// </summary>
+    private bool InstallRunning => Session.Phase == InstallPhase.Running;
+
+    /// <summary>The workload being installed, for the notice. Falls back to a neutral phrase.</summary>
+    private string RunningWorkload => Session.Plan?.Selection.Workload.Name ?? "the current install";
+
+    private void InstallUpdate()
+    {
+        // Belt as well as braces: the button is not rendered while an install runs, but the click
+        // could be in flight as the phase changes, and what is on the other side of this call is
+        // "quit and overwrite your own binary".
+        if (InstallRunning) return;
+
+        Electron.AutoUpdater.QuitAndInstall(false, true);
+    }
 
     // Method group, so -= removes the handler this component actually added.
-    public void Dispose() => Log.Changed -= OnLogChanged;
+    public void Dispose()
+    {
+        Log.Changed -= OnLogChanged;
+
+        // The session outlives every component on the circuit, so a handler left on it keeps this
+        // page alive for the life of the app.
+        Session.Changed -= OnLogChanged;
+    }
 }
