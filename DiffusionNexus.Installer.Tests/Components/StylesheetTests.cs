@@ -114,10 +114,15 @@ public class StylesheetTests
         var screen = Regex.Match(css, @"\.screen\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
         screen.Should().Contain("min-height: 100vh").And.Contain("flex-direction: column");
 
+        // Every screen's body grows, which is what holds the community footer against the bottom
+        // of the window rather than letting it float under short content.
+        var body = Regex.Match(css, @"\.screen-body\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        body.Should().Contain("flex: 1");
+
         // And the welcome screen is the one page that opts out of the shared 1000px column: at
         // 1000px the six tiles can never all be on screen however large the window gets.
         var wider = Regex.Match(css, @"\.screen-body:has\(>\s*\.welcome\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
-        wider.Should().Contain("max-width: 1800px").And.Contain("flex: 1");
+        wider.Should().Contain("max-width: 1800px");
     }
 
     [Fact]

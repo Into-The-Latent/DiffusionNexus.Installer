@@ -10,6 +10,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
@@ -72,6 +73,10 @@ public class InstallPageTests : BunitContext
 
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+
+        // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
+        // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
+        Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
@@ -308,6 +313,10 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(preflight.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+
+        // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
+        // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
+        Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),

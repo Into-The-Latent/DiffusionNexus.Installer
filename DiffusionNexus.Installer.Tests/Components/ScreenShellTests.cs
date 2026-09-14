@@ -36,6 +36,19 @@ public class ScreenShellTests : BunitContext
     }
 
     [Fact]
+    public void Puts_the_community_footer_below_the_pages_own_content()
+    {
+        // The footer belongs to the shell, not to the welcome screen that used to own it: with it
+        // there, picking a software made the bar and the footer vanish together and the window
+        // changed shape mid-flow. Direct child of .screen for the same reason the bar is -- it
+        // spans the window rather than stopping at the page's column.
+        var cut = RenderShell();
+
+        cut.Find(".screen > .community").Should().NotBeNull();
+        cut.FindAll(".community-link").Should().HaveCount(3);
+    }
+
+    [Fact]
     public void The_feedback_button_opens_the_dialog_with_no_wiring_from_the_page()
     {
         var cut = RenderShell();

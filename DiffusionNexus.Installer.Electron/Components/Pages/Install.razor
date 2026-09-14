@@ -18,116 +18,122 @@
 
 <PageTitle>Install</PageTitle>
 
-@if (_busyWith is not null)
-{
-    <section class="panel panel-warning">
-        <h1>Another installation is running</h1>
-        <p>
-            <strong>@_busyWith</strong> is still installing. Only one installation can run at a
-            time, so this one cannot be started yet.
-        </p>
-        <div class="wizard-actions">
-            <button class="btn-secondary" @onclick="GoToGallery">Back to all software</button>
-            <button class="btn-primary" @onclick="ResumeRunning">Show the running install</button>
-        </div>
-    </section>
-}
-else if (_run is null)
-{
-    <p>Preparing...</p>
-}
-else
-{
-    @* The hero names the workload itself, at size and beside its artwork, so a plain <h1> above
-       it would say the same thing twice. *@
-    @if (!ShowHero)
-    {
-        <h1>@_run.Plan.Selection.Workload.Name</h1>
-    }
-    <ol class="stage-strip">
-        @foreach (var stage in _run.Plan.Stages)
+@* Same chrome as the screens before it. The bar and the footer used to stop at the
+   welcome and workload screens, so picking a software changed the shape of the window. *@
+<ScreenShell>
+    <div class="wizard">
+        @if (_busyWith is not null)
         {
-            <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@stage</li>
+            <section class="panel panel-warning">
+                <h1>Another installation is running</h1>
+                <p>
+                    <strong>@_busyWith</strong> is still installing. Only one installation can run at a
+                    time, so this one cannot be started yet.
+                </p>
+                <div class="wizard-actions">
+                    <button class="btn-secondary" @onclick="GoToGallery">Back to all software</button>
+                    <button class="btn-primary" @onclick="ResumeRunning">Show the running install</button>
+                </div>
+            </section>
         }
-    </ol>
+        else if (_run is null)
+        {
+            <p>Preparing...</p>
+        }
+        else
+        {
+            @* The hero names the workload itself, at size and beside its artwork, so a plain <h1> above
+               it would say the same thing twice. *@
+            @if (!ShowHero)
+            {
+                <h1>@_run.Plan.Selection.Workload.Name</h1>
+            }
+            <ol class="stage-strip">
+                @foreach (var stage in _run.Plan.Stages)
+                {
+                    <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@stage</li>
+                }
+            </ol>
 
-    @if (_run.CurrentStage == WizardStage.Install)
-    {
-        @* Done is rendered by InstallStage, not here: this page does not subscribe to
-           Session.Changed, so a button placed here would be stuck at whatever Phase said during
-           the single render that created the stage -- i.e. visible for the whole install. *@
-        @if (_preflightWarning is not null)
-        {
-            <p class="validation-error">@_preflightWarning</p>
-        }
-        <InstallStage Run="_run" Done="_backToGallery" />
-    }
-    else
-    {
-        @if (ShowHero)
-        {
-            <WorkloadHero Workload="_run.Plan.Selection.Workload" />
-        }
+            @if (_run.CurrentStage == WizardStage.Install)
+            {
+                @* Done is rendered by InstallStage, not here: this page does not subscribe to
+                   Session.Changed, so a button placed here would be stuck at whatever Phase said during
+                   the single render that created the stage -- i.e. visible for the whole install. *@
+                @if (_preflightWarning is not null)
+                {
+                    <p class="validation-error">@_preflightWarning</p>
+                }
+                <InstallStage Run="_run" Done="_backToGallery" />
+            }
+            else
+            {
+                @if (ShowHero)
+                {
+                    <WorkloadHero Workload="_run.Plan.Selection.Workload" />
+                }
 
-        @if (_run.CurrentStage == WizardStage.Confirm)
-        {
-            <ConfirmStage Run="_run" />
-        }
+                @if (_run.CurrentStage == WizardStage.Confirm)
+                {
+                    <ConfirmStage Run="_run" />
+                }
 
-        @* Confirm-stage modules render after the summary: the disclaimer belongs below what it
-           applies to, and nothing else targets that stage today. *@
-        @* Modules that declare themselves advanced (all-ticked-by-default lists) render behind
-           the stage's "Advanced settings" bar; everything else is the first look. *@
-        @foreach (var module in _run.CurrentModules.Where(m => !m.IsAdvanced))
-        {
-            @RenderModule(module)
-        }
-        @if (_run.CurrentModules.Any(m => m.IsAdvanced))
-        {
-            <AdvancedDisclosure Subtitle="@AdvancedSubtitle()" Summary="@ContentSummary()">
-                @foreach (var module in _run.CurrentModules.Where(m => m.IsAdvanced))
+                @* Confirm-stage modules render after the summary: the disclaimer belongs below what it
+                   applies to, and nothing else targets that stage today. *@
+                @* Modules that declare themselves advanced (all-ticked-by-default lists) render behind
+                   the stage's "Advanced settings" bar; everything else is the first look. *@
+                @foreach (var module in _run.CurrentModules.Where(m => !m.IsAdvanced))
                 {
                     @RenderModule(module)
                 }
-            </AdvancedDisclosure>
-        }
+                @if (_run.CurrentModules.Any(m => m.IsAdvanced))
+                {
+                    <AdvancedDisclosure Subtitle="@AdvancedSubtitle()" Summary="@ContentSummary()">
+                        @foreach (var module in _run.CurrentModules.Where(m => m.IsAdvanced))
+                        {
+                            @RenderModule(module)
+                        }
+                    </AdvancedDisclosure>
+                }
 
-        @if (_preflightBusy)
-        {
-            <p class="panel-hint">Verifying existing model files...</p>
-        }
+                @if (_preflightBusy)
+                {
+                    <p class="panel-hint">Verifying existing model files...</p>
+                }
 
-        @if (_preflightNotice is not null)
-        {
-            <p class="validation-error">@_preflightNotice</p>
-        }
+                @if (_preflightNotice is not null)
+                {
+                    <p class="validation-error">@_preflightNotice</p>
+                }
 
-        @if (_settingsNotice is not null)
-        {
-            <p class="validation-error">@_settingsNotice</p>
-        }
+                @if (_settingsNotice is not null)
+                {
+                    <p class="validation-error">@_settingsNotice</p>
+                }
 
-        <div class="wizard-actions">
-            @* Always available, including at stage 0. A GPU-blocked System stage validates false
-               forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
-            <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
-            <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy || _savingSettings)" @onclick="Back">Back</button>
-            <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">
-                @(_run.CurrentStage == WizardStage.Confirm ? "Start installation" : "Next")
-            </button>
-        </div>
+                <div class="wizard-actions">
+                    @* Always available, including at stage 0. A GPU-blocked System stage validates false
+                       forever, and with Back disabled at index 0 there would be no exit from the wizard. *@
+                    <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
+                    <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy || _savingSettings)" @onclick="Back">Back</button>
+                    <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">
+                        @(_run.CurrentStage == WizardStage.Confirm ? "Start installation" : "Next")
+                    </button>
+                </div>
 
-        @* The install-folder panel shows its own message right under its box; listing it here
-           too would put the same sentence on the page twice. *@
-        @foreach (var module in _run.CurrentModules.Where(m => m is not InstallFolderModule))
-        {
-            @if (module.Validate() is { IsValid: false, ErrorMessage: { } error })
-            {
-                <p class="validation-error">@error</p>
+                @* The install-folder panel shows its own message right under its box; listing it here
+                   too would put the same sentence on the page twice. *@
+                @foreach (var module in _run.CurrentModules.Where(m => m is not InstallFolderModule))
+                {
+                    @if (module.Validate() is { IsValid: false, ErrorMessage: { } error })
+                    {
+                        <p class="validation-error">@error</p>
+                    }
+                }
             }
         }
-    }
-}
+    </div>
+</ScreenShell>
 
 @code {
     [Parameter] public Guid WorkloadId { get; set; }

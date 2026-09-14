@@ -195,11 +195,15 @@ h2 {
     min-height: 100vh;
 }
 
-/* One copy of the centring, in the shell, rather than one per screen. */
+/* One copy of the centring, in the shell, rather than one per screen. `flex: 1` is what holds
+   the footer against the bottom of the window on a screen whose content does not reach it. */
 .screen-body {
+    flex: 1;
+    width: 100%;
     max-width: 1000px;
     margin-inline: auto;
     padding-inline: 24px;
+    box-sizing: border-box;
 }
 
 /* The welcome screen is the whole window: banner, title, software strip and community links, with
@@ -209,7 +213,6 @@ h2 {
 .screen-body:has(> .welcome) {
     max-width: 1800px;
     display: flex;
-    flex: 1;
 }
 
 /* The updates page brings its own width and padding; don't apply them twice. */
@@ -832,17 +835,26 @@ progress {
 
 /* ---------- Community footer ---------- */
 
+/* The window's bottom edge, on every screen of the flow -- so it spans the whole width the way
+   the top bar does, rather than stopping at whatever column the page above it happens to use.
+
+   One row, heading and links together, not a heading stacked above them. As a welcome-screen
+   flourish the stacked version cost nothing; as furniture on every screen it cost 60px of every
+   wizard stage, which was enough to push the Next button below the fold on a 720p window. */
 .community {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 9px 14px;
     border-top: 1px solid var(--border);
-    margin-top: 4px;
-    padding-top: 14px;
-    text-align: center;
+    padding: 10px 24px 12px;
 }
 
 .community h4 {
-    font-size: 14px;
+    margin: 0;
+    font-size: 13px;
     font-weight: 700;
-    margin: 0 0 10px;
     color: var(--text);
 }
 
@@ -1161,6 +1173,14 @@ progress {
     margin: 0;
     font-size: 11.5px;
     color: var(--muted);
+}
+
+/* ---------- Wizard ---------- */
+
+/* Its own vertical rhythm, the way .welcome and .workload-screen have theirs. The wizard used to
+   take this from .page, which the shell opts out of. */
+.wizard {
+    padding-block: 1.25rem 1rem;
 }
 
 /* ---------- Workload hero (first wizard stage) ---------- */
