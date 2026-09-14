@@ -224,7 +224,41 @@ public class InstallStageTests : BunitContext, IDisposable
 
         stage.FindAll(".wizard-actions button").Select(b => b.TextContent.Trim())
             .Should().Equal(["Open folder", "Back to all software", "Close installer"]);
-        stage.Find(".install-result h2").TextContent.Trim().Should().Be("Installation failed");
+
+        var heading = stage.Find(".install-result h2");
+        heading.TextContent.Trim().Should().Be("Installation failed");
+
+        // The class, not just the words. app.css colours the outcome through it, and a heading that
+        // renders the right text in the default colour looks like a successful install.
+        heading.ClassList.Should().Contain("result-bad");
+    }
+
+    [Fact]
+    public async Task A_successful_outcome_is_marked_as_one()
+    {
+        var run = await RunAsync();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("All done", _folder));
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        var heading = stage.Find(".install-result h2");
+        heading.TextContent.Trim().Should().Be("Installation complete");
+        heading.ClassList.Should().Contain("result-ok");
+    }
+
+    [Fact]
+    public async Task A_cancelled_run_is_not_dressed_up_as_a_success()
+    {
+        var run = await RunAsync();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Cancelled);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Cancelled("Installation cancelled."));
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        var heading = stage.Find(".install-result h2");
+        heading.TextContent.Trim().Should().Be("Cancelled");
+        heading.ClassList.Should().Contain("result-bad");
     }
 
     [Fact]

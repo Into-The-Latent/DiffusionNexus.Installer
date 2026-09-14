@@ -38,12 +38,11 @@ public class InstallSessionLogAndTokenTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>()))
             .Returns((
                 InstallationConfiguration _, string _, InstallationOptions _,
                 IProgress<InstallLogEntry> log, IProgress<InstallationProgress> _,
-                IProgress<DownloadProgress> _, Func<CancellationToken> _,
-                IProgress<InstallReportEntry> _, CancellationToken ct)
+                IProgress<DownloadProgress> _, Func<CancellationToken> _, CancellationToken ct)
                 => behaviour(log, ct));
         return orchestrator;
     }

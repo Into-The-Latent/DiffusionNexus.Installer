@@ -543,6 +543,12 @@ progress {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    /* The backstop. If the boxes inside ever need more room than the panel has -- a floor that
+       cannot be met, a step message that wraps to three lines -- the overflow is clipped at the
+       panel's own edge instead of painting over the buttons below it, which is what a pinned
+       100vh screen did with nothing to scroll it back into view. The boxes scroll internally, so
+       the content stays reachable either way. */
+    overflow: hidden;
 }
 
 /* Whatever height is left after the headings, the progress line and the download row. The caps on
@@ -555,11 +561,11 @@ progress {
 
 /* ...but never squeezed to nothing on a short window. Below this the page scrolls instead. */
 .install-split .install-log {
-    min-height: 12rem;
+    min-height: 8rem;
 }
 
 .install-split .report-scroll {
-    min-height: 10rem;
+    min-height: 6rem;
 }
 
 /* A workload with dozens of models reports dozens of rows. Scrolling them inside the panel keeps
@@ -576,10 +582,17 @@ progress {
     .install-split {
         grid-template-columns: minmax(0, 1fr);
     }
+}
 
-    /* Stacked, the two panels cannot both fill a window this short -- squeezing them into it would
-       leave two postage stamps. The screen goes back to growing and the page back to scrolling,
-       which is what every other wizard stage does at this width. */
+/* Narrow OR short, the filled layout stops being an improvement and starts being a trap.
+   Narrow: the columns stack, and two stacked panels cannot both fill one window.
+   Short: below the 650px minimum window height Program.cs sets, there is less room than even the
+   panels' floors need, and a screen pinned to exactly 100vh has nowhere to put the overflow.
+   Either way the screen goes back to growing and the page back to scrolling, with the panels on
+   the caps they had before -- which is what every other wizard stage does at these sizes.
+   Measured with a model download in flight (its row costs the left column ~40px, which is what
+   used to tip this over at 650): filled and fully visible from 650 up. */
+@media (max-width: 900px), (max-height: 640px) {
     .screen:has(.install-split) {
         height: auto;
     }
@@ -640,11 +653,15 @@ progress {
     color: #e8c67a;
 }
 
-.result-ok h3 {
+/* On the outcome heading itself. These used to be descendant selectors (.result-ok h3) matching an
+   <h3> inside a wrapper div; the heading became the element that carries the class, which left both
+   rules matching nothing and every outcome -- complete, cancelled and failed alike -- in the
+   default heading colour. */
+.result-ok {
     color: var(--accent);
 }
 
-.result-bad h3 {
+.result-bad {
     color: #ff8f8f;
 }
 

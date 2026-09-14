@@ -165,6 +165,38 @@ public class StylesheetTests
 
         var split = Regex.Match(css, @"\.install-split\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
         split.Should().Contain("flex: 1").And.Contain("min-height: 0");
+
+        // The backstop under all of it. A pinned 100vh screen has nowhere to put overflow, so a box
+        // that cannot shrink to fit painted straight over the buttons below it -- unscrollable.
+        var panel = Regex.Match(css, @"\.install-split > \.panel\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        panel.Should().Contain("overflow: hidden");
+
+        // And the escape hatch keys on height as well as width: the height is what runs out first
+        // at the 650px minimum window Program.cs sets.
+        Regex.IsMatch(css, @"@media \(max-width: 900px\), \(max-height: \d+px\)").Should().BeTrue(
+            "a window can be too short for the filled layout as easily as too narrow");
+    }
+
+    [Fact]
+    public void the_install_outcome_keeps_its_colour()
+    {
+        // These were descendant selectors (.result-ok h3) matching an <h3> inside a wrapper div.
+        // The heading became the element carrying the class, which left both rules matching nothing
+        // and every outcome -- complete, cancelled and failed -- in the default heading colour.
+        // Nothing else would notice: the component tests assert on text, which did not change.
+        // Comments stripped first -- the rule above the fix names the old selector, and a search
+        // for it would find that sentence and pass.
+        var css = Regex.Replace(
+            File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css")),
+            @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+
+        foreach (var rule in new[] { "result-ok", "result-bad" })
+        {
+            Regex.IsMatch(css, $@"\.{rule}\s*\{{").Should().BeTrue(
+                $".{rule} must style the element that carries it");
+            Regex.IsMatch(css, $@"\.{rule}\s+\w").Should().BeFalse(
+                $".{rule} must not be a descendant selector -- nothing is nested inside the heading");
+        }
     }
 
     [Fact]
