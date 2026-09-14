@@ -6,16 +6,16 @@
 <section class="panel">
     <h2>Model and output folders</h2>
 
-    @if (Module.SupportsOutputFolder)
-    {
-        <label>Output folder <span class="panel-hint">(optional)</span></label>
-        <p class="panel-hint">Leave empty to keep generated images and videos inside the install.</p>
-        <div class="path-row">
-            <input type="text" data-role="output" value="@Module.OutputFolder"
-                   placeholder="@Module.DefaultOutputFolder" @oninput="OnOutputFolderTyped" />
-            <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
-        </div>
-    }
+    @* No longer conditional. The output box used to be hidden for AI-Toolkit while the heading
+       above still promised it, so that screen advertised a control it did not have. The module is
+       ComfyUI's now, so both halves always apply. *@
+    <label>Output folder <span class="panel-hint">(optional)</span></label>
+    <p class="panel-hint">Leave empty to keep generated images and videos inside the install.</p>
+    <div class="path-row">
+        <input type="text" data-role="output" value="@Module.OutputFolder"
+               placeholder="@Module.DefaultOutputFolder" @oninput="OnOutputFolderTyped" />
+        <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
+    </div>
 
     <AdvancedDisclosure Subtitle="custom model folders" Badge="@(Module.HasCustomFolders ? "custom folders in use" : null)">
         <p class="panel-hint">

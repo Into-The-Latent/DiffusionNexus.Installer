@@ -32,25 +32,24 @@ public class ComfyFoldersModuleTests
 
     [Theory]
     [InlineData(RepositoryType.ComfyUI, true)]
-    [InlineData(RepositoryType.AIToolkit, true)]
+    [InlineData(RepositoryType.AIToolkit, false)]
     [InlineData(RepositoryType.A1111, false)]
     [InlineData(RepositoryType.Forge, false)]
     [InlineData(RepositoryType.Fooocus, false)]
     [InlineData(RepositoryType.AceStep, false)]
-    public void Applies_to_comfyui_and_aitoolkit_only(RepositoryType type, bool expected)
+    public void Applies_to_comfyui_only(RepositoryType type, bool expected)
         => Module().AppliesTo(Selection(type)).Should().Be(expected);
 
     [Fact]
-    public async Task Output_folder_is_offered_for_comfyui_but_not_aitoolkit()
+    public void AI_Toolkit_gets_no_folder_panel_at_all()
     {
-        var comfy = Module();
-        await comfy.InitializeAsync(Selection(RepositoryType.ComfyUI));
-
-        var toolkit = Module();
-        await toolkit.InitializeAsync(Selection(RepositoryType.AIToolkit));
-
-        comfy.SupportsOutputFolder.Should().BeTrue();
-        toolkit.SupportsOutputFolder.Should().BeFalse();
+        // It used to get the model-folder half of this module, which wrote an
+        // extra_model_paths.yaml that ostris/ai-toolkit never reads -- the name does not occur
+        // anywhere in that repository. It resolves models through the MODELS_PATH environment
+        // variable instead, which nothing in the SDK sets, and the workload declares no model
+        // downloads either. The control changed nothing, and a control that changes nothing is
+        // worse than no control.
+        Module().AppliesTo(Selection(RepositoryType.AIToolkit)).Should().BeFalse();
     }
 
     [Fact]
@@ -92,15 +91,14 @@ public class ComfyFoldersModuleTests
     }
 
     [Fact]
-    public async Task Output_folder_is_not_contributed_for_aitoolkit_even_if_set()
+    public async Task An_empty_output_folder_contributes_nothing()
     {
-        var module = Module();
-        await module.InitializeAsync(Selection(RepositoryType.AIToolkit));
-        module.OutputFolder = @"D:\Out";
+        var module = Module(outputFolder: string.Empty);
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
 
         var draft = new InstallationOptionsDraft();
         module.Contribute(draft);
 
-        draft.OutputFolder.Should().BeNull();
+        draft.OutputFolder.Should().BeNull("blank means ComfyUI's own output folder, not an empty path");
     }
 }

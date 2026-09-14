@@ -10,12 +10,12 @@ public class WorkloadCapabilitiesTests
 {
     [Theory]
     [InlineData(RepositoryType.ComfyUI, true)]
-    [InlineData(RepositoryType.AIToolkit, true)]
+    [InlineData(RepositoryType.AIToolkit, false)]
     [InlineData(RepositoryType.A1111, false)]
     [InlineData(RepositoryType.Forge, false)]
     [InlineData(RepositoryType.Fooocus, false)]
     [InlineData(RepositoryType.AceStep, false)]
-    public void ComfyFolders_applies_to_comfyui_and_aitoolkit_only(RepositoryType type, bool expected)
+    public void ComfyFolders_applies_to_comfyui_only(RepositoryType type, bool expected)
     {
         var w = new InstallationConfiguration();
         w.Repository.Type = type;

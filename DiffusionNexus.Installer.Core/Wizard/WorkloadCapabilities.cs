@@ -28,9 +28,10 @@ public static class WorkloadCapabilities
 
         var caps = WorkloadCapability.None;
 
-        // ComfyUI gets a model base folder AND an output folder; AI-Toolkit only writes
-        // extra_model_paths.yaml, so it gets the model-folder half of the same module.
-        if (workload.Repository.Type is RepositoryType.ComfyUI or RepositoryType.AIToolkit)
+        // ComfyUI only: both halves of the module are ComfyUI mechanisms (extra_model_paths.yaml
+        // and --output-directory). AI-Toolkit used to be here for the first of them and never read
+        // that file -- see ComfyFoldersModule.AppliesTo.
+        if (workload.Repository.Type is RepositoryType.ComfyUI)
             caps |= WorkloadCapability.ComfyFolders;
 
         // The same parser VramProfileModule.AppliesTo uses. A non-blank but unparseable string
