@@ -11,6 +11,7 @@ using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
 // The SDK has two InstallationOptions types (Models.Installation and Services); this file uses
 // the Services one everywhere, so only UserSettings is aliased in rather than the whole namespace.
 using UserSettings = DiffusionNexus.Installer.SDK.Models.Installation.UserSettings;
+using InstallReportEntry = DiffusionNexus.Installer.SDK.Models.Installation.InstallReportEntry;
 
 namespace DiffusionNexus.Installer.Tests.Install;
 
@@ -36,7 +37,7 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(InstallationResult.Success("done", @"C:\Installs\Fooocus"));
 
         var session = new InstallSession(orchestrator.Object);
@@ -56,7 +57,7 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(InstallationResult.Success("done"));
 
         var session = new InstallSession(orchestrator.Object);
@@ -104,10 +105,11 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Callback<InstallationConfiguration, string, InstallationOptions, IProgress<InstallLogEntry>,
-                      IProgress<InstallationProgress>, IProgress<DownloadProgress>, Func<CancellationToken>, CancellationToken>(
-                (_, targetDirectory, _, _, _, _, _, _) => receivedTargetDirectory = targetDirectory)
+                      IProgress<InstallationProgress>, IProgress<DownloadProgress>, Func<CancellationToken>,
+                      IProgress<InstallReportEntry>, CancellationToken>(
+                (_, targetDirectory, _, _, _, _, _, _, _) => receivedTargetDirectory = targetDirectory)
             .ReturnsAsync(InstallationResult.Success("done"));
 
         var session = new InstallSession(orchestrator.Object);
@@ -127,7 +129,7 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Returns(async () => { await gate.Task; return InstallationResult.Success("done"); });
 
         var session = new InstallSession(orchestrator.Object);
@@ -151,10 +153,11 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Returns((InstallationConfiguration _, string _, InstallationOptions _,
                       IProgress<InstallLogEntry>? log, IProgress<InstallationProgress>? _,
-                      IProgress<DownloadProgress>? _, Func<CancellationToken>? _, CancellationToken _) =>
+                      IProgress<DownloadProgress>? _, Func<CancellationToken>? _,
+                      IProgress<InstallReportEntry>? _, CancellationToken _) =>
             {
                 for (var i = 0; i < InstallSession.MaxLogLines + 50; i++)
                     log!.Report(new InstallLogEntry { Message = $"line {i}", Level = SdkLogLevel.Info });
@@ -178,10 +181,11 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Returns((InstallationConfiguration _, string _, InstallationOptions _,
                       IProgress<InstallLogEntry>? log, IProgress<InstallationProgress>? _,
-                      IProgress<DownloadProgress>? _, Func<CancellationToken>? _, CancellationToken _) =>
+                      IProgress<DownloadProgress>? _, Func<CancellationToken>? _,
+                      IProgress<InstallReportEntry>? _, CancellationToken _) =>
             {
                 for (var i = 0; i < 500; i++)
                     log!.Report(new InstallLogEntry { Message = $"line {i}", Level = SdkLogLevel.Info });
@@ -213,7 +217,7 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(InstallationResult.Cancelled("cancelled by user"));
 
         var session = new InstallSession(orchestrator.Object);
@@ -238,10 +242,11 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Returns(async (InstallationConfiguration _, string _, InstallationOptions _,
                             IProgress<InstallLogEntry>? _, IProgress<InstallationProgress>? _,
-                            IProgress<DownloadProgress>? _, Func<CancellationToken>? _, CancellationToken token) =>
+                            IProgress<DownloadProgress>? _, Func<CancellationToken>? _,
+                            IProgress<InstallReportEntry>? _, CancellationToken token) =>
             {
                 capturedToken = token;
                 await gate.Task;
@@ -272,7 +277,7 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("disk full"));
 
         var session = new InstallSession(orchestrator.Object);
@@ -292,7 +297,7 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(InstallationResult.Success("done"));
 
         var session = new InstallSession(orchestrator.Object);
@@ -322,10 +327,11 @@ public class InstallSessionTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Returns((InstallationConfiguration _, string _, InstallationOptions _,
                       IProgress<InstallLogEntry>? _, IProgress<InstallationProgress>? _,
-                      IProgress<DownloadProgress>? _, Func<CancellationToken>? skip, CancellationToken _) =>
+                      IProgress<DownloadProgress>? _, Func<CancellationToken>? skip,
+                      IProgress<InstallReportEntry>? _, CancellationToken _) =>
             {
                 provider = skip;
                 return Task.FromResult(InstallationResult.Success("done"));

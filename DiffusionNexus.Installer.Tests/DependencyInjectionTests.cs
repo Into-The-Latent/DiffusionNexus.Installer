@@ -115,6 +115,7 @@ public class DependencyInjectionTests
         provider.GetRequiredService<IFeedbackReportingService>().Should().NotBeNull();
         provider.GetRequiredService<UpdaterLog>().Should().NotBeNull();
         provider.GetRequiredService<IFolderPicker>().Should().NotBeNull();
+        provider.GetRequiredService<IPostInstallActions>().Should().NotBeNull();
 
         // Both spellings resolve to ONE instance: the modal component subscribes to the concrete
         // service and the wizard raises through the interface, so two instances mean a prompt that

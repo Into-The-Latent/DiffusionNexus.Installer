@@ -39,6 +39,7 @@ public static class HostServiceCollectionExtensions
         services.AddSingleton<IMismatchedFilePrompt>(sp => sp.GetRequiredService<MismatchPromptService>());
 
         services.AddSingleton<IFolderPicker, ElectronFolderPicker>();
+        services.AddSingleton<IPostInstallActions, ElectronPostInstallActions>();
 
         return services;
     }

@@ -1,4 +1,5 @@
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
 
 namespace DiffusionNexus.Installer.Core.Install;
@@ -30,6 +31,15 @@ public interface IInstallSession
     /// </summary>
     CancellationToken RunToken { get; }
     InstallationResult? Result { get; }
+
+    /// <summary>
+    /// The report rows recorded so far, so the result table can fill as the install runs instead
+    /// of appearing all at once at the end. Empty until a run starts; replaced by
+    /// <see cref="InstallationResult.Report"/> once the run finishes and that report has rows --
+    /// the finished report is the authority, and it carries the "not run" rows an aborted run adds
+    /// for steps that were never reached.
+    /// </summary>
+    IReadOnlyList<InstallReportEntry> ReportRows { get; }
 
     /// <summary>
     /// The plan of the current or most recent run, or null if nothing has started. Lets the UI tell

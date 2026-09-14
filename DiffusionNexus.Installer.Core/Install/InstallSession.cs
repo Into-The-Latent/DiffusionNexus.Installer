@@ -1,4 +1,5 @@
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
 
 namespace DiffusionNexus.Installer.Core.Install;
@@ -19,6 +20,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private readonly TimeSpan _flushInterval;
     private readonly Lock _gate = new();
     private readonly Queue<InstallLogLine> _log = new();
+    private readonly List<InstallReportEntry> _reportRows = [];
     private readonly Timer _flushTimer;
     private int _dirty;
     private CancellationTokenSource? _cts;
@@ -40,6 +42,12 @@ public sealed class InstallSession : IInstallSession, IDisposable
     public IReadOnlyList<InstallLogLine> LogLines
     {
         get { lock (_gate) return [.. _log]; }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<InstallReportEntry> ReportRows
+    {
+        get { lock (_gate) return [.. _reportRows]; }
     }
 
     /// <inheritdoc/>
@@ -91,6 +99,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             Progress = null;
             CurrentDownload = null;
             _log.Clear();
+            _reportRows.Clear();
         }
 
         try
@@ -117,7 +126,16 @@ public sealed class InstallSession : IInstallSession, IDisposable
                 new InlineProgress<InstallationProgress>(OnStep),
                 new InlineProgress<DownloadProgress>(OnDownload),
                 GetSkipDownloadToken,
+                new InlineProgress<InstallReportEntry>(OnReportRow),
                 _cts.Token).ConfigureAwait(false);
+
+            // The finished report wins over the rows streamed during the run. They hold the same
+            // rows in the same order, but only the finished one carries what an aborted run adds
+            // at the very end for steps it never reached. A result built without a report -- the
+            // catch blocks below -- leaves the streamed rows alone rather than blanking a table
+            // the user watched fill up.
+            if (result.Report.Count > 0)
+                lock (_gate) { _reportRows.Clear(); _reportRows.AddRange(result.Report); }
 
             Result = result;
             Phase = result.IsCancelled ? InstallPhase.Cancelled
@@ -202,6 +220,17 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private void OnDownload(DownloadProgress progress)
     {
         CurrentDownload = progress;
+        MarkDirty();
+    }
+
+    /// <summary>
+    /// One report row, the moment the pipeline recorded it. Coalesced like log lines: a model
+    /// download's rows arrive in bursts, and a render per row would ship the whole table over the
+    /// SignalR circuit each time.
+    /// </summary>
+    private void OnReportRow(InstallReportEntry entry)
+    {
+        lock (_gate) _reportRows.Add(entry);
         MarkDirty();
     }
 

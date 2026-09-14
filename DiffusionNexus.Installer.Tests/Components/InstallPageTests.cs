@@ -62,6 +62,7 @@ public class InstallPageTests : BunitContext
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
         session.SetupGet(s => s.LogLines).Returns([]);
         session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
+        session.SetupGet(s => s.ReportRows).Returns([]);
 
         Services.AddSingleton(source.Object);
         Services.AddSingleton(session.Object);
@@ -73,6 +74,7 @@ public class InstallPageTests : BunitContext
 
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+        Services.AddSingleton(Mock.Of<IPostInstallActions>());
 
         // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
@@ -299,6 +301,7 @@ public class InstallPageTests : BunitContext
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
         session.SetupGet(s => s.LogLines).Returns([]);
         session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
+        session.SetupGet(s => s.ReportRows).Returns([]);
 
         var preflight = new Mock<IModelPreflight>();
         preflight.Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
@@ -313,6 +316,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(preflight.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+        Services.AddSingleton(Mock.Of<IPostInstallActions>());
 
         // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.

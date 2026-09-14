@@ -126,6 +126,24 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void the_install_screen_keeps_its_two_columns_inside_the_window()
+    {
+        // A grid column's default minimum is its CONTENT, so plain 1fr tracks let one unwrapped
+        // log line or one long report comment push the whole screen wider than the window -- with
+        // no horizontal scrollbar in Electron to get back from it.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var split = Regex.Match(css, @"\.install-split\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        split.Should().Contain("grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr)");
+
+        // And below the app's minimum window width the two columns stack instead of both being
+        // too narrow to read.
+        var stacked = Regex.Match(css, @"@media \(max-width: 900px\)\s*\{\s*\.install-split\s*\{(?<body>[^}]*)\}");
+        stacked.Success.Should().BeTrue("the columns must stack on a narrow window");
+        stacked.Groups["body"].Value.Should().Contain("grid-template-columns: minmax(0, 1fr)");
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");

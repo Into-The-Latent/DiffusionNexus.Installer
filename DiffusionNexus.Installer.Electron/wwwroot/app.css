@@ -484,6 +484,41 @@ progress {
     font-variant-numeric: tabular-nums;
 }
 
+/* The install screen is two columns: what is happening (progress, downloads, log) beside what it
+   produced (the report, filling row by row). Stacked, the report sat a screen below the log and
+   nobody saw it until the install they were watching had already ended.
+   Both tracks are minmax(0, ...) -- a grid column's default min-width is its content, so one long
+   log line or one wide report comment would otherwise stretch the column past the window. The log
+   gets the larger share because its lines are the long ones. */
+.install-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+/* The gap above owns the spacing between the columns; .panel's own bottom margin would only
+   push the buttons away from the shorter one. */
+.install-split > .panel {
+    margin-bottom: 0;
+}
+
+/* A workload with dozens of models reports dozens of rows. Scrolling them inside the panel keeps
+   the buttons under the columns reachable instead of a page-length scroll away, and keeps the
+   outcome heading above the table in view while the rows arrive. */
+.report-scroll {
+    max-height: 26rem;
+    overflow: auto;
+}
+
+/* Below this the two columns are each too narrow to read; one above the other beats both cramped.
+   Around the 900px minimum window width, so it is the user shrinking the window that triggers it. */
+@media (max-width: 900px) {
+    .install-split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* Bounded and scrollable. Unbounded, this element grew the page until anything
    rendered after it sat thousands of pixels below the fold. */
 .install-log {

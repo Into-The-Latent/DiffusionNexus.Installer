@@ -5,6 +5,9 @@ using DiffusionNexus.Installer.SDK.Services;
 using FluentAssertions;
 using Moq;
 using Xunit;
+// Aliased, not imported: Models.Installation also carries an InstallationOptions that would
+// collide with the Services one this file uses throughout.
+using InstallReportEntry = DiffusionNexus.Installer.SDK.Models.Installation.InstallReportEntry;
 using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
 
 namespace DiffusionNexus.Installer.Tests.Install;
@@ -35,11 +38,12 @@ public class InstallSessionLogAndTokenTests
                 It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
                 It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
                 It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<IProgress<InstallReportEntry>>(), It.IsAny<CancellationToken>()))
             .Returns((
                 InstallationConfiguration _, string _, InstallationOptions _,
                 IProgress<InstallLogEntry> log, IProgress<InstallationProgress> _,
-                IProgress<DownloadProgress> _, Func<CancellationToken> _, CancellationToken ct)
+                IProgress<DownloadProgress> _, Func<CancellationToken> _,
+                IProgress<InstallReportEntry> _, CancellationToken ct)
                 => behaviour(log, ct));
         return orchestrator;
     }
