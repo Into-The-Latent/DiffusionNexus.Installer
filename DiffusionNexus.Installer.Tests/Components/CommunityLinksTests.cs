@@ -104,16 +104,20 @@ public class CommunityLinksTests : BunitContext
     }
 
     [Fact]
-    public void Stops_listening_to_the_cache_once_disposed()
+    public async Task Stops_re_rendering_once_disposed()
     {
-        // A footer whose circuit is gone must not keep the cache holding a dead handler forever.
-        var cache = Services.GetRequiredService<CommunityLinksCache>();
-        var cut = Render<CommunityLinks>();
+        // Two footers on one cache, as two screens would be. Dispose one, land the fetch: only
+        // the live one re-renders. A leaked handler would re-render the dead one too.
+        var live = Render<CommunityLinks>();
+        var dead = Render<CommunityLinks>();
+        var liveBefore = live.RenderCount;
+        var deadBefore = dead.RenderCount;
 
-        cut.Instance.Dispose();
-        _fetch.SetResult(CommunityLinksResult.Fallback("late"));
+        dead.Instance.Dispose();
+        _fetch.SetResult(new CommunityLinksResult([new("Forum", "https://forum.example", "globe")], IsFallback: false));
+        await Services.GetRequiredService<CommunityLinksCache>().LoadAsync();
 
-        var act = () => cache.LoadAsync();
-        act.Should().NotThrowAsync();
+        live.WaitForAssertion(() => live.RenderCount.Should().BeGreaterThan(liveBefore));
+        dead.RenderCount.Should().Be(deadBefore);
     }
 }

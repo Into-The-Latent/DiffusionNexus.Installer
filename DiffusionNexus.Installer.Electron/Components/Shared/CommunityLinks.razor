@@ -30,15 +30,17 @@
         _ = Cache.LoadAsync();
     }
 
-    private void OnLinksChanged()
+    private async void OnLinksChanged()
     {
         try
         {
-            _ = InvokeAsync(StateHasChanged);
+            // Awaited, because InvokeAsync reports a torn-down renderer on the returned task,
+            // not as a synchronous throw: the fetch can land after the circuit that hosted this
+            // footer is gone, and that must end here rather than as an unobserved exception.
+            await InvokeAsync(StateHasChanged);
         }
         catch (Exception)
         {
-            // The fetch can land after the circuit that hosted this footer is gone.
         }
     }
 

@@ -89,4 +89,37 @@ public class CommunityLinksCacheTests
         cache.Result!.IsFallback.Should().BeTrue();
         cache.Result.ErrorMessage.Should().Contain("boom");
     }
+
+    [Fact]
+    public async Task A_throwing_subscriber_neither_faults_the_load_nor_starves_the_next_one()
+    {
+        var service = new Mock<ICommunityLinksService>();
+        service.Setup(s => s.GetLinksAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CommunityLinksResult([Remote], IsFallback: false));
+        var cache = new CommunityLinksCache(service.Object);
+        var laterSubscriberRan = false;
+        cache.Changed += () => throw new InvalidOperationException("bad footer");
+        cache.Changed += () => laterSubscriberRan = true;
+
+        var act = () => cache.LoadAsync();
+
+        await act.Should().NotThrowAsync();
+        cache.LoadAsync().IsFaulted.Should().BeFalse("the Lazy<Task> is cached, so a fault would be permanent");
+        laterSubscriberRan.Should().BeTrue();
+        cache.Links.Should().Equal(Remote);
+    }
+
+    [Fact]
+    public async Task Links_and_Result_are_published_as_one_snapshot()
+    {
+        var service = new Mock<ICommunityLinksService>();
+        var result = new CommunityLinksResult([Remote], IsFallback: false);
+        service.Setup(s => s.GetLinksAsync(It.IsAny<CancellationToken>())).ReturnsAsync(result);
+        var cache = new CommunityLinksCache(service.Object);
+
+        await cache.LoadAsync();
+
+        cache.Result.Should().BeSameAs(result);
+        cache.Links.Should().BeSameAs(result.Links);
+    }
 }
