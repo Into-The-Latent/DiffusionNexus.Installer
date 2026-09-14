@@ -7,6 +7,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Services;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 using Moq;
 using Xunit;
 // Aliased, not imported: Models.Installation also carries an InstallationOptions that collides
@@ -41,6 +42,14 @@ public class InstallStageTests : BunitContext, IDisposable
 
         Services.AddSingleton(_session.Object);
         Services.AddSingleton(_actions.Object);
+
+        // The log box hands itself to a script that keeps it scrolled to its newest line. bUnit
+        // executes no JavaScript, so the module is planned rather than run -- without this every
+        // render here fails on an unplanned interop call.
+        JSInterop.SetupModule("./js/install-log.js")
+            .SetupModule("follow", _ => true)
+            .SetupVoid("dispose", _ => true)
+            .SetVoidResult();
     }
 
     void IDisposable.Dispose()
@@ -94,6 +103,18 @@ public class InstallStageTests : BunitContext, IDisposable
         columns[0].TextContent.Should().Contain("Installing");
         columns[1].TextContent.Should().Contain("Result");
         stage.FindAll(".install-split .install-log").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task The_log_is_handed_to_the_script_that_keeps_it_on_its_newest_line()
+    {
+        // A fixed-height scroll box keeps its position across Blazor's updates, so left alone the
+        // left column shows the FIRST of the 300 lines it holds for the whole install.
+        var run = await RunAsync();
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.WaitForAssertion(() => JSInterop.Invocations["follow"].Should().ContainSingle());
     }
 
     [Fact]

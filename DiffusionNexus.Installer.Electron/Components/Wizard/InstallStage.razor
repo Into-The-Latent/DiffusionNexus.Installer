@@ -2,9 +2,10 @@
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.SDK.Services
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IInstallSession Session
 @inject IPostInstallActions Actions
+@inject IJSRuntime JS
 
 @* Two columns: what is happening on the left, what it produced on the right. The report used to
    sit below the log, which meant it appeared -- all at once, a screen further down -- only after
@@ -35,7 +36,7 @@
         @* Tail, not the whole 5000-line buffer. Changes coalesce every 100ms, so rendering the full log
            re-copied it under the lock OnLog needs, re-interpolated every line, and shipped a ~475KB
            string over the SignalR circuit ten times a second to show one new line. *@
-        <pre class="install-log">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
+        <pre class="install-log" @ref="_logBox">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
     </section>
 
     @* Fills as the install runs: every row is recorded the moment its operation finishes, and the
@@ -130,6 +131,11 @@
 
     private string? _startError;
     private string? _actionError;
+    private ElementReference _logBox;
+    private IJSObjectReference? _logModule;
+    private IJSObjectReference? _logFollower;
+    private bool _following;
+    private bool _disposed;
 
     [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
 
@@ -238,7 +244,68 @@
         }
     }
 
+    /// <summary>
+    /// Hands the log box to the script that keeps it scrolled to its newest line. Once, on the
+    /// first render: the element outlives every later render, and this component re-renders about
+    /// ten times a second while an install runs.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _following || _disposed) return;
+        _following = true;
+
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/install-log.js");
+
+            // Checked after every await, and the locals are only published to the fields once the
+            // whole sequence is through -- so a teardown that lands mid-flight has nothing
+            // half-built to find, and this path cleans up after itself instead.
+            if (_disposed)
+            {
+                await module.DisposeAsync();
+                return;
+            }
+
+            var follower = await module.InvokeAsync<IJSObjectReference>("follow", _logBox);
+
+            if (_disposed)
+            {
+                await follower.InvokeVoidAsync("dispose");
+                await follower.DisposeAsync();
+                await module.DisposeAsync();
+                return;
+            }
+
+            _logModule = module;
+            _logFollower = follower;
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away mid-import. Nothing to scroll and nothing to clean up.
+        }
+    }
+
     private void OnChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Session.Changed -= OnChanged;
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        Session.Changed -= OnChanged;
+
+        try
+        {
+            if (_logFollower is not null)
+            {
+                await _logFollower.InvokeVoidAsync("dispose");
+                await _logFollower.DisposeAsync();
+            }
+
+            if (_logModule is not null) await _logModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone; the listeners went with the page that held them.
+        }
+    }
 }

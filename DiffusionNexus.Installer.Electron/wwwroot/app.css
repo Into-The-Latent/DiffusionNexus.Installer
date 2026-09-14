@@ -215,6 +215,42 @@ h2 {
     display: flex;
 }
 
+/* The install stage is the other screen that outgrows the 1000px column: it is two columns of
+   long content -- pip output on one side, a three-column report with full paths on the other --
+   and at 1000px each half is ~460px, which wraps every log line and puts a horizontal scrollbar
+   under the report while a maximised window shows 900px of empty margin on either side. The
+   wizard's earlier stages stay in the narrow column: they are single questions, and a 1750px-wide
+   "choose a folder" box is worse, not better.
+   Keyed on the split that only the install stage renders, and a descendant rather than a child
+   because it sits inside .wizard. */
+.screen-body:has(.install-split) {
+    max-width: 1800px;
+    display: flex;
+    /* Without this the body is a flex item whose minimum is its own content, so it grows past the
+       height the shell just fixed and every shrink below it is cancelled before it starts. */
+    min-height: 0;
+}
+
+/* The shell is normally min-height: 100vh, which lets a long screen grow past the window. This one
+   must not: its two columns are BOTH scrollable, so growing means the buttons and the footer leave
+   the bottom of the window while the space to scroll them back into view is inside the panels. A
+   definite height is also what lets the chain below shrink at all -- flex items resolve against a
+   definite container, and against a min-height one they just take their content's size. */
+.screen:has(.install-split) {
+    height: 100vh;
+}
+
+/* The chain that turns the shell's height into the columns' height: body -> wizard -> split ->
+   panel -> the scrolling box inside it. Every link needs min-height: 0, because a flex item's
+   default minimum is its content -- without it the log and the report refuse to shrink, overflow
+   their panel, and push the buttons off the bottom of the window instead of scrolling. */
+.wizard:has(.install-split) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 /* The updates page brings its own width and padding; don't apply them twice. */
 .page .shell {
     padding: 0;
@@ -494,13 +530,36 @@ progress {
     display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
     gap: 1rem;
-    align-items: start;
+    flex: 1;
+    min-height: 0;
 }
 
-/* The gap above owns the spacing between the columns; .panel's own bottom margin would only
-   push the buttons away from the shorter one. */
+/* Both columns run the full height of the window rather than each stopping at its own content:
+   the report is the one that grows during a run, and a right column that ends halfway up leaves
+   the space it will need sitting empty beside the log. The gap owns the spacing between them;
+   .panel's own bottom margin would only push the buttons away from the shorter column. */
 .install-split > .panel {
     margin-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Whatever height is left after the headings, the progress line and the download row. The caps on
+   the base rules above stay put as the fallback for any context without this flex chain. */
+.install-split .install-log,
+.install-split .report-scroll {
+    flex: 1;
+    max-height: none;
+}
+
+/* ...but never squeezed to nothing on a short window. Below this the page scrolls instead. */
+.install-split .install-log {
+    min-height: 12rem;
+}
+
+.install-split .report-scroll {
+    min-height: 10rem;
 }
 
 /* A workload with dozens of models reports dozens of rows. Scrolling them inside the panel keeps
@@ -516,6 +575,25 @@ progress {
 @media (max-width: 900px) {
     .install-split {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Stacked, the two panels cannot both fill a window this short -- squeezing them into it would
+       leave two postage stamps. The screen goes back to growing and the page back to scrolling,
+       which is what every other wizard stage does at this width. */
+    .screen:has(.install-split) {
+        height: auto;
+    }
+
+    .install-split {
+        flex: none;
+    }
+
+    .install-split .install-log {
+        max-height: 22rem;
+    }
+
+    .install-split .report-scroll {
+        max-height: 26rem;
     }
 }
 

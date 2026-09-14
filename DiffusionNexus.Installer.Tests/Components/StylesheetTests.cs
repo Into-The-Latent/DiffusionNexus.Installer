@@ -144,6 +144,30 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void the_install_screen_fills_the_window_it_is_given()
+    {
+        // Both halves of "use the space". Without the width opt-out a maximised 1900px window
+        // shows two ~460px columns marooned between 900px margins; without the height chain the
+        // panels stop at their content and leave the bottom third of the window empty. Each link
+        // of that chain needs min-height: 0 -- a flex item's default minimum is its own content,
+        // so one missing line silently cancels every shrink below it.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var body = Regex.Match(css, @"\.screen-body:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        body.Should().Contain("max-width: 1800px").And.Contain("min-height: 0");
+
+        var screen = Regex.Match(css, @"\.screen:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        screen.Should().Contain("height: 100vh",
+            "flex items resolve against a definite height; against min-height: 100vh they just take their content's");
+
+        var wizard = Regex.Match(css, @"\.wizard:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        wizard.Should().Contain("flex: 1").And.Contain("min-height: 0");
+
+        var split = Regex.Match(css, @"\.install-split\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        split.Should().Contain("flex: 1").And.Contain("min-height: 0");
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");

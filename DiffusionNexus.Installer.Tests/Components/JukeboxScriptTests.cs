@@ -5,10 +5,10 @@ using Xunit;
 namespace DiffusionNexus.Installer.Tests.Components;
 
 /// <summary>
-/// wwwroot/js/jukebox.js is this app's only JavaScript. Nothing compiles it and no bUnit test can
-/// execute it -- the component tests mock the module away -- so the one bug it has already had
-/// went unnoticed by the whole suite. This is the compiler it lacks, in the same spirit as
-/// <see cref="StylesheetTests"/>.
+/// wwwroot/js/jukebox.js. Nothing compiles this app's JavaScript and no bUnit test can execute it
+/// -- the component tests plan the module away -- so the one bug jukebox.js has already had went
+/// unnoticed by the whole suite. This is the compiler it lacks, in the same spirit as
+/// <see cref="StylesheetTests"/>. See <see cref="InstallLogScriptTests"/> for the other script.
 /// </summary>
 public class JukeboxScriptTests
 {
