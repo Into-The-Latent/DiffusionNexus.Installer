@@ -998,6 +998,7 @@ progress {
 .community-link {
     display: inline-flex;
     align-items: center;
+    gap: 7px;
     padding: 6px 14px;
     border-radius: 999px;
     border: 1px solid var(--border);
@@ -1010,6 +1011,17 @@ progress {
 
 .community-link:hover {
     border-color: var(--accent);
+}
+
+.community-icon {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    color: var(--muted);
+}
+
+.community-link:hover .community-icon {
+    color: var(--accent);
 }
 
 /* ---------- Workload cards ---------- */

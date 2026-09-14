@@ -22,6 +22,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         // renders markup when opened), so the page still needs IFeedbackReportingService
         // resolvable at construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+        Services.AddSingleton(OfflineCommunityLinks.Cache());
     }
 
     private static InstallationConfiguration Workload(RepositoryType software, string name, WorkflowType type) => new()

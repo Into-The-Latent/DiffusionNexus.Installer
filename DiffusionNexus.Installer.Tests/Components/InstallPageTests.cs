@@ -87,6 +87,7 @@ public class InstallPageTests : BunitContext
         // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+        Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
@@ -336,6 +337,7 @@ public class InstallPageTests : BunitContext
         // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+        Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),

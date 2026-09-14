@@ -44,6 +44,7 @@ public class WelcomeScriptFailureTests : BunitContext
         // the packager missed, or a parse error introduced later would all do it -- and the catch
         // originally covered only JSDisconnectedException, which is not what any of those throw.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+        Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton<IJSRuntime>(new BrokenJs());
 
         var workloads = new[]
