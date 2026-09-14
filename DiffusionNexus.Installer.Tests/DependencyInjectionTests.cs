@@ -13,6 +13,7 @@ using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -116,6 +117,12 @@ public class DependencyInjectionTests
         provider.GetRequiredService<UpdaterLog>().Should().NotBeNull();
         provider.GetRequiredService<IFolderPicker>().Should().NotBeNull();
         provider.GetRequiredService<IPostInstallActions>().Should().NotBeNull();
+
+        // The footer on every screen reads the cache; the cache reads the Gist service. Both must
+        // resolve, and the cache must be ONE instance or every screen would fetch again.
+        provider.GetRequiredService<ICommunityLinksService>().Should().BeOfType<GistCommunityLinksService>();
+        provider.GetRequiredService<CommunityLinksCache>().Should()
+            .BeSameAs(provider.GetRequiredService<CommunityLinksCache>());
 
         // Both spellings resolve to ONE instance: the modal component subscribes to the concrete
         // service and the wizard raises through the interface, so two instances mean a prompt that

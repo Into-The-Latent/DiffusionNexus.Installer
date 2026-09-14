@@ -1,0 +1,38 @@
+<svg class="community-icon" data-icon="@Resolved" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" focusable="false">@((MarkupString)Glyphs[Resolved])</svg>
+
+@code {
+    /// <summary>
+    /// The <c>icon</c> key from the community-links document. Matched case-insensitively; a key
+    /// nobody drew yet renders the neutral link glyph rather than a blank chip, so the operator
+    /// can ship a new row before the installer knows its icon.
+    /// </summary>
+    [Parameter] public string? Key { get; set; }
+
+    /// <summary>The neutral glyph every unknown key falls back to.</summary>
+    public const string Fallback = "link";
+
+    private string Resolved
+    {
+        get
+        {
+            var key = Key?.Trim().ToLowerInvariant();
+            return key is not null && Glyphs.ContainsKey(key) ? key : Fallback;
+        }
+    }
+
+    /// <summary>
+    /// Inline monochrome glyphs on a 24-unit box. Vector rather than the 2.x installer's PNGs
+    /// (the YouTube one alone is 1.2 MB) so they weigh a few hundred bytes each and follow the
+    /// theme colour through currentColor.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> Glyphs = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["youtube"] = """<path d="M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8ZM10 15V9l5.2 3L10 15Z"/>""",
+        ["patreon"] = """<circle cx="15" cy="9" r="6"/><rect x="3" y="3" width="3.6" height="18" rx=".5"/>""",
+        ["civitai"] = """<path fill-rule="evenodd" d="M12 1.5 21.1 6.75v10.5L12 22.5 2.9 17.25V6.75L12 1.5Zm0 3.46L5.9 8.48v7.04L12 19.04l6.1-3.52v-2.3h-3v.57L12 15.15l-3.1-1.79v-2.72L12 8.85l3.1 1.79v.56h3V8.48L12 4.96Z"/>""",
+        ["globe"] = """<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z"/></g>""",
+        ["mail"] = """<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></g>""",
+        ["linktree"] = """<path d="M11 2h2v5.3l3.8-3.8 1.4 1.4-3.7 3.7H20v2h-5.5l3.7 3.7-1.4 1.4L13 12v10h-2V12l-3.8 3.7-1.4-1.4 3.7-3.7H4v-2h5.5L5.8 4.9l1.4-1.4L11 7.3V2Z"/>""",
+        [Fallback] = """<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>"""
+    };
+}

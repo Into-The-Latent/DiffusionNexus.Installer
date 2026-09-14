@@ -8,6 +8,7 @@ using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
+using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +26,7 @@ public class WelcomePageTests : BunitContext
         // markup when opened), so the page still needs IFeedbackReportingService resolvable at
         // construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+        Services.AddSingleton(OfflineCommunityLinks.Cache());
 
         // The software strip watches itself through wwwroot/js/jukebox.js once its cards exist.
         // Planned here rather than per test because every render that produces cards makes the
@@ -360,6 +362,6 @@ public class WelcomePageTests : BunitContext
 
         // Moved up from the old gallery footer; must survive an empty catalog.
         cut.WaitForAssertion(() => cut.Find("a[href='/licenses']").Should().NotBeNull());
-        cut.FindAll(".community-link").Should().HaveCount(3);
+        cut.FindAll(".community-link").Should().HaveCount(CommunityLink.Defaults.Count);
     }
 }

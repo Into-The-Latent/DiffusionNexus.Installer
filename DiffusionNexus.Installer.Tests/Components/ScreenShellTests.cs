@@ -1,5 +1,6 @@
 using Bunit;
 using DiffusionNexus.Installer.Electron.Components.Shared;
+using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,7 @@ public class ScreenShellTests : BunitContext
     public ScreenShellTests()
     {
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
+        Services.AddSingleton(OfflineCommunityLinks.Cache());
     }
 
     private IRenderedComponent<ScreenShell> RenderShell() =>
@@ -45,7 +47,7 @@ public class ScreenShellTests : BunitContext
         var cut = RenderShell();
 
         cut.Find(".screen > .community").Should().NotBeNull();
-        cut.FindAll(".community-link").Should().HaveCount(3);
+        cut.FindAll(".community-link").Should().HaveCount(CommunityLink.Defaults.Count);
     }
 
     [Fact]

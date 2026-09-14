@@ -1,22 +1,47 @@
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Electron.Services
+@implements IDisposable
+@inject CommunityLinksCache Cache
 
 <div class="community">
     <h4>Join the Community</h4>
     <div class="community-links">
-        @foreach (var link in CommunityLink.Default)
+        @foreach (var link in Cache.Links)
         {
             <a class="community-link"
                href="@link.Url"
+               title="@link.Name"
                target="_blank"
                rel="noopener noreferrer"
                @onclick="() => OpenAsync(link.Url)"
-               @onclick:preventDefault="@ElectronHost.IsActive">@link.Name</a>
+               @onclick:preventDefault="@ElectronHost.IsActive"><CommunityLinkIcon Key="@link.Icon" /><span>@link.Name</span></a>
         }
     </div>
 </div>
 
 @code {
+    protected override void OnInitialized()
+    {
+        Cache.Changed += OnLinksChanged;
+
+        // Deliberately not awaited: the footer paints the compiled-in defaults now and swaps in
+        // the remote list when the fetch lands. The cache's task never faults, and it is the
+        // same task for every screen, so this costs one request per process, not per render.
+        _ = Cache.LoadAsync();
+    }
+
+    private void OnLinksChanged()
+    {
+        try
+        {
+            _ = InvokeAsync(StateHasChanged);
+        }
+        catch (Exception)
+        {
+            // The fetch can land after the circuit that hosted this footer is gone.
+        }
+    }
+
     /// <summary>
     /// Inside Electron a plain anchor navigates the APP's own window to the target, stranding the
     /// user in an installer that has become a browser with no address bar. Hand the URL to the
@@ -36,4 +61,6 @@
             // A community link that fails to open must never take the welcome screen down.
         }
     }
+
+    public void Dispose() => Cache.Changed -= OnLinksChanged;
 }

@@ -1,4 +1,6 @@
+using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Host;
+using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,6 +24,14 @@ public static class HostServiceCollectionExtensions
     /// </summary>
     public const string FeedbackRelayUrl = "https://diffusionnexus-feedback-relay.diffusionnexus.workers.dev";
 
+    /// <summary>
+    /// Unpinned raw URL of the community-links document: a second file in the same Gist that
+    /// holds the in-app announcements, so one place edits both and no release is needed
+    /// (issue #6). Always serves the latest revision.
+    /// </summary>
+    public const string CommunityLinksGistUrl =
+        "https://gist.githubusercontent.com/Little-God1983/358c5fccc6655f6e56aef8470bb17c1c/raw/community-links.json";
+
     public static IServiceCollection AddInstallerHostServices(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -30,6 +40,13 @@ public static class HostServiceCollectionExtensions
 
         services.AddSingleton<IFeedbackReportingService>(_ => new FeedbackReportingService(
             new FeedbackReportingServiceOptions { RelayUrl = FeedbackRelayUrl }));
+
+        // Its own HttpClient, never the container's: AddInstallationServices registers one with an
+        // infinite timeout for model downloads. The service applies its own short timeout on top,
+        // and the cache makes it one request per process rather than one per screen.
+        services.AddSingleton<ICommunityLinksService>(_ => new GistCommunityLinksService(
+            new CommunityLinksServiceOptions { Url = CommunityLinksGistUrl, UserAgent = "DiffusionNexus-Installer/3" }));
+        services.AddSingleton<CommunityLinksCache>();
 
         // Registered as the concrete type AND the interface, deliberately: the modal component
         // resolves the concrete service to subscribe to it, the wizard resolves the interface.
