@@ -215,6 +215,42 @@ h2 {
     display: flex;
 }
 
+/* The install stage is the other screen that outgrows the 1000px column: it is two columns of
+   long content -- pip output on one side, a three-column report with full paths on the other --
+   and at 1000px each half is ~460px, which wraps every log line and puts a horizontal scrollbar
+   under the report while a maximised window shows 900px of empty margin on either side. The
+   wizard's earlier stages stay in the narrow column: they are single questions, and a 1750px-wide
+   "choose a folder" box is worse, not better.
+   Keyed on the split that only the install stage renders, and a descendant rather than a child
+   because it sits inside .wizard. */
+.screen-body:has(.install-split) {
+    max-width: 1800px;
+    display: flex;
+    /* Without this the body is a flex item whose minimum is its own content, so it grows past the
+       height the shell just fixed and every shrink below it is cancelled before it starts. */
+    min-height: 0;
+}
+
+/* The shell is normally min-height: 100vh, which lets a long screen grow past the window. This one
+   must not: its two columns are BOTH scrollable, so growing means the buttons and the footer leave
+   the bottom of the window while the space to scroll them back into view is inside the panels. A
+   definite height is also what lets the chain below shrink at all -- flex items resolve against a
+   definite container, and against a min-height one they just take their content's size. */
+.screen:has(.install-split) {
+    height: 100vh;
+}
+
+/* The chain that turns the shell's height into the columns' height: body -> wizard -> split ->
+   panel -> the scrolling box inside it. Every link needs min-height: 0, because a flex item's
+   default minimum is its content -- without it the log and the report refuse to shrink, overflow
+   their panel, and push the buttons off the bottom of the window instead of scrolling. */
+.wizard:has(.install-split) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 /* The updates page brings its own width and padding; don't apply them twice. */
 .page .shell {
     padding: 0;
@@ -484,6 +520,96 @@ progress {
     font-variant-numeric: tabular-nums;
 }
 
+/* The install screen is two columns: what is happening (progress, downloads, log) beside what it
+   produced (the report, filling row by row). Stacked, the report sat a screen below the log and
+   nobody saw it until the install they were watching had already ended.
+   Both tracks are minmax(0, ...) -- a grid column's default min-width is its content, so one long
+   log line or one wide report comment would otherwise stretch the column past the window. The log
+   gets the larger share because its lines are the long ones. */
+.install-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 1rem;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Both columns run the full height of the window rather than each stopping at its own content:
+   the report is the one that grows during a run, and a right column that ends halfway up leaves
+   the space it will need sitting empty beside the log. The gap owns the spacing between them;
+   .panel's own bottom margin would only push the buttons away from the shorter column. */
+.install-split > .panel {
+    margin-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    /* The backstop. If the boxes inside ever need more room than the panel has -- a floor that
+       cannot be met, a step message that wraps to three lines -- the overflow is clipped at the
+       panel's own edge instead of painting over the buttons below it, which is what a pinned
+       100vh screen did with nothing to scroll it back into view. The boxes scroll internally, so
+       the content stays reachable either way. */
+    overflow: hidden;
+}
+
+/* Whatever height is left after the headings, the progress line and the download row. The caps on
+   the base rules above stay put as the fallback for any context without this flex chain. */
+.install-split .install-log,
+.install-split .report-scroll {
+    flex: 1;
+    max-height: none;
+}
+
+/* ...but never squeezed to nothing on a short window. Below this the page scrolls instead. */
+.install-split .install-log {
+    min-height: 8rem;
+}
+
+.install-split .report-scroll {
+    min-height: 6rem;
+}
+
+/* A workload with dozens of models reports dozens of rows. Scrolling them inside the panel keeps
+   the buttons under the columns reachable instead of a page-length scroll away, and keeps the
+   outcome heading above the table in view while the rows arrive. */
+.report-scroll {
+    max-height: 26rem;
+    overflow: auto;
+}
+
+/* Below this the two columns are each too narrow to read; one above the other beats both cramped.
+   Around the 900px minimum window width, so it is the user shrinking the window that triggers it. */
+@media (max-width: 900px) {
+    .install-split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Narrow OR short, the filled layout stops being an improvement and starts being a trap.
+   Narrow: the columns stack, and two stacked panels cannot both fill one window.
+   Short: below the 650px minimum window height Program.cs sets, there is less room than even the
+   panels' floors need, and a screen pinned to exactly 100vh has nowhere to put the overflow.
+   Either way the screen goes back to growing and the page back to scrolling, with the panels on
+   the caps they had before -- which is what every other wizard stage does at these sizes.
+   Measured with a model download in flight (its row costs the left column ~40px, which is what
+   used to tip this over at 650): filled and fully visible from 650 up. */
+@media (max-width: 900px), (max-height: 640px) {
+    .screen:has(.install-split) {
+        height: auto;
+    }
+
+    .install-split {
+        flex: none;
+    }
+
+    .install-split .install-log {
+        max-height: 22rem;
+    }
+
+    .install-split .report-scroll {
+        max-height: 26rem;
+    }
+}
+
 /* Bounded and scrollable. Unbounded, this element grew the page until anything
    rendered after it sat thousands of pixels below the fold. */
 .install-log {
@@ -527,11 +653,15 @@ progress {
     color: #e8c67a;
 }
 
-.result-ok h3 {
+/* On the outcome heading itself. These used to be descendant selectors (.result-ok h3) matching an
+   <h3> inside a wrapper div; the heading became the element that carries the class, which left both
+   rules matching nothing and every outcome -- complete, cancelled and failed alike -- in the
+   default heading colour. */
+.result-ok {
     color: var(--accent);
 }
 
-.result-bad h3 {
+.result-bad {
     color: #ff8f8f;
 }
 

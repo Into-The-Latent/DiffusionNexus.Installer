@@ -5,6 +5,9 @@ using DiffusionNexus.Installer.SDK.Services;
 using FluentAssertions;
 using Moq;
 using Xunit;
+// Aliased, not imported: Models.Installation also carries an InstallationOptions that would
+// collide with the Services one this file uses throughout.
+using InstallReportEntry = DiffusionNexus.Installer.SDK.Models.Installation.InstallReportEntry;
 using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
 
 namespace DiffusionNexus.Installer.Tests.Install;

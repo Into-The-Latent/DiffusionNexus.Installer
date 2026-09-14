@@ -126,6 +126,80 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void the_install_screen_keeps_its_two_columns_inside_the_window()
+    {
+        // A grid column's default minimum is its CONTENT, so plain 1fr tracks let one unwrapped
+        // log line or one long report comment push the whole screen wider than the window -- with
+        // no horizontal scrollbar in Electron to get back from it.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var split = Regex.Match(css, @"\.install-split\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        split.Should().Contain("grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr)");
+
+        // And below the app's minimum window width the two columns stack instead of both being
+        // too narrow to read.
+        var stacked = Regex.Match(css, @"@media \(max-width: 900px\)\s*\{\s*\.install-split\s*\{(?<body>[^}]*)\}");
+        stacked.Success.Should().BeTrue("the columns must stack on a narrow window");
+        stacked.Groups["body"].Value.Should().Contain("grid-template-columns: minmax(0, 1fr)");
+    }
+
+    [Fact]
+    public void the_install_screen_fills_the_window_it_is_given()
+    {
+        // Both halves of "use the space". Without the width opt-out a maximised 1900px window
+        // shows two ~460px columns marooned between 900px margins; without the height chain the
+        // panels stop at their content and leave the bottom third of the window empty. Each link
+        // of that chain needs min-height: 0 -- a flex item's default minimum is its own content,
+        // so one missing line silently cancels every shrink below it.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var body = Regex.Match(css, @"\.screen-body:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        body.Should().Contain("max-width: 1800px").And.Contain("min-height: 0");
+
+        var screen = Regex.Match(css, @"\.screen:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        screen.Should().Contain("height: 100vh",
+            "flex items resolve against a definite height; against min-height: 100vh they just take their content's");
+
+        var wizard = Regex.Match(css, @"\.wizard:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        wizard.Should().Contain("flex: 1").And.Contain("min-height: 0");
+
+        var split = Regex.Match(css, @"\.install-split\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        split.Should().Contain("flex: 1").And.Contain("min-height: 0");
+
+        // The backstop under all of it. A pinned 100vh screen has nowhere to put overflow, so a box
+        // that cannot shrink to fit painted straight over the buttons below it -- unscrollable.
+        var panel = Regex.Match(css, @"\.install-split > \.panel\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        panel.Should().Contain("overflow: hidden");
+
+        // And the escape hatch keys on height as well as width: the height is what runs out first
+        // at the 650px minimum window Program.cs sets.
+        Regex.IsMatch(css, @"@media \(max-width: 900px\), \(max-height: \d+px\)").Should().BeTrue(
+            "a window can be too short for the filled layout as easily as too narrow");
+    }
+
+    [Fact]
+    public void the_install_outcome_keeps_its_colour()
+    {
+        // These were descendant selectors (.result-ok h3) matching an <h3> inside a wrapper div.
+        // The heading became the element carrying the class, which left both rules matching nothing
+        // and every outcome -- complete, cancelled and failed -- in the default heading colour.
+        // Nothing else would notice: the component tests assert on text, which did not change.
+        // Comments stripped first -- the rule above the fix names the old selector, and a search
+        // for it would find that sentence and pass.
+        var css = Regex.Replace(
+            File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css")),
+            @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
+
+        foreach (var rule in new[] { "result-ok", "result-bad" })
+        {
+            Regex.IsMatch(css, $@"\.{rule}\s*\{{").Should().BeTrue(
+                $".{rule} must style the element that carries it");
+            Regex.IsMatch(css, $@"\.{rule}\s+\w").Should().BeFalse(
+                $".{rule} must not be a descendant selector -- nothing is nested inside the heading");
+        }
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");

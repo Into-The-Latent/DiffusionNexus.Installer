@@ -16,6 +16,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
 using Moq;
 using Xunit;
 // Aliased: the page type is called Install and so is DiffusionNexus.Installer.Core.Install,
@@ -62,6 +63,7 @@ public class InstallPageTests : BunitContext
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
         session.SetupGet(s => s.LogLines).Returns([]);
         session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
+        session.SetupGet(s => s.ReportRows).Returns([]);
 
         Services.AddSingleton(source.Object);
         Services.AddSingleton(session.Object);
@@ -73,6 +75,14 @@ public class InstallPageTests : BunitContext
 
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+        Services.AddSingleton(Mock.Of<IPostInstallActions>());
+
+        // The install stage hands its log box to a script; bUnit runs no JavaScript, so the module
+        // is planned rather than executed.
+        JSInterop.SetupModule("./js/install-log.js")
+            .SetupModule("follow", _ => true)
+            .SetupVoid("dispose", _ => true)
+            .SetVoidResult();
 
         // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
@@ -299,6 +309,7 @@ public class InstallPageTests : BunitContext
         session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
         session.SetupGet(s => s.LogLines).Returns([]);
         session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
+        session.SetupGet(s => s.ReportRows).Returns([]);
 
         var preflight = new Mock<IModelPreflight>();
         preflight.Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
@@ -313,6 +324,14 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(preflight.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
+        Services.AddSingleton(Mock.Of<IPostInstallActions>());
+
+        // The install stage hands its log box to a script; bUnit runs no JavaScript, so the module
+        // is planned rather than executed.
+        JSInterop.SetupModule("./js/install-log.js")
+            .SetupModule("follow", _ => true)
+            .SetupVoid("dispose", _ => true)
+            .SetVoidResult();
 
         // The wizard now wears the same <ScreenShell> as the screens before it, and the shell
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.

@@ -1,62 +1,71 @@
+@using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Wizard
-@implements IDisposable
+@using DiffusionNexus.Installer.SDK.Services
+@implements IAsyncDisposable
 @inject IInstallSession Session
+@inject IPostInstallActions Actions
+@inject IJSRuntime JS
 
-<section class="panel">
-    <h2>Installing</h2>
+@* Two columns: what is happening on the left, what it produced on the right. The report used to
+   sit below the log, which meant it appeared -- all at once, a screen further down -- only after
+   the install everyone was watching had already finished. *@
+<div class="install-split">
+    <section class="panel">
+        <h2>Installing</h2>
 
-    @if (_startError is not null)
-    {
-        <p class="validation-error">This installation could not be started: @_startError</p>
-    }
-
-    @if (Session.Progress is { } progress)
-    {
-        <p>Step @(progress.StepIndex + 1) of @progress.TotalSteps — @progress.CurrentStep</p>
-        <progress max="100" value="@progress.ProgressPercentage"></progress>
-    }
-
-    @if (Session.CurrentDownload is { IsActive: true } download)
-    {
-        <p class="download">
-            @download.DownloadedSizeText of @download.TotalSizeText at @download.SpeedText
-            <button class="btn-secondary" @onclick="() => Session.SkipCurrentDownload()">Skip this file</button>
-        </p>
-    }
-
-    @* Tail, not the whole 5000-line buffer. Changes coalesce every 100ms, so rendering the full log
-       re-copied it under the lock OnLog needs, re-interpolated every line, and shipped a ~475KB
-       string over the SignalR circuit ten times a second to show one new line. *@
-    <pre class="install-log">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
-
-    <div class="wizard-actions">
-        @if (Session.Phase == InstallPhase.Running)
+        @if (_startError is not null)
         {
-            <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
+            <p class="validation-error">This installation could not be started: @_startError</p>
         }
-        else
-        {
-            @* The only way out of a finished install. Without it an Electron user -- no address
-               bar, no menu -- has to kill the process to install a second workload. It lives here
-               rather than on the page because this component subscribes to Session.Changed and so
-               actually re-renders when the run ends. *@
-            <button class="btn-primary" @onclick="Done">Back to all software</button>
-        }
-    </div>
 
-    @if (Session.Result is { } result)
-    {
-        <div class="@(result.IsSuccess ? "result-ok" : "result-bad")">
-            <h3>@(result.IsSuccess ? "Installation complete" : result.IsCancelled ? "Cancelled" : "Installation failed")</h3>
+        @if (Session.Progress is { } progress)
+        {
+            <p>Step @DisplayedStepNumber(progress) of @progress.TotalSteps — @StepLabel(progress)</p>
+            <progress max="100" value="@progress.ProgressPercentage"></progress>
+        }
+
+        @if (Session.CurrentDownload is { IsActive: true } download)
+        {
+            <p class="download">
+                @download.DownloadedSizeText of @download.TotalSizeText at @download.SpeedText
+                <button class="btn-secondary" @onclick="() => Session.SkipCurrentDownload()">Skip this file</button>
+            </p>
+        }
+
+        @* Tail, not the whole 5000-line buffer. Changes coalesce every 100ms, so rendering the full log
+           re-copied it under the lock OnLog needs, re-interpolated every line, and shipped a ~475KB
+           string over the SignalR circuit ten times a second to show one new line. *@
+        <pre class="install-log" @ref="_logBox">@string.Join('\n', Session.Tail(VisibleLogLines).Select(l => $"[{l.Level}] {l.Message}"))</pre>
+    </section>
+
+    @* Fills as the install runs: every row is recorded the moment its operation finishes, and the
+       finished result replaces the live rows with its own authoritative copy at the end. *@
+    <section class="panel install-result">
+        @{
+            var result = Session.Result;
+            var rows = Session.ReportRows;
+        }
+
+        <h2 class="@(result is null ? null : result.IsSuccess ? "result-ok" : "result-bad")">
+            @(result is null ? "Result"
+              : result.IsSuccess ? "Installation complete"
+              : result.IsCancelled ? "Cancelled"
+              : "Installation failed")
+        </h2>
+
+        @if (result is not null)
+        {
             <p>@result.Message</p>
+        }
 
-            @if (result.Report.Count > 0)
-            {
+        @if (rows.Count > 0)
+        {
+            <div class="report-scroll">
                 <table class="report">
                     <thead><tr><th>Planned operation</th><th>Result</th><th>Comment</th></tr></thead>
                     <tbody>
-                        @foreach (var row in result.Report)
+                        @foreach (var row in rows)
                         {
                             <tr class="@(row.IsWarning ? "report-warning" : null)">
                                 <td>@row.PlannedOperation</td>
@@ -66,10 +75,52 @@
                         }
                     </tbody>
                 </table>
-            }
-        </div>
+            </div>
+        }
+        else if (result is null)
+        {
+            <p class="panel-hint">Each planned operation appears here as it finishes.</p>
+        }
+    </section>
+</div>
+
+@if (_actionError is not null)
+{
+    <p class="validation-error">@_actionError</p>
+}
+
+<div class="wizard-actions">
+    @if (Session.Phase == InstallPhase.Running)
+    {
+        <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
     }
-</section>
+    else
+    {
+        @* The way out of a finished install. Without these an Electron user -- no address bar, no
+           menu -- has to kill the process to install a second workload. They live here rather than
+           on the page because this component subscribes to Session.Changed and so actually
+           re-renders when the run ends.
+
+           Keyed on "not running" rather than on a result being present: a run that never started
+           (the session refused it) has no result either, and that is exactly when being able to
+           leave matters most. *@
+        @if (CanOpenFolder)
+        {
+            <button class="btn-secondary" @onclick="OpenFolder">Open folder</button>
+        }
+        <button class="btn-secondary" @onclick="Done">Back to all software</button>
+        @if (Actions.CanCloseInstaller)
+        {
+            <button class="btn-secondary" @onclick="CloseInstaller">Close installer</button>
+        }
+        @* Only offered for an install that actually succeeded: starting a failed or cancelled one
+           runs a half-built app, and the report beside it is what the user needs to read first. *@
+        @if (Session.Result is { IsSuccess: true } && CanLaunch)
+        {
+            <button class="btn-primary" @onclick="LaunchAndClose">Start app &amp; close</button>
+        }
+    }
+</div>
 
 @code {
     /// <summary>
@@ -79,6 +130,12 @@
     private const int VisibleLogLines = 300;
 
     private string? _startError;
+    private string? _actionError;
+    private ElementReference _logBox;
+    private IJSObjectReference? _logModule;
+    private IJSObjectReference? _logFollower;
+    private bool _following;
+    private bool _disposed;
 
     [Parameter, EditorRequired] public WizardRun Run { get; set; } = default!;
 
@@ -110,7 +167,145 @@
         }
     }
 
+    /// <summary>
+    /// The step number to show. The pipeline's final report deliberately sets StepIndex to the step
+    /// COUNT so that ProgressPercentage reaches 100 -- which a plain zero-based +1 turned into
+    /// "Step 13 of 12" at the end of every 12-step install.
+    /// </summary>
+    private static int DisplayedStepNumber(InstallationProgress progress) =>
+        Math.Min(progress.StepIndex + 1, progress.TotalSteps);
+
+    /// <summary>The message the pipeline sends for a step it decided not to run.</summary>
+    private const string SkippedMessage = "Skipped";
+
+    /// <summary>
+    /// What the step line says after the number: the pipeline's own sentence for the step
+    /// ("Installing requirements...", and "Installation complete" at the end), rather than the raw
+    /// enum name the screen used to print. The exception is the bare "Skipped" it sends for a step
+    /// it passed over, which alone would not say WHICH step was skipped.
+    /// </summary>
+    private static string StepLabel(InstallationProgress progress) =>
+        string.IsNullOrWhiteSpace(progress.Message) ? progress.CurrentStep.ToString()
+        : progress.Message == SkippedMessage ? $"{progress.CurrentStep} — skipped"
+        : progress.Message;
+
+    /// <summary>
+    /// The folder and launcher the buttons act on. Recomputed per render rather than cached: the
+    /// buttons only exist once the run has ended, so this runs on the handful of renders after it,
+    /// not on the ten-a-second the log drives.
+    /// </summary>
+    private PostInstallTargets Targets => PostInstallTargets.From(Run.Plan, Session.Result);
+
+    private bool CanOpenFolder => Targets.Folder is { } folder && Directory.Exists(folder);
+
+    private bool CanLaunch => Targets.LauncherScript is { } script && File.Exists(script);
+
+    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), "open the installation folder");
+
+    private async Task LaunchAndClose()
+    {
+        if (!Act(() => Actions.LaunchApp(Targets.LauncherScript!), "start the installed app"))
+            return;
+
+        // Only after the app actually started: closing first would leave a user whose launcher
+        // failed with no installer, no app and no error message.
+        await CloseInstaller();
+    }
+
+    private async Task CloseInstaller()
+    {
+        try
+        {
+            await Actions.CloseInstallerAsync();
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"Could not close the installer: {ex.Message}";
+        }
+    }
+
+    /// <summary>Runs one host action, turning a failure into a message on the screen.</summary>
+    private bool Act(Action action, string what)
+    {
+        _actionError = null;
+
+        try
+        {
+            action();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Opening a folder and starting an app go through the OS, which fails for reasons the
+            // installer cannot predict (a folder deleted meanwhile, a blocked shell). None of them
+            // justify taking down the screen that holds the report.
+            _actionError = $"Could not {what}: {ex.Message}";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Hands the log box to the script that keeps it scrolled to its newest line. Once, on the
+    /// first render: the element outlives every later render, and this component re-renders about
+    /// ten times a second while an install runs.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _following || _disposed) return;
+        _following = true;
+
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/install-log.js");
+
+            // Checked after every await, and the locals are only published to the fields once the
+            // whole sequence is through -- so a teardown that lands mid-flight has nothing
+            // half-built to find, and this path cleans up after itself instead.
+            if (_disposed)
+            {
+                await module.DisposeAsync();
+                return;
+            }
+
+            var follower = await module.InvokeAsync<IJSObjectReference>("follow", _logBox);
+
+            if (_disposed)
+            {
+                await follower.InvokeVoidAsync("dispose");
+                await follower.DisposeAsync();
+                await module.DisposeAsync();
+                return;
+            }
+
+            _logModule = module;
+            _logFollower = follower;
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away mid-import. Nothing to scroll and nothing to clean up.
+        }
+    }
+
     private void OnChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Session.Changed -= OnChanged;
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        Session.Changed -= OnChanged;
+
+        try
+        {
+            if (_logFollower is not null)
+            {
+                await _logFollower.InvokeVoidAsync("dispose");
+                await _logFollower.DisposeAsync();
+            }
+
+            if (_logModule is not null) await _logModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit is already gone; the listeners went with the page that held them.
+        }
+    }
 }

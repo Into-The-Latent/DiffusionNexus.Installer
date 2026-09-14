@@ -1,4 +1,5 @@
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
 
 namespace DiffusionNexus.Installer.Core.Install;
@@ -19,6 +20,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private readonly TimeSpan _flushInterval;
     private readonly Lock _gate = new();
     private readonly Queue<InstallLogLine> _log = new();
+    private readonly List<InstallReportEntry> _reportRows = [];
     private readonly Timer _flushTimer;
     private int _dirty;
     private CancellationTokenSource? _cts;
@@ -40,6 +42,12 @@ public sealed class InstallSession : IInstallSession, IDisposable
     public IReadOnlyList<InstallLogLine> LogLines
     {
         get { lock (_gate) return [.. _log]; }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<InstallReportEntry> ReportRows
+    {
+        get { lock (_gate) return [.. _reportRows]; }
     }
 
     /// <inheritdoc/>
@@ -91,6 +99,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             Progress = null;
             CurrentDownload = null;
             _log.Clear();
+            _reportRows.Clear();
         }
 
         try
@@ -106,7 +115,10 @@ public sealed class InstallSession : IInstallSession, IDisposable
             // ToOptions runs every module's Contribute, which is also what writes the chosen folder
             // into the selection -- so it must run before the folder is read, not as an argument
             // beside it. Argument evaluation order made this work only by accident.
-            var options = plan.ToOptions();
+            // The report callback rides on the options rather than beside the progress reporters:
+            // that is where the SDK takes it, and it means every caller path -- not only the one
+            // that reaches the orchestrator directly -- can watch the report fill.
+            var options = plan.ToOptions() with { OnReportRow = OnReportRow };
             var targetDirectory = plan.Selection.TargetFolder;
 
             var result = await _orchestrator.InstallAsync(
@@ -118,6 +130,14 @@ public sealed class InstallSession : IInstallSession, IDisposable
                 new InlineProgress<DownloadProgress>(OnDownload),
                 GetSkipDownloadToken,
                 _cts.Token).ConfigureAwait(false);
+
+            // The finished report wins over the rows streamed during the run. They hold the same
+            // rows in the same order, but only the finished one carries what an aborted run adds
+            // at the very end for steps it never reached. A result built without a report -- the
+            // catch blocks below -- leaves the streamed rows alone rather than blanking a table
+            // the user watched fill up.
+            if (result.Report.Count > 0)
+                lock (_gate) { _reportRows.Clear(); _reportRows.AddRange(result.Report); }
 
             Result = result;
             Phase = result.IsCancelled ? InstallPhase.Cancelled
@@ -202,6 +222,18 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private void OnDownload(DownloadProgress progress)
     {
         CurrentDownload = progress;
+        MarkDirty();
+    }
+
+    /// <summary>
+    /// One report row, the moment the pipeline recorded it. Called on the installing thread, so it
+    /// does the least it can: append, and mark the session dirty. Coalesced like log lines, because
+    /// a model download's rows arrive in bursts and a render per row would ship the whole table
+    /// over the SignalR circuit each time.
+    /// </summary>
+    private void OnReportRow(InstallReportEntry entry)
+    {
+        lock (_gate) _reportRows.Add(entry);
         MarkDirty();
     }
 
