@@ -29,9 +29,15 @@ export function observe(track, owner) {
 
     // Open at the first tile. The strip has no memory worth restoring -- it is rebuilt on every
     // visit to this screen -- and the packaged app was found opening it scrolled to the far end
-    // with the first tile sliced in half. `auto`, not smooth: this is where the strip starts, not
+    // with the first tile sliced in half.
+    //
+    // `instant`, NOT `auto`: per CSSOM-View, `auto` means "use the element's computed
+    // scroll-behavior", and .jukebox-track sets `scroll-behavior: smooth`. So `auto` here animates
+    // -- the strip visibly slides back from the last tile to the first on every entry to the
+    // screen, and the ResizeObserver below fires its first callback mid-flight, reporting the
+    // position being left rather than the one being reached. This is where the strip starts, not
     // somewhere it travels to.
-    track.scrollTo({ left: 0, behavior: 'auto' });
+    track.scrollTo({ left: 0, behavior: 'instant' });
 
     track.addEventListener('scroll', report, { passive: true });
 
