@@ -20,6 +20,9 @@ public static class CoreServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        // TryAdd so a host can pin the strict policy in a Debug build -- the default relaxes it,
+        // and a manual check of what users will actually see needs a way to say so.
+        services.TryAddSingleton(WorkloadVisibility.Default);
         services.AddSingleton<IWorkloadSource, CatalogWorkloadSource>();
         services.AddSingleton<IInstallSession, InstallSession>();
         services.AddSingleton<IModelPreflight, ModelPreflight>();

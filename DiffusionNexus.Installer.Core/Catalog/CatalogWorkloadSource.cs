@@ -1,27 +1,27 @@
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
-using DiffusionNexus.Installer.SDK.Models.Enums;
 
 namespace DiffusionNexus.Installer.Core.Catalog;
 
 /// <summary>
-/// Installer-facing view of the catalog. DiffusionNexusCore workloads belong to the main app and
-/// are never offered here. Uses only the async ICatalog members: the blocking Source/State
-/// properties can run the first-load seed on the calling thread.
+/// Installer-facing view of the catalog. What it may offer is <see cref="WorkloadVisibility"/>'s
+/// decision, applied here rather than in the gallery so that the list and the by-id lookup can
+/// never disagree. Uses only the async ICatalog members: the blocking Source/State properties can
+/// run the first-load seed on the calling thread.
 /// </summary>
-public sealed class CatalogWorkloadSource(ICatalog catalog) : IWorkloadSource
+public sealed class CatalogWorkloadSource(ICatalog catalog, WorkloadVisibility visibility) : IWorkloadSource
 {
     public async Task<IReadOnlyList<InstallationConfiguration>> GetInstallerWorkloadsAsync(CancellationToken ct = default)
     {
         var all = await catalog.GetWorkloadsAsync(ct).ConfigureAwait(false);
-        return all.Where(w => w.WorkloadTarget == WorkloadTargetType.Installer).ToList();
+        return all.Where(visibility.IsOffered).ToList();
     }
 
     public async Task<InstallationConfiguration?> GetInstallerWorkloadAsync(Guid id, CancellationToken ct = default)
     {
         // One clone, not twenty-five: ICatalog.GetWorkloadAsync copies only the match.
         var workload = await catalog.GetWorkloadAsync(id, ct).ConfigureAwait(false);
-        return workload?.WorkloadTarget == WorkloadTargetType.Installer ? workload : null;
+        return workload is not null && visibility.IsOffered(workload) ? workload : null;
     }
 
     public Task<byte[]?> GetThumbnailAsync(Guid workloadId, CancellationToken ct = default)
