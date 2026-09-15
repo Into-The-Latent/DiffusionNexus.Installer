@@ -20,6 +20,9 @@
     "shortcutName": "Into the Latent Easy Installer",
     "installerIcon": "bin/Assets/Branding/app.ico",
     "uninstallerIcon": "bin/Assets/Branding/app.ico",
-    "installerHeaderIcon": "bin/Assets/Branding/app.ico"
+    "installerHeaderIcon": "bin/Assets/Branding/app.ico",
+    "installerHeader": "bin/Assets/Branding/header.bmp",
+    "installerSidebar": "bin/Assets/Branding/sidebar.bmp",
+    "uninstallerSidebar": "bin/Assets/Branding/sidebar.bmp"
   }
 }
