@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/refs/heads/master/packages/app-builder-lib/scheme.json",
   "compression": "maximum",
   "win": {
+    "icon": "bin/Assets/Branding/app.ico",
     "target": [
       {
         "target": "nsis",
@@ -16,7 +17,10 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "DiffusionNexus Installer"
+    "shortcutName": "DiffusionNexus Installer",
+    "installerIcon": "bin/Assets/Branding/app.ico",
+    "uninstallerIcon": "bin/Assets/Branding/app.ico",
+    "installerHeaderIcon": "bin/Assets/Branding/app.ico"
   },
   "publish": [
     {
