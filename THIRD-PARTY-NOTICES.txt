@@ -1,6 +1,6 @@
 ================================================================================
 THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
-DiffusionNexus Installer
+Into the Latent Easy Installer
 ================================================================================
 
 This product incorporates material from the projects listed below. The original

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Generates THIRD-PARTY-NOTICES.txt for the shipped DiffusionNexus Installer (Electron).
+    Generates THIRD-PARTY-NOTICES.txt for the shipped Into the Latent Easy Installer (Electron).
 
 .DESCRIPTION
     The installer ships three kinds of third-party material:
@@ -298,7 +298,7 @@ function Add-Line { param([string]$Text = '') ; [void]$sb.AppendLine($Text) }
 
 Add-Line $rule
 Add-Line 'THIRD-PARTY SOFTWARE NOTICES AND INFORMATION'
-Add-Line 'DiffusionNexus Installer'
+Add-Line 'Into the Latent Easy Installer'
 Add-Line $rule
 Add-Line ''
 Add-Line 'This product incorporates material from the projects listed below. The original'

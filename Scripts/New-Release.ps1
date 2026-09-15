@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds, packages and publishes a release of the DiffusionNexus Installer.
+    Builds, packages and publishes a release of the Into the Latent Easy Installer.
 
 .DESCRIPTION
     Packaging happens in TWO steps, and the second one is not optional.
@@ -118,7 +118,7 @@ Write-Host "  app-update.yml present" -ForegroundColor Green
 if ($SkipUpload) { Write-Host "SkipUpload set - done." -ForegroundColor Yellow; return }
 
 Write-Host "Step 3/3: publishing v$Version to $ghRepo" -ForegroundColor Cyan
-$setup = Join-Path $publish "DiffusionNexus-Setup-$Version.exe"
+$setup = Join-Path $publish "IntoTheLatent-EasyInstaller-Setup-$Version.exe"
 foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'))) {
     if (-not (Test-Path $f)) { throw "Expected artifact missing: $f" }
 }

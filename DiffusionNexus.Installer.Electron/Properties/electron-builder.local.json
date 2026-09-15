@@ -2,13 +2,14 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/refs/heads/master/packages/app-builder-lib/scheme.json",
   "compression": "maximum",
   "win": {
+    "icon": "bin/Assets/Branding/app.ico",
     "target": [
       {
         "target": "nsis",
         "arch": "x64"
       }
     ],
-    "artifactName": "DiffusionNexus-Setup-${version}.${ext}"
+    "artifactName": "IntoTheLatent-EasyInstaller-Setup-${version}.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -16,6 +17,12 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "DiffusionNexus Installer"
+    "shortcutName": "Into the Latent Easy Installer",
+    "installerIcon": "bin/Assets/Branding/app.ico",
+    "uninstallerIcon": "bin/Assets/Branding/app.ico",
+    "installerHeaderIcon": "bin/Assets/Branding/app.ico",
+    "installerHeader": "bin/Assets/Branding/header.bmp",
+    "installerSidebar": "bin/Assets/Branding/sidebar.bmp",
+    "uninstallerSidebar": "bin/Assets/Branding/sidebar.bmp"
   }
 }

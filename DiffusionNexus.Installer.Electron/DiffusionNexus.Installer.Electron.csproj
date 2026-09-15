@@ -46,9 +46,30 @@
       installed client's update path, so it is set deliberately and must not be churned.
     -->
     <ElectronPackageId>diffusion-nexus-installer</ElectronPackageId>
-    <Title>DiffusionNexus Installer</Title>
+    <Title>Into the Latent Easy Installer</Title>
     <ElectronExecutable>$(Title)</ElectronExecutable>
   </PropertyGroup>
+
+  <!--
+    Icons. electron-builder never sees the .NET ApplicationIcon and ElectronNET does not forward
+    any icon property to it, so without the win.icon / nsis.*Icon keys in Properties/
+    electron-builder*.json every shipped binary carried a stock icon: the Electron atom on
+    the product exe (and therefore every shortcut and the taskbar), the NSIS
+    globe on the setup and uninstall exes. The .ico is copied beside the .NET output so the
+    builder configs can reference it as bin/Assets/Branding/app.ico - electron-builder runs
+    with the publish root as cwd and its config may not use parent paths.
+
+    The NSIS wizard artwork lives beside it: sidebar.bmp (164x314, welcome/finish page panel,
+    install and uninstall) and header.bmp (150x57, the strip on every other page). NSIS wants
+    24-bit BMP. Both are crops of the originals kept under Assets/Branding/source, which are
+    not shipped.
+  -->
+  <PropertyGroup>
+    <ApplicationIcon>Assets\Branding\app.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Assets\Branding\*.ico;Assets\Branding\*.bmp" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <PropertyGroup>
     <!--
