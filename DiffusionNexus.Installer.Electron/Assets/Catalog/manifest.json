@@ -1,30 +1,30 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": 2,
+  "catalogVersion": 3,
   "channel": "Stable",
-  "commit": "a4ccf27de4da33e74c52f22c73c4171544231444",
-  "generatedAt": "2026-09-15T17:28:02.1137736+00:00",
+  "commit": "149f72d01b1363fff90323827ab5917cbfa1e406",
+  "generatedAt": "2026-09-15T19:11:28.8093644+00:00",
   "archive": {
     "name": "catalog.zip",
-    "sha256": "6ff8d2509fda266e79e5e91037cb51c28ce9bc2cccaff8b8f5357f0c5604d432",
-    "bytes": 2479646
+    "sha256": "14aaf86922651c6d5cf41407f9d18a07e6ebca5be434b8fe530dda4978bf588f",
+    "bytes": 2479665
   },
   "workloads": [
     {
       "id": "08a686b2-42c4-4aeb-bd59-0321455d06e1",
       "name": "Ernie-Image-Turbo",
-      "version": 1,
-      "subVersion": 4,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "98a1f9b3d518f086510fd486f853e0a06b323fbf3e2602381407324471048249"
+      "hash": "f497399b1e5de011f2a32a60aba7c69e4970ae57d3e81c6c6f49ff582a0a2a86"
     },
     {
       "id": "0d7a24d9-80ae-443b-9ff3-497cd54f5b7b",
       "name": "Wan 2.2 - GGUF",
       "version": 1,
-      "subVersion": 3,
+      "subVersion": 4,
       "isReleaseConfig": true,
-      "hash": "fd78389c2d9365be1733daf349ec792f4eaa34a4346d066ee6fd616908042022"
+      "hash": "229d96b7dcc645dd23b7632abc9572acab0ebf2a83b718905db8c2bb2e650ee7"
     },
     {
       "id": "137929e4-5c05-4304-80d4-5d785d45fd3f",
@@ -37,18 +37,18 @@
     {
       "id": "1f0a3aef-15d9-4b8a-80dc-b03f318e414f",
       "name": "Base-install-Triton-SageAttention-Manager",
-      "version": 1,
-      "subVersion": 1,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "ab535b255ee171eff3496b8d1fd5f83b53f405cc0dfcc3c9ebc20e0abdcc4379"
+      "hash": "e962136acf2625ce922e8991a7cf8cfb13de3bf4c4464ee24ae85e713450965b"
     },
     {
       "id": "3b463f60-a862-4135-ac0f-0ab18d8e3eb8",
       "name": "Qwen-Image-Edit-2511 - Deprecated",
       "version": 1,
-      "subVersion": 6,
+      "subVersion": 7,
       "isReleaseConfig": false,
-      "hash": "501d4048a5f901510479ffeb8490f866ddd9d743b9506d3b1fba4e95d3ea3777"
+      "hash": "60d90e6a4c816e2a5b389e4315afccfcdd64f415d0efb4d41e91b7b1d5390951"
     },
     {
       "id": "3f207e2b-b0d3-439e-82cf-53901f3904e1",
@@ -77,10 +77,10 @@
     {
       "id": "6bc68a3f-2e93-4866-9827-25d666d4249a",
       "name": "Ideogram-4.0",
-      "version": 1,
-      "subVersion": 7,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "e53b34b147787f380271d0030ceb3a2f3bd8928503b582c60970b727b31122e3"
+      "hash": "a431d960063801dbe3c8509629948fe8c4f0805bc7dc706a809c832e670b8d76"
     },
     {
       "id": "6e7dfafd-1261-4f9a-a63b-c79cd69a1267",
@@ -109,10 +109,10 @@
     {
       "id": "725ffdfb-22b6-436f-905a-ce678bda287d",
       "name": "Qwen-Image-Edit-2511 - 2512 - Layered",
-      "version": 1,
-      "subVersion": 12,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "7848b9146b089b26aa7ddc4014004b9e4f3bbc6175905d1639919acfcd609705"
+      "hash": "df8ee9acc74828824d47700a98dc8b02693b4fcda2b60d14c71f4f15a7872f6a"
     },
     {
       "id": "737be0cb-5349-4d18-a058-82ea3ef61aae",
@@ -125,10 +125,10 @@
     {
       "id": "8063df6d-2cdd-4535-bc7c-d3fddbef05ab",
       "name": "FlashVSR-Video\u0026Image Upscale",
-      "version": 1,
-      "subVersion": 5,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "3d65be7dcaa22f84ba9b940c859d6ee4842510819c81f71ebc8548e15cb55c90"
+      "hash": "2c090e8319366c65ab43cd85b9cde3edc4faf55f6c4451eda8bf0d89ada8eb45"
     },
     {
       "id": "8819a1f9-09bf-48d7-9da0-214127852ab3",
@@ -150,9 +150,9 @@
       "id": "a6d086d1-0347-45fe-adab-432c7dd5b52a",
       "name": "Config535",
       "version": 1,
-      "subVersion": 1,
+      "subVersion": 2,
       "isReleaseConfig": false,
-      "hash": "283792808d036c7bb21e11a5861403949f8e5448e91d52f3be761dcae9e9e5e5"
+      "hash": "7f8d7a0e601ba8ca534abd041371a4589357b0d0afc5e0a996f8c828e3c694a9"
     },
     {
       "id": "b62b0806-39a2-4184-b830-c948b1a02126",
@@ -173,42 +173,42 @@
     {
       "id": "be99376d-c213-4375-94d0-2a9a4a4dc92c",
       "name": "LTX2 - GGUF - Legacy",
-      "version": 1,
-      "subVersion": 14,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "eb94bb25cef78eae4a55c64f0a981743824deec5ef0429f753b022489160acb8"
+      "hash": "14d51b5a2366308f8b7c0171e5937a7c9533e8e5e412fb0ffb12edd99a5402cd"
     },
     {
       "id": "e358f5aa-5204-4c5f-a1ed-266265c1f413",
       "name": "LTX-2-3-V1.1-Director-GGUF",
-      "version": 1,
-      "subVersion": 9,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "7802f0ccee8b14a7e262f1d2c26f1a4b69a6b5556768ee7355404199359219bc"
+      "hash": "67a51aa7eb08c2d8f4c2d8b74fab4ca2c2bdd0468528a0fde2fea9e5bbfa2fa5"
     },
     {
       "id": "e4b40bf4-7cb1-4765-8ff2-24e663b6a271",
       "name": "Blanck-ComfyUI",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": false,
-      "hash": "e4a66b44035f8365f567cb57454c1d4e8686f44b247af75605f5737f57461a40"
+      "hash": "4729d39abe23e57edfba6783344841360be808a44acd248ec8952efa713fafef"
     },
     {
       "id": "e79c079a-2fd7-4fe7-8086-23731092555d",
       "name": "Krea-2-Turbo",
-      "version": 1,
-      "subVersion": 7,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "3e81739a92f2d40e3c358fceaaa07b332979d920d191113704ce0e208d115442"
+      "hash": "a0e432e43a662d90994155d591ab214b113f403811793f13e557fe1f9f6389bc"
     },
     {
       "id": "f07ee6e0-742f-47a5-9828-b48d2601ccf3",
       "name": "Flux-Klein 9b \u002B 4b",
-      "version": 1,
-      "subVersion": 6,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": true,
-      "hash": "00ec147152aa974a49c6f5609787f122cd09edaa1481a7ad0e4786e8b165c589"
+      "hash": "89bdccd51273629e1494adbd2aa4cdef58d698a54a29c15eb8ee94b20dc2d9d8"
     }
   ],
   "workflows": [
