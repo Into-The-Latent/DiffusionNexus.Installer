@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": 1,
+  "catalogVersion": 2,
   "channel": "Stable",
-  "commit": "3847a2403322276ef990a556091ebb313f8d5fb6",
-  "generatedAt": "2026-09-13T16:59:23.2751788+00:00",
+  "commit": "a4ccf27de4da33e74c52f22c73c4171544231444",
+  "generatedAt": "2026-09-15T17:28:02.1137736+00:00",
   "archive": {
     "name": "catalog.zip",
-    "sha256": "3d96300c341925735e67ee4aa83c7176a7b1895785999ce05408f27620819804",
-    "bytes": 2474503
+    "sha256": "6ff8d2509fda266e79e5e91037cb51c28ce9bc2cccaff8b8f5357f0c5604d432",
+    "bytes": 2479646
   },
   "workloads": [
     {
@@ -189,10 +189,10 @@
     {
       "id": "e4b40bf4-7cb1-4765-8ff2-24e663b6a271",
       "name": "Blanck-ComfyUI",
-      "version": 1,
-      "subVersion": 2,
+      "version": 2,
+      "subVersion": 0,
       "isReleaseConfig": false,
-      "hash": "3a38f74703019f357726bd13bee65eb15ff5ea926efba1c9fbc3af2dca21e5e4"
+      "hash": "e4a66b44035f8365f567cb57454c1d4e8686f44b247af75605f5737f57461a40"
     },
     {
       "id": "e79c079a-2fd7-4fe7-8086-23731092555d",
