@@ -9,7 +9,7 @@
         "arch": "x64"
       }
     ],
-    "artifactName": "DiffusionNexus-Setup-${version}.${ext}"
+    "artifactName": "IntoTheLatent-EasyInstaller-Setup-${version}.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -17,7 +17,7 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "DiffusionNexus Installer",
+    "shortcutName": "Into the Latent Easy Installer",
     "installerIcon": "bin/Assets/Branding/app.ico",
     "uninstallerIcon": "bin/Assets/Branding/app.ico",
     "installerHeaderIcon": "bin/Assets/Branding/app.ico"

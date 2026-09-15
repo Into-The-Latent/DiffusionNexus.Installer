@@ -68,7 +68,7 @@ builder.UseElectron(args, async (IServiceProvider services) =>
 {
     var options = new BrowserWindowOptions
     {
-        Title = "DiffusionNexus Installer",
+        Title = "Into the Latent Easy Installer",
         Width = 1100,
         Height = 800,
         MinWidth = 900,

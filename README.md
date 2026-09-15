@@ -1,6 +1,6 @@
-# DiffusionNexus Installer
+# Into the Latent Easy Installer
 
-The DiffusionNexus installer, 3.x line — **Electron shell + Blazor UI, written in C#**.
+The Into the Latent Easy Installer (formerly the DiffusionNexus Installer), 3.x line — **Electron shell + Blazor UI, written in C#**.
 
 Replaces the 2.x Avalonia installer. Install logic is not duplicated here: it lives in the
 **DiffusionNexus Installer SDK** and is consumed as NuGet packages.
