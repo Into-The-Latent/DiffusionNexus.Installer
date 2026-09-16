@@ -76,6 +76,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
         Services.AddSingleton(Mock.Of<IPostInstallActions>());
+        Services.AddSingleton(Mock.Of<IClipboard>());
 
         // The install stage hands its log box to a script; bUnit runs no JavaScript, so the module
         // is planned rather than executed.
@@ -326,6 +327,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
         Services.AddSingleton(Mock.Of<IPostInstallActions>());
+        Services.AddSingleton(Mock.Of<IClipboard>());
 
         // The install stage hands its log box to a script; bUnit runs no JavaScript, so the module
         // is planned rather than executed.
@@ -384,6 +386,7 @@ public class InstallPageTests : BunitContext
         // the folders page are remembered when the user moves on from it.
         RegisterContent(EmptyScanner());
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.Find("input[data-role='use-library']").Change(true);   // the section only exists with the switch on (#15)
         page.Find(".advanced-toggle").Click();
         page.Find("[data-folder-key='loras']").Input("MyLoras");
 

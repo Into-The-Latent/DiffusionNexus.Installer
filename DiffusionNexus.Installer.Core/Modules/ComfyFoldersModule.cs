@@ -62,6 +62,10 @@ public sealed class AdditionalFolderRow
 /// --output-directory in the generated launcher script. Both are ComfyUI mechanisms, which is why
 /// this is a ComfyUI-only module -- see <see cref="AppliesTo"/>.
 /// </para>
+/// <para>
+/// Everything about model folders sits behind <see cref="UseModelLibraryFolder"/>, off by default.
+/// The output folder does not: it is not a model folder.
+/// </para>
 /// </summary>
 public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWizardModule
 {
@@ -72,6 +76,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
     private WizardSelection? _selection;
     private UserSettings? _user;
+    private bool _useModelLibraryFolder;
     private string _modelBaseFolder = string.Empty;
     private readonly List<FolderTypeRow> _folderTypes = [];
     private readonly List<AdditionalFolderRow> _additionalFolders = [];
@@ -81,6 +86,20 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     // have stored fields blanked by a page they never saw.
     private Dictionary<string, string> _loadedOverrides = new(StringComparer.OrdinalIgnoreCase);
     private List<(string BaseName, string MapsTo)> _loadedAdditional = [];
+
+    /// <summary>
+    /// The "use my own model folder" switch (issue #15). Off -- the default -- means ComfyUI's own
+    /// models folders: the library folder, per-type names and additional folders below stay as
+    /// remembered answers but reach neither the selection nor the install, and no
+    /// extra_model_paths.yaml is written. Before this switch existed a remembered library was
+    /// applied on every ComfyUI install from behind the collapsed Advanced section, out of sight.
+    /// Persisted, so a user who turned it on stays on.
+    /// </summary>
+    public bool UseModelLibraryFolder
+    {
+        get => _useModelLibraryFolder;
+        set { _useModelLibraryFolder = value; SyncSelection(); }
+    }
 
     public string ModelBaseFolder
     {
@@ -118,12 +137,13 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>
     /// Whether anything in the advanced section changes the install; the panel flags it on the
     /// closed toggle. The library folder lives in that section too, so a saved library applied out
-    /// of sight counts.
+    /// of sight counts. Nothing counts while the switch is off: none of it reaches the install.
     /// </summary>
     public bool HasCustomFolders =>
-        !string.IsNullOrWhiteSpace(ModelBaseFolder)
-        || _folderTypes.Any(r => r.Override is not null)
-        || _additionalFolders.Any(r => r.IsComplete);
+        UseModelLibraryFolder
+        && (!string.IsNullOrWhiteSpace(ModelBaseFolder)
+            || _folderTypes.Any(r => r.Override is not null)
+            || _additionalFolders.Any(r => r.IsComplete));
 
     /// <summary>
     /// Where models land when the library box is left empty: the repository's own models folder,
@@ -170,6 +190,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         _user = user;
+        _useModelLibraryFolder = user.UseModelLibraryFolder;
         ModelBaseFolder = user.DefaultModelBaseFolder;
         OutputFolder = user.OutputFolder;
 
@@ -246,7 +267,10 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         // Re-read, never the copy from InitializeAsync: the install-folder module saves just
         // before this one, and writing a stale object back would undo it.
+        // The folder is saved whether or not the switch is on: off is "do not apply", not
+        // "forget", so turning it back on next time restores the library.
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+        user.UseModelLibraryFolder = UseModelLibraryFolder;
         user.DefaultModelBaseFolder = ModelBaseFolder.Trim();
         user.OutputFolder = OutputFolder.Trim();
 
@@ -271,28 +295,38 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     {
         if (_selection is null || !AppliesTo(_selection)) return;
 
-        _selection.ModelBaseFolder = string.IsNullOrWhiteSpace(_modelBaseFolder) ? null : _modelBaseFolder;
-        _selection.FolderPathOverrides = FolderPathOverrides;
+        _selection.ModelBaseFolder = EffectiveModelBaseFolder;
+        _selection.FolderPathOverrides = UseModelLibraryFolder
+            ? FolderPathOverrides
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>The library folder as the install sees it: null when blank or when the switch is off.</summary>
+    private string? EffectiveModelBaseFolder =>
+        UseModelLibraryFolder && !string.IsNullOrWhiteSpace(_modelBaseFolder) ? _modelBaseFolder : null;
 
     public void Contribute(InstallationOptionsDraft draft)
     {
-        var model = string.IsNullOrWhiteSpace(ModelBaseFolder) ? null : ModelBaseFolder;
+        var model = EffectiveModelBaseFolder;
         draft.ModelBaseFolder = model;
 
         // Generating the YAML without a base folder would write an empty mapping, so the two
-        // travel together.
+        // travel together. With the switch off there is no base folder, so no YAML.
         draft.GenerateExtraModelPaths = model is not null;
         draft.OverwriteExtraModelPaths = model is not null && OverwriteExtraModelPaths;
 
         draft.FolderPathOverrides.Clear();
-        foreach (var (key, value) in FolderPathOverrides)
-            draft.FolderPathOverrides[key] = value;
-
         draft.AdditionalFolders.Clear();
-        draft.AdditionalFolders.AddRange(_additionalFolders
-            .Where(r => r.IsComplete)
-            .Select(r => r.ToModel(_user?.UserId ?? Guid.Empty)));
+
+        if (UseModelLibraryFolder)
+        {
+            foreach (var (key, value) in FolderPathOverrides)
+                draft.FolderPathOverrides[key] = value;
+
+            draft.AdditionalFolders.AddRange(_additionalFolders
+                .Where(r => r.IsComplete)
+                .Select(r => r.ToModel(_user?.UserId ?? Guid.Empty)));
+        }
 
         draft.OutputFolder = string.IsNullOrWhiteSpace(OutputFolder) ? null : OutputFolder;
     }

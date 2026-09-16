@@ -29,6 +29,7 @@ public class InstallStageTests : BunitContext, IDisposable
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "dn-stage-" + Guid.NewGuid().ToString("N"));
     private readonly Mock<IInstallSession> _session = new();
     private readonly Mock<IPostInstallActions> _actions = new();
+    private readonly Mock<IClipboard> _clipboard = new();
 
     public InstallStageTests()
     {
@@ -39,9 +40,12 @@ public class InstallStageTests : BunitContext, IDisposable
         _session.SetupGet(s => s.ReportRows).Returns([]);
         _actions.SetupGet(a => a.CanCloseInstaller).Returns(true);
         _actions.Setup(a => a.CloseInstallerAsync()).Returns(Task.CompletedTask);
+        _clipboard.SetupGet(c => c.IsAvailable).Returns(true);
+        _clipboard.Setup(c => c.SetTextAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
 
         Services.AddSingleton(_session.Object);
         Services.AddSingleton(_actions.Object);
+        Services.AddSingleton(_clipboard.Object);
 
         // The log box hands itself to a script that keeps it scrolled to its newest line. bUnit
         // executes no JavaScript, so the module is planned rather than run -- without this every
@@ -335,5 +339,64 @@ public class InstallStageTests : BunitContext, IDisposable
         stage.FindAll("button").Single(b => b.TextContent.Trim() == "Open folder").Click();
 
         _actions.Verify(a => a.OpenFolder(_folder), Times.Once);
+    }
+
+    // ---- Copy log (issue #14) --------------------------------------------------------------------
+
+    private static InstallLogLine LogLine(string message) =>
+        new(DateTimeOffset.UtcNow, message, DiffusionNexus.Installer.SDK.Models.Enums.LogLevel.Info);
+
+    [Fact]
+    public async Task The_whole_log_can_be_copied_while_the_install_is_still_running()
+    {
+        // The whole buffer, not the 300-line tail the screen shows: a user pasting a failure into
+        // an issue needs what came before it.
+        var run = await RunAsync();
+        _session.SetupGet(s => s.LogLines).Returns([LogLine("first"), LogLine("last")]);
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.FindAll("button").Single(b => b.TextContent.Trim() == "Copy log").Click();
+
+        _clipboard.Verify(c => c.SetTextAsync(It.Is<string>(t => t.Contains("first") && t.Contains("last") && t.Contains("[Info]"))), Times.Once);
+        stage.WaitForAssertion(() => stage.Markup.Should().Contain("Copied"));
+    }
+
+    [Fact]
+    public async Task A_clipboard_that_refuses_says_so_instead_of_pretending()
+    {
+        var run = await RunAsync();
+        _session.SetupGet(s => s.LogLines).Returns([LogLine("first")]);
+        _clipboard.Setup(c => c.SetTextAsync(It.IsAny<string>())).ThrowsAsync(new InvalidOperationException("no clipboard"));
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.FindAll("button").Single(b => b.TextContent.Trim() == "Copy log").Click();
+
+        stage.WaitForAssertion(() => stage.Find(".validation-error").TextContent.Should().Contain("Could not copy the log").And.Contain("no clipboard"));
+    }
+
+    [Fact]
+    public async Task Without_a_clipboard_there_is_no_copy_button()
+    {
+        // Same rule as "Close installer": outside the Electron shell a button that silently does
+        // nothing is worse than no button.
+        var run = await RunAsync();
+        _clipboard.SetupGet(c => c.IsAvailable).Returns(false);
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Copy log");
+    }
+
+    [Fact]
+    public async Task A_finished_install_says_where_its_log_file_went()
+    {
+        var run = await RunAsync();
+        var file = Path.Combine(_folder, "installation-log-verbose-2026-09-16-14-30-02.txt");
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("All done", _folder));
+        _session.SetupGet(s => s.LogFilePath).Returns(file);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.Find(".log-file").TextContent.Should().Contain("installation-log-verbose-2026-09-16-14-30-02.txt");
     }
 }

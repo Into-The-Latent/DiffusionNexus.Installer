@@ -17,6 +17,8 @@ using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Microsoft.JSInterop;
 using Xunit;
 
 namespace DiffusionNexus.Installer.Tests;
@@ -26,6 +28,9 @@ public class DependencyInjectionTests
     private static ServiceProvider Build()
     {
         var services = new ServiceCollection();
+
+        // What the Blazor host provides per circuit; JsClipboard is the one host service that takes it.
+        services.AddScoped(_ => Mock.Of<IJSRuntime>());
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IGitService, GitService>();
         services.AddSingleton<IPythonService, PythonService>();
@@ -117,6 +122,10 @@ public class DependencyInjectionTests
         provider.GetRequiredService<UpdaterLog>().Should().NotBeNull();
         provider.GetRequiredService<IFolderPicker>().Should().NotBeNull();
         provider.GetRequiredService<IPostInstallActions>().Should().NotBeNull();
+
+        // Scoped -- it holds a circuit's IJSRuntime -- so resolved the way a circuit resolves it.
+        using (var scope = provider.CreateScope())
+            scope.ServiceProvider.GetRequiredService<IClipboard>().Should().BeOfType<JsClipboard>();
 
         // The footer on every screen reads the cache; the cache reads the Gist service. Both must
         // resolve, and the cache must be ONE instance or every screen would fetch again.

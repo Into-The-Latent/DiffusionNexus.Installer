@@ -51,7 +51,7 @@ public class ComfyFoldersAdvancedTests
     [Fact]
     public async Task A_saved_custom_name_prefills_its_row_and_counts_as_an_override()
     {
-        var (module, _) = Module(new UserSettings { DefaultLorasFolder = "Lora" });
+        var (module, _) = Module(new UserSettings { DefaultLorasFolder = "Lora", UseModelLibraryFolder = true });
         await module.InitializeAsync(Selection());
 
         module.FolderTypes.Single(t => t.Key == "loras").Value.Should().Be("Lora");
@@ -76,6 +76,7 @@ public class ComfyFoldersAdvancedTests
         var (module, _) = Module();
         var selection = Selection();
         await module.InitializeAsync(selection);
+        module.UseModelLibraryFolder = true;
 
         module.SetFolderType("loras", "MyLoras");
 
@@ -115,6 +116,7 @@ public class ComfyFoldersAdvancedTests
     {
         var (module, _) = Module();
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;
 
         var row = module.AddAdditionalFolder();
         row.BaseName = "extra";
@@ -176,7 +178,7 @@ public class ComfyFoldersAdvancedTests
     [Fact]
     public async Task A_library_folder_counts_as_custom_because_it_now_lives_in_the_advanced_section()
     {
-        var (module, _) = Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
+        var (module, _) = Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true });
         await module.InitializeAsync(Selection());
 
         module.HasCustomFolders.Should().BeTrue("a saved library applied out of sight must still be flagged");

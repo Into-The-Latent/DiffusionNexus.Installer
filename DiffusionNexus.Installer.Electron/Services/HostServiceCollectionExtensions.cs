@@ -58,6 +58,9 @@ public static class HostServiceCollectionExtensions
         services.AddSingleton<IFolderPicker, ElectronFolderPicker>();
         services.AddSingleton<IPostInstallActions, ElectronPostInstallActions>();
 
+        // Scoped, not singleton: it holds the circuit's IJSRuntime -- see JsClipboard.
+        services.AddScoped<IClipboard, JsClipboard>();
+
         return services;
     }
 }

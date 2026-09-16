@@ -52,6 +52,7 @@ public class OptionsFidelityTests
             DefaultLorasFolder = @"E:\Loras",
             DefaultCheckpointsFolder = @"F:\Checkpoints",
             additionalFolders = [new AdditionalFolder { BaseName = "extra", MapsTo = @"G:\Extra" }],
+            UseModelLibraryFolder = true,
         };
 
         var module = ComfyFolders(settings);
@@ -76,6 +77,7 @@ public class OptionsFidelityTests
             DefaultModelBaseFolder = @"D:\Models",
             DefaultLorasFolder = @"E:\Loras",
             additionalFolders = [new AdditionalFolder { BaseName = "extra", MapsTo = @"G:\Extra" }],
+            UseModelLibraryFolder = true,
         });
 
         await module.InitializeAsync(Selection());

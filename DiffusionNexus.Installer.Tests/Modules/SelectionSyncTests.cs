@@ -63,6 +63,7 @@ public class SelectionSyncTests
         {
             DefaultModelBaseFolder = @"D:\Models",
             DefaultLorasFolder = @"E:\Loras",
+            UseModelLibraryFolder = true,
         }));
         var selection = Selection(RepositoryType.ComfyUI);
 
@@ -75,7 +76,7 @@ public class SelectionSyncTests
     [Fact]
     public async Task Resetting_the_folder_types_to_standard_empties_the_selection_overrides()
     {
-        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultLorasFolder = "Lora" }));
+        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultLorasFolder = "Lora", UseModelLibraryFolder = true }));
         var selection = Selection(RepositoryType.ComfyUI);
         await module.InitializeAsync(selection);
         selection.FolderPathOverrides.Should().NotBeEmpty();
@@ -90,7 +91,7 @@ public class SelectionSyncTests
     {
         // ModelDestinationResolver treats null and "" the same, but the SDK options record
         // documents null as "no custom library"; the selection follows the record.
-        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
+        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true }));
         var selection = Selection(RepositoryType.ComfyUI);
         await module.InitializeAsync(selection);
 
@@ -105,7 +106,7 @@ public class SelectionSyncTests
         // The registry initializes EVERY module, applicable or not. A saved library must not leak
         // into a Fooocus selection: the pipeline will never use it there, and a scan against it
         // would mark models "already downloaded" in a folder the install never reads.
-        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
+        var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true }));
         var selection = Selection(RepositoryType.Fooocus);
 
         await module.InitializeAsync(selection);

@@ -1,6 +1,7 @@
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
+using SdkLogLevel = DiffusionNexus.Installer.SDK.Models.Enums.LogLevel;
 
 namespace DiffusionNexus.Installer.Core.Install;
 
@@ -23,6 +24,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private readonly List<InstallReportEntry> _reportRows = [];
     private readonly Timer _flushTimer;
     private int _dirty;
+    private int _truncatedLogLines;
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _skipDownloadCts;
 
@@ -38,6 +40,15 @@ public sealed class InstallSession : IInstallSession, IDisposable
     public DownloadProgress? CurrentDownload { get; private set; }
     public InstallationResult? Result { get; private set; }
     public WizardPlan? Plan { get; private set; }
+
+    /// <inheritdoc/>
+    public string? LogFilePath { get; private set; }
+
+    /// <inheritdoc/>
+    public int TruncatedLogLines
+    {
+        get { lock (_gate) return _truncatedLogLines; }
+    }
 
     public IReadOnlyList<InstallLogLine> LogLines
     {
@@ -98,6 +109,8 @@ public sealed class InstallSession : IInstallSession, IDisposable
             Result = null;
             Progress = null;
             CurrentDownload = null;
+            LogFilePath = null;
+            _truncatedLogLines = 0;
             _log.Clear();
             _reportRows.Clear();
         }
@@ -164,8 +177,36 @@ public sealed class InstallSession : IInstallSession, IDisposable
             try { _flushTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan); }
             catch (ObjectDisposedException) { }
 
+            // After the outcome is known -- the file header names it -- and before the final
+            // notification, so the "Log saved to" line is in the last render.
+            WriteLogFile(plan);
+
             NotifyNow();
         }
+    }
+
+    /// <summary>
+    /// What the 1.x wizard did when a run ended: the whole log into a timestamped file in the
+    /// install folder, so a user can find and send it without the installer still being open
+    /// (issue #14). Nowhere to write it -- the folder never got created -- means no file, never a
+    /// failed run; InstallLogFile.TryWrite owns that rule.
+    /// </summary>
+    private void WriteLogFile(WizardPlan plan)
+    {
+        var now = DateTimeOffset.Now;
+        IReadOnlyList<InstallLogLine> lines;
+        int truncated;
+        lock (_gate) { lines = [.. _log]; truncated = _truncatedLogLines; }
+
+        var outcome = Result is null ? Phase.ToString() : $"{Phase}: {Result.Message}";
+        var text = InstallLogFile.Compose(
+            plan.Selection.Workload.Name, plan.Selection.TargetFolder, outcome, now, lines, truncated);
+
+        var path = InstallLogFile.TryWrite(plan.Selection.TargetFolder, text, now);
+        if (path is null) return;
+
+        LogFilePath = path;
+        lock (_gate) _log.Enqueue(new InstallLogLine(now, $"Log saved to: {path}", SdkLogLevel.Success));
     }
 
     public void Cancel()
@@ -208,7 +249,11 @@ public sealed class InstallSession : IInstallSession, IDisposable
         lock (_gate)
         {
             _log.Enqueue(new InstallLogLine(entry.Timestamp, entry.Message, entry.Level));
-            while (_log.Count > MaxLogLines) _log.Dequeue();
+            while (_log.Count > MaxLogLines)
+            {
+                _log.Dequeue();
+                _truncatedLogLines++;
+            }
         }
         MarkDirty();
     }
