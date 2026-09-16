@@ -9,6 +9,7 @@
 @using DiffusionNexus.Installer.Core.Updates
 @using DiffusionNexus.Installer.SDK.Catalog.Packaging
 @inject ICatalogUpdateCoordinator Catalog
+@implements IDisposable
 
 <PageTitle>Developer tools</PageTitle>
 
@@ -136,8 +137,10 @@
         {
             await Catalog.SetChannelAsync(channel);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        catch (Exception ex)
         {
+            // Debug-only page: an escaped exception here replaces it with the Blazor error banner,
+            // which is a worse outcome than a message under the radios that still work afterwards.
             _channelError = $"The channel could not be saved: {ex.Message}";
         }
     }
@@ -153,7 +156,17 @@
     {
         _workloads = await Workloads.GetInstallerWorkloadsAsync();
         _selected = _workloads.FirstOrDefault();
+
+        // A channel switch the coordinator refused (a check or apply in flight) is a silent no-op
+        // on its side; without this the radios would still show the switch the user just made
+        // instead of snapping back to what is actually in effect.
+        Catalog.Changed += OnCatalogChanged;
     }
+
+    private void OnCatalogChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // Method group, so -= removes the handler this component actually added.
+    public void Dispose() => Catalog.Changed -= OnCatalogChanged;
 
     private void OnWorkloadChanged(ChangeEventArgs e)
     {

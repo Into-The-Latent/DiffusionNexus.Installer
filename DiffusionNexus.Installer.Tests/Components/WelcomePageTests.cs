@@ -393,6 +393,27 @@ public class WelcomePageTests : BunitContext
     }
 
     [Fact]
+    public void Announces_a_waiting_update_with_no_counts_when_only_shared_files_changed()
+    {
+        // A repositories.json / wheels.json-only push changes neither section's count, but it is
+        // still an update worth taking -- "0 workloads and 0 workflows changed" reads as nothing
+        // happened, which is the opposite of true.
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        _signals.Catalog.LastCheck = CatalogChecks.Available(workloads: [], workflows: []);
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var notice = cut.Find(Notice);
+            notice.TextContent.Should().Contain("A catalog update is available.");
+            notice.TextContent.Should().NotContain("0 workloads");
+            notice.QuerySelector("a[href='/updates']")!.TextContent.Should().Be("Review and apply");
+        });
+    }
+
+    [Fact]
     public void Points_at_the_app_update_when_the_catalog_needs_newer_software()
     {
         Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));

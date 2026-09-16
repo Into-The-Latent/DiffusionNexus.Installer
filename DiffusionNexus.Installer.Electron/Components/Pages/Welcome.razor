@@ -29,7 +29,9 @@
         @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available)
         {
             <p class="catalog-update-notice">
-                A catalog update is available: @Plural(available.Workloads.Count, "workload") and @Plural(available.Workflows.Count, "workflow") changed.
+                @(available.Workloads.Count == 0 && available.Workflows.Count == 0
+                    ? "A catalog update is available."
+                    : $"A catalog update is available: {Plural(available.Workloads.Count, "workload")} and {Plural(available.Workflows.Count, "workflow")} changed.")
                 <a href="/updates">Review and apply</a>
             </p>
         }

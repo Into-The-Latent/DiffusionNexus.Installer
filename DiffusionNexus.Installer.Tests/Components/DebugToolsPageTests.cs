@@ -85,5 +85,19 @@ public class DebugToolsPageTests : BunitContext
         _catalog.Checks.Should().Be(1);
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/updates");
     }
+
+    [Fact]
+    public async Task Subscribes_to_the_coordinator_and_unsubscribes_on_dispose()
+    {
+        // A channel switch the coordinator refuses (a check or apply already in flight) is a
+        // silent no-op on its side -- without this subscription the radios would keep showing the
+        // switch the user just clicked instead of snapping back to what is actually in effect.
+        var cut = Render<DebugTools>();
+        _catalog.Subscribers.Should().Be(1);
+
+        await DisposeComponentsAsync();
+
+        _catalog.Subscribers.Should().Be(0);
+    }
 }
 #endif

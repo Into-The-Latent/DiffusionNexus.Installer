@@ -77,6 +77,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
     public Task CheckAsync(CancellationToken ct = default)
     {
+        Task inFlight;
         lock (_gate)
         {
             if (_switching)
@@ -87,10 +88,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             if (_inFlight is { IsCompleted: false }) return _inFlight;
             Phase = CatalogUpdatePhase.Checking;
             Progress = null;
-            _inFlight = Task.Run(() => CheckCoreAsync(ct), CancellationToken.None);
+            // A stale error from a previous failed apply must not survive into a fresh check --
+            // the outcome line reads from LastCheck, but the apply-failure line below it reads
+            // LastApply directly and would otherwise keep showing a retry banner for an apply
+            // nobody has attempted since.
+            LastApply = null;
+            inFlight = _inFlight = Task.Run(() => CheckCoreAsync(ct), CancellationToken.None);
         }
         Raise();
-        return _inFlight;
+        return inFlight;
     }
 
     private async Task CheckCoreAsync(CancellationToken ct)
@@ -130,6 +136,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public Task ApplyAsync(CancellationToken ct = default)
     {
         CatalogUpdateCheck check;
+        Task inFlight;
         lock (_gate)
         {
             // Every refusal is a no-op, never a hand-back of the in-flight check: the documented
@@ -150,10 +157,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             Phase = CatalogUpdatePhase.Applying;
             LastApply = null;
             Progress = null;
-            _inFlight = Task.Run(() => ApplyCoreAsync(check, ct), CancellationToken.None);
+            inFlight = _inFlight = Task.Run(() => ApplyCoreAsync(check, ct), CancellationToken.None);
         }
         Raise();
-        return _inFlight;
+        return inFlight;
     }
 
     private async Task ApplyCoreAsync(CatalogUpdateCheck check, CancellationToken ct)

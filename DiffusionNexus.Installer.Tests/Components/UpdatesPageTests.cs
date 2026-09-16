@@ -217,7 +217,7 @@ public class UpdatesPageTests : BunitContext
 
         var page = Render<UpdatesPage>();
 
-        page.Find(".catalog-error").TextContent.Should().Contain("The catalog update failed: sha256 mismatch Nothing was changed.");
+        page.Find(".catalog-error").TextContent.Should().Contain("The catalog update failed: sha256 mismatch. Nothing was changed.");
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
     }
 
@@ -263,6 +263,24 @@ public class UpdatesPageTests : BunitContext
         _catalog.Phase = CatalogUpdatePhase.Checking;
 
         Render<UpdatesPage>().Find(".catalog-outcome").TextContent.Trim().Should().Be("Checking the catalog…");
+    }
+
+    [Fact]
+    public void A_re_check_hides_the_previous_change_list_and_apply_button()
+    {
+        // The previous check found an update, so UpdateAvailable and LastCheck are both still
+        // set while the re-check runs -- only Phase has moved to Checking. Without also gating on
+        // Phase, the stale change list and Apply button would render right under "Checking the
+        // catalog…", offering to apply content the running check might be about to replace.
+        Register(InstallPhase.Idle);
+        Available(CatalogChecks.WorkloadUpdated("Krea-2-Turbo", "V1.0", "V1.1"));
+        _catalog.Phase = CatalogUpdatePhase.Checking;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Checking the catalog…");
+        page.FindAll(".catalog-changes").Should().BeEmpty();
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
     }
 
     [Fact]

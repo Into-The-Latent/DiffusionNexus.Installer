@@ -55,7 +55,7 @@
             }
         </p>
 
-        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available)
+        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
         {
             var rows = CatalogChangeRows.Build(available);
             foreach (var group in new[] { ChangeKind.Added, ChangeKind.Updated, ChangeKind.Removed })
@@ -233,7 +233,7 @@
 
     private static string ApplyFailureText(CatalogApplyResult result) => result.Applied switch
     {
-        CatalogSections.None => $"The catalog update failed: {result.Error} Nothing was changed.",
+        CatalogSections.None => $"The catalog update failed: {result.Error?.TrimEnd('.')}. Nothing was changed.",
         CatalogSections.Workloads => $"Workloads were updated; workflows failed: {result.Error}",
         CatalogSections.Workflows => $"Workflows were updated; workloads failed: {result.Error}",
         _ => $"The catalog update reported a problem: {result.Error}",

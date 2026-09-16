@@ -45,8 +45,6 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         new LocalCatalogState { Workloads = new SectionState(version, "abc", DateTimeOffset.UtcNow) }
             .Save(_options.InstalledCatalogPath);
 
-    private static int Count(ICatalogUpdateCoordinator c) { var n = 0; c.Changed += () => n++; return n; }
-
     // ----- channel -----
 
     [Fact]
@@ -232,6 +230,22 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.LastApply!.Error.Should().Be("sha256 mismatch");
         coordinator.UpdateAvailable.Should().BeTrue();
         coordinator.CanApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_second_check_after_a_failed_apply_clears_the_stale_error()
+    {
+        // LastApply is read directly by the failure line, not gated through LastCheck's outcome --
+        // so without CheckAsync clearing it, a fresh check would sit right under a retry banner
+        // for an apply nobody has attempted since.
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "sha256 mismatch");
+        using var coordinator = await CheckedWithUpdateAsync();
+        await coordinator.ApplyAsync();
+        coordinator.LastApply!.Error.Should().Be("sha256 mismatch");
+
+        await coordinator.CheckAsync();
+
+        coordinator.LastApply.Should().BeNull();
     }
 
     [Fact]
