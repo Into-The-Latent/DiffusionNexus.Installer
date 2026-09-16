@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace DiffusionNexus.Installer.Core.Install;
@@ -12,8 +13,14 @@ public static class InstallLogFile
 {
     public const string Title = "Into the Latent Easy Installer - Installation Log";
 
-    /// <summary>The 1.x wizard's file name, kept so a user who knows where to look still finds it.</summary>
-    public static string FileName(DateTimeOffset now) => $"installation-log-verbose-{now:yyyy-MM-dd-HH-mm-ss}.txt";
+    /// <summary>
+    /// The 1.x wizard's file name, kept so a user who knows where to look still finds it. Invariant
+    /// culture throughout this file: under a Buddhist or Umm al-Qura default calendar (th-TH,
+    /// ar-SA) a culture-formatted <c>yyyy</c> is the era year, and support telling a user to look
+    /// for the 2026 file finds a 2569 one.
+    /// </summary>
+    public static string FileName(DateTimeOffset now) =>
+        $"installation-log-verbose-{now.ToString("yyyy-MM-dd-HH-mm-ss", CultureInfo.InvariantCulture)}.txt";
 
     /// <summary>
     /// The lines as the live view shows them, one per row with time and level. When the session's
@@ -34,7 +41,7 @@ public static class InstallLogFile
     {
         var sb = new StringBuilder();
         sb.AppendLine(Title);
-        sb.AppendLine($"Generated: {now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Generated: {now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)}");
         sb.AppendLine($"Workload: {workload}");
         sb.AppendLine($"Install folder: {installFolder}");
         sb.AppendLine($"Outcome: {outcome}");
@@ -47,20 +54,25 @@ public static class InstallLogFile
     /// Writes <paramref name="text"/> into <paramref name="installFolder"/> and returns the path,
     /// or null when there is nowhere to write it. An install that died before creating its folder
     /// has no folder; the session must not create one on the user's disk just to leave a log in it,
-    /// and a log that cannot be written must never turn a finished run into a failed one -- so an
-    /// I/O error is swallowed here too, exactly as the 1.x wizard did.
+    /// and a log that cannot be written must never turn a finished run into a failed one -- so
+    /// nothing escapes here, exactly as the 1.x wizard did. Every exception, not only the I/O
+    /// family: the caller is InstallSession.StartAsync's <c>finally</c>, ahead of the notification
+    /// that ends the run on screen, and a path the OS accepted for Directory.Exists but rejects for
+    /// a file write (a device name, an odd UNC form) throws ArgumentException or
+    /// NotSupportedException -- which would leave the Install screen on "Installing" forever after
+    /// an install that succeeded.
     /// </summary>
     public static string? TryWrite(string? installFolder, string text, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(installFolder) || !Directory.Exists(installFolder)) return null;
 
-        var path = Path.Combine(installFolder, FileName(now));
         try
         {
+            var path = Path.Combine(installFolder, FileName(now));
             File.WriteAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             return path;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
             return null;
         }
@@ -72,6 +84,6 @@ public static class InstallLogFile
             sb.AppendLine($"[{truncatedLines} earlier lines truncated: the installer keeps the newest {InstallSession.MaxLogLines}]");
 
         foreach (var line in lines)
-            sb.AppendLine($"[{line.Timestamp.ToLocalTime():HH:mm:ss}] [{line.Level}] {line.Message}");
+            sb.AppendLine($"[{line.Timestamp.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture)}] [{line.Level}] {line.Message}");
     }
 }

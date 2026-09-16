@@ -37,6 +37,7 @@ public class InstallStageTests : BunitContext, IDisposable
 
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
         _session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
+        _session.Setup(s => s.SnapshotLog()).Returns(new InstallLogSnapshot([], 0));
         _session.SetupGet(s => s.ReportRows).Returns([]);
         _actions.SetupGet(a => a.CanCloseInstaller).Returns(true);
         _actions.Setup(a => a.CloseInstallerAsync()).Returns(Task.CompletedTask);
@@ -352,7 +353,7 @@ public class InstallStageTests : BunitContext, IDisposable
         // The whole buffer, not the 300-line tail the screen shows: a user pasting a failure into
         // an issue needs what came before it.
         var run = await RunAsync();
-        _session.SetupGet(s => s.LogLines).Returns([LogLine("first"), LogLine("last")]);
+        _session.Setup(s => s.SnapshotLog()).Returns(new InstallLogSnapshot([LogLine("first"), LogLine("last")], 0));
         var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
 
         stage.FindAll("button").Single(b => b.TextContent.Trim() == "Copy log").Click();
@@ -362,10 +363,39 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_copy_of_a_log_that_outgrew_the_buffer_says_so_at_the_top()
+    {
+        var run = await RunAsync();
+        _session.Setup(s => s.SnapshotLog()).Returns(new InstallLogSnapshot([LogLine("kept")], 3));
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.FindAll("button").Single(b => b.TextContent.Trim() == "Copy log").Click();
+
+        _clipboard.Verify(c => c.SetTextAsync(It.Is<string>(t =>
+            t.IndexOf("3 earlier lines truncated", StringComparison.Ordinal) < t.IndexOf("kept", StringComparison.Ordinal))), Times.Once);
+    }
+
+    [Fact]
+    public async Task The_copied_badge_goes_away_on_its_own()
+    {
+        // Review finding: left on, "Copied" would sit beside the heading for the rest of a
+        // twenty-minute install, describing a clipboard that stopped matching the screen long ago.
+        var run = await RunAsync();
+        var stage = Render<InstallStage>(p => p
+            .Add(x => x.Run, run)
+            .Add(x => x.CopiedBadgeDuration, TimeSpan.FromMilliseconds(50)));
+
+        stage.FindAll("button").Single(b => b.TextContent.Trim() == "Copy log").Click();
+
+        stage.WaitForAssertion(() => stage.Markup.Should().Contain("Copied"));
+        stage.WaitForAssertion(() => stage.Markup.Should().NotContain("Copied"), TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task A_clipboard_that_refuses_says_so_instead_of_pretending()
     {
         var run = await RunAsync();
-        _session.SetupGet(s => s.LogLines).Returns([LogLine("first")]);
+        _session.Setup(s => s.SnapshotLog()).Returns(new InstallLogSnapshot([LogLine("first")], 0));
         _clipboard.Setup(c => c.SetTextAsync(It.IsAny<string>())).ThrowsAsync(new InvalidOperationException("no clipboard"));
         var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
 

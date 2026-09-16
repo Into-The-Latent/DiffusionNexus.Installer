@@ -56,11 +56,12 @@ public interface IInstallSession
     string? LogFilePath { get; }
 
     /// <summary>
-    /// How many of the oldest lines the bounded buffer has dropped this run. Zero for every run
-    /// short enough to fit; the "Copy log" button says so when it is not, because a log that starts
-    /// mid-pip looks complete and is not.
+    /// The whole buffer and how many older lines it has dropped this run, taken together under one
+    /// lock -- for "Copy log", which is usable mid-install while lines are still being dropped. The
+    /// count is zero for every run short enough to fit; when it is not, the copied text says so,
+    /// because a log that starts mid-pip looks complete and is not.
     /// </summary>
-    int TruncatedLogLines { get; }
+    InstallLogSnapshot SnapshotLog();
 
     /// <summary>Raised when any of the above changes. Subscribers re-render; they never own state.</summary>
     event Action? Changed;

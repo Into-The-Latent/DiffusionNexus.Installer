@@ -1,3 +1,4 @@
+using System.Globalization;
 using DiffusionNexus.Installer.Core.Install;
 using FluentAssertions;
 using Xunit;
@@ -40,5 +41,48 @@ public class InstallLogFileTests
     {
         InstallLogFile.FileName(new DateTimeOffset(2026, 9, 16, 14, 30, 2, TimeSpan.Zero))
             .Should().Be("installation-log-verbose-2026-09-16-14-30-02.txt");
+    }
+
+    [Fact]
+    public void Dates_are_gregorian_whatever_the_machine_culture_is()
+    {
+        // Review finding: culture-formatted yyyy is the era year under a Buddhist (th-TH) or
+        // Umm al-Qura (ar-SA) default calendar, so the file would be named 2569-... and support
+        // telling a user to look for the 2026 file would find nothing.
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("th-TH");
+            var when = new DateTimeOffset(new DateTime(2026, 9, 16, 14, 30, 2, DateTimeKind.Local));
+
+            InstallLogFile.FileName(when).Should().Be("installation-log-verbose-2026-09-16-14-30-02.txt");
+            InstallLogFile.Compose("W", @"C:\x", "Completed", when, [Line("hello")], 0)
+                .Should().Contain("Generated: 2026-09-16 14:30:02").And.Contain("[14:30:02] [Info] hello");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    public void A_file_that_cannot_be_written_yields_null_rather_than_a_throw()
+    {
+        // TryWrite is called from InstallSession.StartAsync's finally, ahead of the notification
+        // that ends the run on screen; anything escaping it leaves the screen on "Installing".
+        var folder = Directory.CreateTempSubdirectory("dn-logfile-").FullName;
+        try
+        {
+            var when = new DateTimeOffset(2026, 9, 16, 14, 30, 2, TimeSpan.Zero);
+            Directory.CreateDirectory(Path.Combine(folder, InstallLogFile.FileName(when)));   // a directory where the file must go
+
+            var act = () => InstallLogFile.TryWrite(folder, "text", when);
+
+            act.Should().NotThrow().Which.Should().BeNull();
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
     }
 }

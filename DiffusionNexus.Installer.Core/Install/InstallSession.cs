@@ -45,9 +45,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
     public string? LogFilePath { get; private set; }
 
     /// <inheritdoc/>
-    public int TruncatedLogLines
+    public InstallLogSnapshot SnapshotLog()
     {
-        get { lock (_gate) return _truncatedLogLines; }
+        lock (_gate) return new InstallLogSnapshot([.. _log], _truncatedLogLines);
     }
 
     public IReadOnlyList<InstallLogLine> LogLines
@@ -194,9 +194,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private void WriteLogFile(WizardPlan plan)
     {
         var now = DateTimeOffset.Now;
-        IReadOnlyList<InstallLogLine> lines;
-        int truncated;
-        lock (_gate) { lines = [.. _log]; truncated = _truncatedLogLines; }
+        var (lines, truncated) = SnapshotLog();
 
         var outcome = Result is null ? Phase.ToString() : $"{Phase}: {Result.Message}";
         var text = InstallLogFile.Compose(
@@ -206,7 +204,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
         if (path is null) return;
 
         LogFilePath = path;
-        lock (_gate) _log.Enqueue(new InstallLogLine(now, $"Log saved to: {path}", SdkLogLevel.Success));
+        Append(new InstallLogLine(now, $"Log saved to: {path}", SdkLogLevel.Success));
     }
 
     public void Cancel()
@@ -246,16 +244,22 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
     private void OnLog(InstallLogEntry entry)
     {
+        Append(new InstallLogLine(entry.Timestamp, entry.Message, entry.Level));
+        MarkDirty();
+    }
+
+    /// <summary>The one place lines enter the buffer, so the bound and the dropped-line count never diverge.</summary>
+    private void Append(InstallLogLine line)
+    {
         lock (_gate)
         {
-            _log.Enqueue(new InstallLogLine(entry.Timestamp, entry.Message, entry.Level));
+            _log.Enqueue(line);
             while (_log.Count > MaxLogLines)
             {
                 _log.Dequeue();
                 _truncatedLogLines++;
             }
         }
-        MarkDirty();
     }
 
     private void OnStep(InstallationProgress progress)

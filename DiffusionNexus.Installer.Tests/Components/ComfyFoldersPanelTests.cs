@@ -174,6 +174,16 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.FindAll("[data-folder-key]").Should().BeEmpty();
         cut.FindAll("[data-role='output']").Should().ContainSingle("the output folder is not a model folder");
         cut.Markup.Should().Contain("extra_model_paths.yaml", "the user is told what off means");
+        cut.Find(".switch-text").TextContent.Should().Contain("remembered library").And.Contain(@"D:\Models",
+            "an upgrading user must see WHY models they used to have are not found any more");
+    }
+
+    [Fact]
+    public async Task Without_a_remembered_library_the_off_hint_does_not_mention_one()
+    {
+        var cut = RenderPanel(await Module());
+
+        cut.Find(".switch-text").TextContent.Should().Contain("Off:").And.NotContain("remembered library");
     }
 
     [Fact]

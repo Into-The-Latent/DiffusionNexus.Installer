@@ -153,6 +153,7 @@
     private string? _startError;
     private string? _actionError;
     private bool _copied;
+    private CancellationTokenSource? _copiedCts;
     private ElementReference _logBox;
     private IJSObjectReference? _logModule;
     private IJSObjectReference? _logFollower;
@@ -163,6 +164,13 @@
 
     /// <summary>Raised when the user is finished with the result and wants the gallery back.</summary>
     [Parameter] public EventCallback Done { get; set; }
+
+    /// <summary>
+    /// How long "Copied" stays beside the heading. Transient on purpose: the log keeps growing
+    /// under a running install, so a badge that stayed would end up describing a clipboard that
+    /// stopped matching the screen minutes ago. A parameter so a test can shorten it.
+    /// </summary>
+    [Parameter] public TimeSpan CopiedBadgeDuration { get; set; } = TimeSpan.FromSeconds(2.5);
 
     protected override async Task OnInitializedAsync()
     {
@@ -235,13 +243,41 @@
 
         try
         {
-            await Clipboard.SetTextAsync(InstallLogFile.Format(Session.LogLines, Session.TruncatedLogLines));
+            // One snapshot, not LogLines then the count: taken apart they can disagree by however
+            // many lines pip printed in between, and the pasted text would claim a different start
+            // than it has.
+            var (lines, truncated) = Session.SnapshotLog();
+            await Clipboard.SetTextAsync(InstallLogFile.Format(lines, truncated));
             _copied = true;
         }
         catch (Exception ex)
         {
             _actionError = $"Could not copy the log: {ex.Message}";
+            return;
         }
+
+        // A second click restarts the clock rather than letting the first click's timer hide the
+        // second click's badge early.
+        _copiedCts?.Cancel();
+        _copiedCts = new CancellationTokenSource();
+        _ = HideCopiedLaterAsync(_copiedCts.Token);
+    }
+
+    private async Task HideCopiedLaterAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(CopiedBadgeDuration, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_disposed) return;
+
+        _copied = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LaunchAndClose()
@@ -334,6 +370,7 @@
     {
         _disposed = true;
         Session.Changed -= OnChanged;
+        _copiedCts?.Cancel();
 
         try
         {

@@ -574,4 +574,20 @@ public class InstallSessionTests
             Directory.Delete(folder, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task The_log_snapshot_carries_the_lines_and_the_dropped_count_together()
+    {
+        // Review finding: read as two properties, the count could be taken after more lines were
+        // dropped than the copied text is missing. One accessor, one lock.
+        var missing = Path.Combine(Path.GetTempPath(), "dn-missing-" + Guid.NewGuid().ToString("N"));
+        var session = new InstallSession(LoggingOrchestrator(InstallSession.MaxLogLines + 7));
+        await session.StartAsync(await PlanInAsync(missing));
+
+        var (lines, truncated) = session.SnapshotLog();
+
+        lines.Should().HaveCount(InstallSession.MaxLogLines);
+        lines[0].Message.Should().Be("line 7");
+        truncated.Should().Be(7);
+    }
 }

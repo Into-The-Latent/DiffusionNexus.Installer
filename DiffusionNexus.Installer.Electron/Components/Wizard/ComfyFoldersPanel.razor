@@ -27,10 +27,22 @@
         <span class="switch-track" aria-hidden="true"></span>
         <span class="switch-text">
             Use my own model folder
+            @* With the switch off, a library remembered from an earlier install is named here: an
+               upgrading user whose models used to be found in D:\Models would otherwise see them
+               re-downloaded into the install with nothing on screen saying why. *@
             <span class="panel-hint">
-                @(Module.UseModelLibraryFolder
-                    ? "On: models are read from your library through an extra_model_paths.yaml written into the install."
-                    : "Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written.")
+                @if (Module.UseModelLibraryFolder)
+                {
+                    <text>On: models are read from your library through an extra_model_paths.yaml written into the install.</text>
+                }
+                else if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+                {
+                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written. Your remembered library (<code>@Module.ModelBaseFolder</code>) is not used until you turn this on.</text>
+                }
+                else
+                {
+                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written.</text>
+                }
             </span>
         </span>
     </label>
