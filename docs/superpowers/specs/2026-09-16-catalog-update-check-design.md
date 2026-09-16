@@ -132,10 +132,14 @@ IUserSettingsRepository settings, IInstallSession session, Func<string?> readEnv
   `options.Channel`. `CatalogOptions` is the mutable singleton `CheckAsync` reads, so this
   is the one place that writes it.
 - **CheckAsync**: no-op while Checking or Applying (returns the in-flight task's
-  completion). Sets Phase Checking, calls the SDK, stores `LastCheck`, reloads
-  `Installed` from `options.InstalledCatalogPath`, sets Phase Checked. The SDK's
-  `CheckAsync` never throws, but the settings read and state reload can; those are
-  caught and reported as a `Failed` check with the exception message.
+  completion). Sets Phase Checking, clears `Progress` and `LastApply`, calls the SDK,
+  stores `LastCheck`, reloads `Installed` from `options.InstalledCatalogPath`, sets
+  Phase Checked. Clearing `LastApply` here as well as `Progress` matters because the
+  `/updates` apply-failure line reads `LastApply` directly rather than through
+  `LastCheck`'s outcome -- without this, a fresh check run after a failed apply would
+  still show the previous attempt's error and retry banner. The SDK's `CheckAsync` never
+  throws, but the settings read and state reload can; those are caught and reported as a
+  `Failed` check with the exception message.
 - **ApplyAsync**: refused (no-op, logged) unless `CanApply`. Sets Phase Applying, calls
   `ApplyAsync(LastCheck, CatalogSections.All, progress)`, forwards every progress report
   through `Changed`, stores `LastApply`, reloads `Installed`, sets Phase Applied. On a
@@ -213,6 +217,13 @@ No notice for UpToDate, Failed or OverrideActive. The notice is a `<p class="cat
 inside the existing welcome column, above the software strip, and disappears after a
 successful apply.
 
+When both counts are zero -- a push that only touched shared files such as
+`repositories.json` or `wheels.json`, changing neither section -- the counts are omitted
+rather than read as "0 workloads and 0 workflows changed", which reads as nothing having
+happened when there is still an update worth taking:
+
+> A catalog update is available. [Review and apply](/updates)
+
 ### 6.3 `/updates` page
 
 The page keeps its app section and gains a **Content catalog** section beneath it. The
@@ -235,20 +246,35 @@ The catalog section renders, top to bottom:
    | UpdatesAvailable | "Catalog v4 is available on Preview." then the change lists |
    | RequiresNewerSoftware | "This catalog update needs a newer version of the installer. Install the app update above first." |
    | OverrideActive | "Update check skipped: a local catalog override is active at `<path>`." |
-   | Failed | "The catalog check failed: `<error>`." |
+   | Failed | "The catalog check failed: `<error>`" |
    | LastCheck null, Phase Idle | "Not checked yet." |
 
-4. **Change lists**: three groups, Added / Updated / Removed, each hidden when empty,
-   rows from `CatalogChangeRows.Build`.
-5. **Apply button** "Apply catalog update", rendered only for UpdatesAvailable.
-   Disabled while Applying. When an install is running the button is replaced by the
-   same hint the app update uses: "It can be applied once **<workload>** has finished."
-6. **Progress** while Applying: "Downloading… 42%" when the total is known, otherwise
+   The Failed row carries no added period: the SDK's own errors already end in one, and
+   appending a second would read "HTTP 503.." The apply-failure line below is the
+   opposite case -- its error can end mid-sentence ("sha256 mismatch") because the
+   coordinator built it, not the SDK -- so it folds a trailing period from the error
+   before appending its own sentence.
+
+4. **Change lists** and **Apply button** are both gated on Phase as well as
+   `UpdateAvailable`: while Phase is Checking -- a re-check the user asked for from a page
+   that was already showing an update -- both stay hidden, even though the previous
+   check's result is technically still sitting in `LastCheck`. Rendering the old list
+   and an Apply button under "Checking the catalog…" would let the user apply content the
+   running check might be about to replace.
+   - Change lists: three groups, Added / Updated / Removed, each hidden when empty, rows
+     from `CatalogChangeRows.Build`.
+   - Apply button "Apply catalog update", rendered only for UpdatesAvailable and only
+     once Phase has left Checking. Disabled while Applying. When an install is running
+     the button is replaced by the same hint the app update uses: "It can be applied
+     once **<workload>** has finished."
+5. **Progress** while Applying: "Downloading… 42%" when the total is known, otherwise
    "Downloading… 3.1 MB".
-7. **Result** after Applied: "Catalog updated to v4. [Back to all software](/)". On a
+6. **Result** after Applied: "Catalog updated to v4. [Back to all software](/)". On a
    partial or failed apply: "The catalog update failed: `<error>`. Nothing was changed."
    or, when one section landed and one did not, "Workloads were updated; workflows
-   failed: `<error>`." with the Apply button back for a retry.
+   failed: `<error>`." with the Apply button back for a retry. The all-failed line folds
+   the error's own trailing period rather than doubling it: an error of "sha256 mismatch"
+   reads "The catalog update failed: sha256 mismatch. Nothing was changed."
 
 The app section's updater log stays app-only. Catalog steps go to the console log via
 `ILogger`, not into that list.
@@ -259,7 +285,15 @@ A **Catalog channel** panel with two radio buttons, Stable and Preview, bound to
 `coordinator.Channel`, calling `SetChannelAsync` on change, followed by a "Check now"
 button that navigates to `/updates` after triggering `CheckAsync`. When
 `ChannelSource == Environment` the radios are disabled and a hint reads "Set by
-DIFFUSIONNEXUS_CATALOG_CHANNEL for this run; the saved setting is <value>."
+DIFFUSIONNEXUS_CATALOG_CHANNEL for this run; the saved setting is not in effect." --
+naming that the saved preference exists and is being overridden, not what it is: the
+value itself is not shown, since it plays no part while the environment variable pins
+the channel.
+
+The page subscribes to `coordinator.Changed` (method group, unsubscribed in `Dispose`)
+so a channel switch the coordinator refuses -- a no-op while a check or apply is already
+in flight -- re-renders the radios back to the channel actually in effect, instead of
+leaving them showing the click the user just made.
 
 ## 7. Apply semantics
 
