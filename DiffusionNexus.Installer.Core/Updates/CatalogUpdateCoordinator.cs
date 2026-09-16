@@ -129,20 +129,87 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
     public Task ApplyAsync(CancellationToken ct = default)
     {
+        CatalogUpdateCheck check;
         lock (_gate)
         {
             // Every refusal is a no-op, never a hand-back of the in-flight check: the documented
             // contract is "a no-op unless CanApply", and returning _inFlight would make a refused
             // apply block its caller for the length of an unrelated network check.
+            if (_inFlight is { IsCompleted: false })
+            {
+                _logger.LogInformation("Catalog apply refused: an apply or check is already in flight");
+                return Task.CompletedTask;
+            }
             if (_switching || !CanApply)
             {
                 _logger.LogInformation("Catalog apply refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}",
                     Phase, UpdateAvailable, InstallRunning, _switching);
                 return Task.CompletedTask;
             }
+            check = LastCheck!;
+            Phase = CatalogUpdatePhase.Applying;
+            LastApply = null;
+            Progress = null;
+            _inFlight = Task.Run(() => ApplyCoreAsync(check, ct), CancellationToken.None);
         }
-        // Task 5 replaces this with the download + swap.
-        return Task.CompletedTask;
+        Raise();
+        return _inFlight;
+    }
+
+    private async Task ApplyCoreAsync(CatalogUpdateCheck check, CancellationToken ct)
+    {
+        _logger.LogInformation("Catalog apply started: v{Version} from {Channel}, both sections", check.Remote?.CatalogVersion, check.Channel);
+        try
+        {
+            var result = await _updates.ApplyAsync(check, CatalogSections.All, new ProgressRelay(this), ct).ConfigureAwait(false);
+            var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+            var succeeded = result.Failed == CatalogSections.None && result.Error is null;
+
+            lock (_gate)
+            {
+                LastApply = result;
+                Installed = installed;
+                Progress = null;
+                Phase = succeeded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
+            }
+            _logger.LogInformation("Catalog apply finished: applied={Applied} failed={Failed} installed v{Installed}{Error}",
+                result.Applied, result.Failed, installed.HighestCatalogVersion, result.Error is null ? string.Empty : ": " + result.Error);
+        }
+        catch (OperationCanceledException)
+        {
+            // The SDK lets a caller's cancel through on purpose; it is not a failure and is not shown as one.
+            _logger.LogInformation("Catalog apply cancelled; nothing was changed");
+            lock (_gate)
+            {
+                LastApply = null;
+                Progress = null;
+                Phase = CatalogUpdatePhase.Checked;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Catalog apply failed unexpectedly");
+            lock (_gate)
+            {
+                LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, ex.Message);
+                Progress = null;
+                Phase = CatalogUpdatePhase.Checked;
+            }
+        }
+        Raise();
+    }
+
+    /// <summary>
+    /// Not <see cref="System.Progress{T}"/>: that posts to the captured SynchronizationContext, which
+    /// on a pool thread means "whenever", and the page would render stale percentages out of order.
+    /// </summary>
+    private sealed class ProgressRelay(CatalogUpdateCoordinator owner) : IProgress<CatalogDownloadProgress>
+    {
+        public void Report(CatalogDownloadProgress value)
+        {
+            lock (owner._gate) { owner.Progress = value; }
+            owner.Raise();
+        }
     }
 
     public async Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default)

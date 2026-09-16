@@ -176,6 +176,117 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.ApplyCalls.Should().Be(0);
     }
 
+    // ----- apply -----
+
+    private async Task<CatalogUpdateCoordinator> CheckedWithUpdateAsync()
+    {
+        WriteInstalledState(3);
+        _service.NextCheck = () => CatalogChecks.Available(4);
+        var coordinator = Create();
+        await coordinator.CheckAsync();
+        return coordinator;
+    }
+
+    [Fact]
+    public async Task Apply_sends_both_sections_forwards_progress_and_ends_applied()
+    {
+        _service.HoldApply = new TaskCompletionSource();
+        using var coordinator = await CheckedWithUpdateAsync();
+        var raised = 0;
+        coordinator.Changed += () => raised++;
+
+        var apply = coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
+        coordinator.CanApply.Should().BeFalse("a second click must not start a second download");
+        SpinWait.SpinUntil(() => _service.Progress is not null, 2000).Should().BeTrue();
+        _service.AppliedSections.Should().Be(CatalogSections.All);
+
+        _service.Progress!.Report(new CatalogDownloadProgress(50, 100));
+        coordinator.Progress.Should().Be(new CatalogDownloadProgress(50, 100));
+        var raisedBeforeFinish = raised;
+        raisedBeforeFinish.Should().BeGreaterThanOrEqualTo(2, "entering Applying and the progress report");
+
+        WriteInstalledState(4);   // what the SDK's swap leaves on disk
+        _service.HoldApply.SetResult();
+        await apply;
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null));
+        coordinator.Progress.Should().BeNull();
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
+        coordinator.UpdateAvailable.Should().BeFalse("the dot and the notice go away once it is in");
+        coordinator.CanApply.Should().BeFalse();
+        raised.Should().BeGreaterThan(raisedBeforeFinish);
+    }
+
+    [Fact]
+    public async Task A_failed_apply_returns_to_checked_with_the_error_so_it_can_be_retried()
+    {
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "sha256 mismatch");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply!.Error.Should().Be("sha256 mismatch");
+        coordinator.UpdateAvailable.Should().BeTrue();
+        coordinator.CanApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_partial_apply_also_returns_to_checked()
+    {
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.Workloads, CatalogSections.Workflows, "workflows/ locked");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply!.Applied.Should().Be(CatalogSections.Workloads);
+    }
+
+    [Fact]
+    public async Task A_cancelled_apply_returns_to_checked_without_an_error()
+    {
+        _service.ThrowCancelledOnApply = true;
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply.Should().BeNull();
+        coordinator.Progress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_check_requested_while_applying_joins_the_apply()
+    {
+        _service.HoldApply = new TaskCompletionSource();
+        using var coordinator = await CheckedWithUpdateAsync();
+        var apply = coordinator.ApplyAsync();
+
+        var check = coordinator.CheckAsync();
+        check.Should().BeSameAs(apply);
+        _service.CheckCalls.Should().Be(1);
+
+        _service.HoldApply.SetResult();
+        await apply;
+    }
+
+    [Fact]
+    public async Task After_a_successful_apply_a_new_check_can_run()
+    {
+        using var coordinator = await CheckedWithUpdateAsync();
+        await coordinator.ApplyAsync();
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+
+        await coordinator.CheckAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        _service.CheckCalls.Should().Be(2);
+    }
+
     // ----- channel switch -----
 
     [Fact]
