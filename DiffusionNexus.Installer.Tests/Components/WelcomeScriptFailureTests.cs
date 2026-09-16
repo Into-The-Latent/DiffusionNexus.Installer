@@ -6,6 +6,7 @@ using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
@@ -45,6 +46,7 @@ public class WelcomeScriptFailureTests : BunitContext
         // originally covered only JSDisconnectedException, which is not what any of those throw.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        UpdateSignals.Register(Services);
         Services.AddSingleton<IJSRuntime>(new BrokenJs());
 
         var workloads = new[]

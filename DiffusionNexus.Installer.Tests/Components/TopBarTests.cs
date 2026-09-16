@@ -1,6 +1,8 @@
 using Bunit;
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Electron.Components.Shared;
 using DiffusionNexus.Installer.Electron.Services;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Xunit;
 
@@ -12,6 +14,13 @@ namespace DiffusionNexus.Installer.Tests.Components;
 /// </summary>
 public class TopBarTests : BunitContext
 {
+    private readonly (StubCatalogUpdateCoordinator Catalog, UpdaterLog App) _signals;
+
+    public TopBarTests()
+    {
+        _signals = UpdateSignals.Register(Services);
+    }
+
     [Fact]
     public void Links_to_licences_and_updates()
     {
@@ -66,5 +75,74 @@ public class TopBarTests : BunitContext
             0;
 #endif
         cut.FindAll("a[href='/debug']").Should().HaveCount(expected);
+    }
+
+    private static string Updates => "a[href='/updates']";
+
+    [Fact]
+    public void Stays_plain_when_nothing_is_waiting()
+    {
+        var cut = Render<TopBar>();
+
+        cut.Find(Updates).ClassList.Should().NotContain("top-bar-attention");
+        cut.Find(Updates).HasAttribute("title").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Marks_the_updates_link_when_a_catalog_update_is_waiting()
+    {
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var cut = Render<TopBar>();
+
+        cut.Find(Updates).ClassList.Should().Contain("top-bar-attention");
+        cut.Find(Updates).GetAttribute("title").Should().Be("Catalog update available");
+    }
+
+    [Fact]
+    public void Marks_it_when_an_app_update_is_ready()
+    {
+        _signals.App.MarkUpdateReady();
+
+        var cut = Render<TopBar>();
+
+        cut.Find(Updates).GetAttribute("title").Should().Be("App update ready");
+    }
+
+    [Fact]
+    public void Names_both_when_both_are_waiting()
+    {
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+        _signals.App.MarkUpdateReady();
+
+        Render<TopBar>().Find(Updates).GetAttribute("title").Should().Be("Catalog update available and app update ready");
+    }
+
+    [Fact]
+    public void Lights_up_when_the_startup_check_finishes_after_the_bar_rendered()
+    {
+        var cut = Render<TopBar>();
+        cut.Find(Updates).ClassList.Should().NotContain("top-bar-attention");
+
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+        _signals.Catalog.RaiseChanged();
+
+        cut.WaitForAssertion(() => cut.Find(Updates).ClassList.Should().Contain("top-bar-attention"));
+    }
+
+    [Fact]
+    public async Task Stops_listening_when_disposed()
+    {
+        Render<TopBar>();
+        _signals.Catalog.Subscribers.Should().Be(1);
+
+        await DisposeComponentsAsync();
+
+        // The coordinator is a singleton that outlives every circuit; a handler left behind pins
+        // the bar (and the page under it) for the life of the app.
+        _signals.Catalog.Subscribers.Should().Be(0);
     }
 }

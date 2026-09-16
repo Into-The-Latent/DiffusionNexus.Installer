@@ -963,6 +963,16 @@ progress {
     color: var(--muted);
 }
 
+/* Something is waiting on /updates: a catalog update to apply or an app update to install. */
+.top-bar-attention::after {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
 /* ---------- Community footer ---------- */
 
 /* The window's bottom edge, on every screen of the flow -- so it spans the whole width the way

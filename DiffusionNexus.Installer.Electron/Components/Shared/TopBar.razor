@@ -1,4 +1,8 @@
+@using DiffusionNexus.Installer.Core.Updates
 @using DiffusionNexus.Installer.Electron.Services
+@inject ICatalogUpdateCoordinator Catalog
+@inject UpdaterLog App
+@implements IDisposable
 
 <div class="top-bar">
     @* Parenthesised, and it matters: Razor's @ disambiguation treats `v@AppVersion.Display`
@@ -13,7 +17,9 @@
         {
             <a class="top-bar-btn top-bar-dev" href="/debug">Developer tools</a>
         }
-        <a class="top-bar-btn" href="/updates">Check for Updates</a>
+        @* A dot, not a count or a word: the bar is on every screen and must not shout. The title
+           says what is waiting for whoever hovers. *@
+        <a class="top-bar-btn @(Attention is null ? null : "top-bar-attention")" href="/updates" title="@Attention">Check for Updates</a>
     </div>
 </div>
 
@@ -35,4 +41,28 @@
 #else
         false;
 #endif
+
+    private string? Attention => (Catalog.UpdateAvailable, App.UpdateReady) switch
+    {
+        (true, true) => "Catalog update available and app update ready",
+        (true, false) => "Catalog update available",
+        (false, true) => "App update ready",
+        _ => null,
+    };
+
+    protected override void OnInitialized()
+    {
+        Catalog.Changed += OnChanged;
+        App.Changed += OnChanged;
+    }
+
+    // Both fire off the circuit (pool thread, Electron socket thread), so hop back before rendering.
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // Method group, so -= removes the handler this component actually added.
+    public void Dispose()
+    {
+        Catalog.Changed -= OnChanged;
+        App.Changed -= OnChanged;
+    }
 }

@@ -12,6 +12,7 @@ using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -89,6 +90,7 @@ public class InstallPageTests : BunitContext
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        UpdateSignals.Register(Services);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
@@ -340,6 +342,7 @@ public class InstallPageTests : BunitContext
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        UpdateSignals.Register(Services);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),

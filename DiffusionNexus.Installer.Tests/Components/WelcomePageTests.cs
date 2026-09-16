@@ -10,6 +10,7 @@ using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
@@ -20,6 +21,8 @@ namespace DiffusionNexus.Installer.Tests.Components;
 
 public class WelcomePageTests : BunitContext
 {
+    private readonly (StubCatalogUpdateCoordinator Catalog, UpdaterLog App) _signals;
+
     public WelcomePageTests()
     {
         // Welcome wraps itself in <ScreenShell>, which hosts <FeedbackDialog> (it only renders
@@ -27,6 +30,7 @@ public class WelcomePageTests : BunitContext
         // construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        _signals = UpdateSignals.Register(Services);
 
         // The software strip watches itself through wwwroot/js/jukebox.js once its cards exist.
         // Planned here rather than per test because every render that produces cards makes the

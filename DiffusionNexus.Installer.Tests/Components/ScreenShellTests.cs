@@ -2,6 +2,7 @@ using Bunit;
 using DiffusionNexus.Installer.Electron.Components.Shared;
 using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -21,6 +22,7 @@ public class ScreenShellTests : BunitContext
     {
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        UpdateSignals.Register(Services);
     }
 
     private IRenderedComponent<ScreenShell> RenderShell() =>

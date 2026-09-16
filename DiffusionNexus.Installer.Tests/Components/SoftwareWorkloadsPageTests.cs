@@ -7,6 +7,7 @@ using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -23,6 +24,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         // resolvable at construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        UpdateSignals.Register(Services);
     }
 
     private static InstallationConfiguration Workload(RepositoryType software, string name, WorkflowType type) => new()
