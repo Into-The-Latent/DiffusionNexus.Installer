@@ -443,6 +443,7 @@ public class WelcomePageTests : BunitContext
         var cut = Render<Welcome>();
         cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().NotBeEmpty());
         var before = _signals.Catalog.Subscribers;   // page + its TopBar
+        before.Should().Be(2, "the page and its TopBar each subscribe once");
 
         await DisposeComponentsAsync();
 
