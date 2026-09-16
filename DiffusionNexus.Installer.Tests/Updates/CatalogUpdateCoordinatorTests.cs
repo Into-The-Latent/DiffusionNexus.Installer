@@ -248,4 +248,60 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Dispose();
         _session.VerifyRemove(s => s.Changed -= It.IsAny<Action>(), Times.Once);
     }
+
+    // ----- review fixes (task 4 re-review) -----
+
+    [Fact]
+    public async Task A_throwing_Changed_subscriber_does_not_fault_the_check()
+    {
+        using var coordinator = Create();
+        var secondRan = false;
+        coordinator.Changed += () => throw new InvalidOperationException("boom");
+        coordinator.Changed += () => secondRan = true;
+
+        await coordinator.CheckAsync();
+
+        secondRan.Should().BeTrue();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+    }
+
+    [Fact]
+    public async Task A_check_started_during_a_channel_switch_is_refused_until_the_switch_finishes()
+    {
+        var saveGate = new TaskCompletionSource();
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .Returns(async (UserSettings s, CancellationToken _) => { await saveGate.Task; return s; });
+        using var coordinator = Create();
+
+        var switching = coordinator.SetChannelAsync(CatalogChannel.Preview);
+        await coordinator.CheckAsync();
+
+        _service.CheckCalls.Should().Be(0);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Idle);
+
+        saveGate.SetResult();
+        await switching;
+
+        await coordinator.CheckAsync();
+
+        _service.CheckCalls.Should().Be(1);
+        _options.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task A_transient_settings_read_failure_does_not_permanently_pin_the_channel_to_stable()
+    {
+        _settings.SetupSequence(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+                 .ThrowsAsync(new IOException("locked"))
+                 .ReturnsAsync(new UserSettings { UserName = "tester", CatalogChannel = "Preview" });
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+        coordinator.ChannelSource.Should().Be(CatalogChannelSource.Default);
+
+        await coordinator.CheckAsync();
+
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.ChannelSource.Should().Be(CatalogChannelSource.Setting);
+    }
 }

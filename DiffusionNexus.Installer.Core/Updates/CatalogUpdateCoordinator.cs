@@ -28,6 +28,11 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     private bool _channelResolved;
     private bool _installRunning;
 
+    // True from the moment SetChannelAsync passes its guard until its state mutation is done
+    // (success or failure). Blocks CheckAsync/ApplyAsync so a check cannot straddle a channel
+    // switch's own await -- see the "channel switch" tests for the race this closes.
+    private bool _switching;
+
     public CatalogUpdateCoordinator(
         ICatalogUpdateService updates,
         CatalogOptions options,
@@ -74,6 +79,11 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     {
         lock (_gate)
         {
+            if (_switching)
+            {
+                _logger.LogInformation("Catalog check refused: a channel switch is in progress");
+                return Task.CompletedTask;
+            }
             if (_inFlight is { IsCompleted: false }) return _inFlight;
             Phase = CatalogUpdatePhase.Checking;
             Progress = null;
@@ -121,11 +131,14 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     {
         lock (_gate)
         {
-            if (!CanApply)
+            // Every refusal is a no-op, never a hand-back of the in-flight check: the documented
+            // contract is "a no-op unless CanApply", and returning _inFlight would make a refused
+            // apply block its caller for the length of an unrelated network check.
+            if (_switching || !CanApply)
             {
-                _logger.LogInformation("Catalog apply refused: phase {Phase}, update available {Available}, install running {Running}",
-                    Phase, UpdateAvailable, InstallRunning);
-                return _inFlight is { IsCompleted: false } ? _inFlight : Task.CompletedTask;
+                _logger.LogInformation("Catalog apply refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}",
+                    Phase, UpdateAvailable, InstallRunning, _switching);
+                return Task.CompletedTask;
             }
         }
         // Task 5 replaces this with the download + swap.
@@ -136,26 +149,37 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     {
         lock (_gate)
         {
-            if (Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
+            if (_switching || Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
             {
                 _logger.LogInformation("Catalog channel change to {Channel} refused while {Phase}", channel, Phase);
                 return;
             }
+            // Claimed in the same critical section as the guard above so a check that starts during
+            // the await below (GetOrCreateForCurrentUserAsync / SaveAsync) sees _switching and backs
+            // off, instead of resolving the channel this method is about to change out from under it.
+            _switching = true;
         }
 
-        var settings = await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
-        settings.CatalogChannel = channel.ToString();
-        await _settings.SaveAsync(settings, ct).ConfigureAwait(false);
-        _logger.LogInformation("Catalog channel preference saved: {Channel}", channel);
-
-        lock (_gate)
+        try
         {
-            ApplyResolution(_readEnvironment(), settings.CatalogChannel);
-            _channelResolved = true;
-            LastCheck = null;
-            LastApply = null;
-            Progress = null;
-            Phase = CatalogUpdatePhase.Idle;
+            var settings = await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+            settings.CatalogChannel = channel.ToString();
+            await _settings.SaveAsync(settings, ct).ConfigureAwait(false);
+            _logger.LogInformation("Catalog channel preference saved: {Channel}", channel);
+
+            lock (_gate)
+            {
+                ApplyResolution(_readEnvironment(), settings.CatalogChannel);
+                _channelResolved = true;
+                LastCheck = null;
+                LastApply = null;
+                Progress = null;
+                Phase = CatalogUpdatePhase.Idle;
+            }
+        }
+        finally
+        {
+            lock (_gate) { _switching = false; }
         }
         Raise();
     }
@@ -165,19 +189,24 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         lock (_gate) { if (_channelResolved) return; }
 
         string? saved = null;
+        var readSucceeded = true;
         try
         {
             saved = (await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false)).CatalogChannel;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            _logger.LogWarning(ex, "User settings could not be read; following the Stable catalog channel");
+            _logger.LogWarning(ex, "User settings could not be read; following the Stable catalog channel for this check");
+            readSucceeded = false;
         }
 
         lock (_gate)
         {
             ApplyResolution(_readEnvironment(), saved);
-            _channelResolved = true;
+            // Only a successful read latches the resolution: a transient failure (locked file,
+            // momentary permission error) must not pin the process to Stable for its whole
+            // lifetime -- the next check tries the read again.
+            if (readSucceeded) _channelResolved = true;
         }
     }
 
@@ -205,7 +234,25 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         if (flipped) Raise();
     }
 
-    private void Raise() => Changed?.Invoke();
+    // Invokes each subscriber individually and swallows what it throws: a throwing handler (a
+    // Blazor re-render against a disposed circuit is the realistic case) must not fault the
+    // background check task and break the "CheckAsync never throws" contract.
+    private void Raise()
+    {
+        var handlers = Changed;
+        if (handlers is null) return;
+        foreach (var handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action)handler)();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Catalog update coordinator: a Changed subscriber threw");
+            }
+        }
+    }
 
     public void Dispose() => _session.Changed -= OnSessionChanged;
 }
