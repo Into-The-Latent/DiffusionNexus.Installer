@@ -5,6 +5,7 @@
 @implements IAsyncDisposable
 @inject IInstallSession Session
 @inject IPostInstallActions Actions
+@inject IClipboard Clipboard
 @inject IJSRuntime JS
 
 @* Two columns: what is happening on the left, what it produced on the right. The report used to
@@ -12,7 +13,22 @@
    the install everyone was watching had already finished. *@
 <div class="install-split">
     <section class="panel">
-        <h2>Installing</h2>
+        @* "Copy log" copies the WHOLE buffer, not the 300-line tail below: a user pasting a failure
+           into an issue needs what came before it. Hidden where there is no clipboard, for the
+           same reason "Close installer" is hidden outside Electron (issue #14). *@
+        <div class="panel-head">
+            <h2>Installing</h2>
+            @if (Clipboard.IsAvailable)
+            {
+                <span class="panel-head-actions">
+                    @if (_copied)
+                    {
+                        <span class="panel-hint">Copied</span>
+                    }
+                    <button type="button" class="btn-secondary btn-small" @onclick="CopyLog">Copy log</button>
+                </span>
+            }
+        </div>
 
         @if (_startError is not null)
         {
@@ -57,6 +73,11 @@
         @if (result is not null)
         {
             <p>@result.Message</p>
+        }
+
+        @if (Session.LogFilePath is { } logFile)
+        {
+            <p class="panel-hint log-file">Full log saved as <code>@Path.GetFileName(logFile)</code> in the install folder.</p>
         }
 
         @if (rows.Count > 0)
@@ -131,6 +152,8 @@
 
     private string? _startError;
     private string? _actionError;
+    private bool _copied;
+    private CancellationTokenSource? _copiedCts;
     private ElementReference _logBox;
     private IJSObjectReference? _logModule;
     private IJSObjectReference? _logFollower;
@@ -141,6 +164,13 @@
 
     /// <summary>Raised when the user is finished with the result and wants the gallery back.</summary>
     [Parameter] public EventCallback Done { get; set; }
+
+    /// <summary>
+    /// How long "Copied" stays beside the heading. Transient on purpose: the log keeps growing
+    /// under a running install, so a badge that stayed would end up describing a clipboard that
+    /// stopped matching the screen minutes ago. A parameter so a test can shorten it.
+    /// </summary>
+    [Parameter] public TimeSpan CopiedBadgeDuration { get; set; } = TimeSpan.FromSeconds(2.5);
 
     protected override async Task OnInitializedAsync()
     {
@@ -201,6 +231,54 @@
     private bool CanLaunch => Targets.LauncherScript is { } script && File.Exists(script);
 
     private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), "open the installation folder");
+
+    /// <summary>
+    /// The same rendering the log file uses, so what lands in an issue is what is on disk. A
+    /// refused clipboard is reported the way the other host actions are, not swallowed.
+    /// </summary>
+    private async Task CopyLog()
+    {
+        _actionError = null;
+        _copied = false;
+
+        try
+        {
+            // One snapshot, not LogLines then the count: taken apart they can disagree by however
+            // many lines pip printed in between, and the pasted text would claim a different start
+            // than it has.
+            var (lines, truncated) = Session.SnapshotLog();
+            await Clipboard.SetTextAsync(InstallLogFile.Format(lines, truncated));
+            _copied = true;
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"Could not copy the log: {ex.Message}";
+            return;
+        }
+
+        // A second click restarts the clock rather than letting the first click's timer hide the
+        // second click's badge early.
+        _copiedCts?.Cancel();
+        _copiedCts = new CancellationTokenSource();
+        _ = HideCopiedLaterAsync(_copiedCts.Token);
+    }
+
+    private async Task HideCopiedLaterAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(CopiedBadgeDuration, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_disposed) return;
+
+        _copied = false;
+        await InvokeAsync(StateHasChanged);
+    }
 
     private async Task LaunchAndClose()
     {
@@ -292,6 +370,7 @@
     {
         _disposed = true;
         Session.Changed -= OnChanged;
+        _copiedCts?.Cancel();
 
         try
         {

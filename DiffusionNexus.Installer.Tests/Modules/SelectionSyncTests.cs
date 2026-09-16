@@ -78,6 +78,7 @@ public class SelectionSyncTests
         var module = new ComfyFoldersModule(Settings(new UserSettings { DefaultLorasFolder = "Lora" }));
         var selection = Selection(RepositoryType.ComfyUI);
         await module.InitializeAsync(selection);
+        module.UseModelLibraryFolder = true;
         selection.FolderPathOverrides.Should().NotBeEmpty();
 
         module.ResetFolderTypesToStandard();

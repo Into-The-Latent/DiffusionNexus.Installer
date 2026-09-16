@@ -53,6 +53,7 @@ public class ComfyFoldersAdvancedTests
     {
         var (module, _) = Module(new UserSettings { DefaultLorasFolder = "Lora" });
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;
 
         module.FolderTypes.Single(t => t.Key == "loras").Value.Should().Be("Lora");
         module.FolderPathOverrides.Should().Equal(new Dictionary<string, string> { ["loras"] = "Lora" });
@@ -76,6 +77,7 @@ public class ComfyFoldersAdvancedTests
         var (module, _) = Module();
         var selection = Selection();
         await module.InitializeAsync(selection);
+        module.UseModelLibraryFolder = true;
 
         module.SetFolderType("loras", "MyLoras");
 
@@ -115,6 +117,7 @@ public class ComfyFoldersAdvancedTests
     {
         var (module, _) = Module();
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;
 
         var row = module.AddAdditionalFolder();
         row.BaseName = "extra";
@@ -194,6 +197,7 @@ public class ComfyFoldersAdvancedTests
         };
         var (module, repo) = Module(stored);
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
         module.OutputFolder = @"D:\Out";
         module.SetFolderType("loras", "MyLoras");
@@ -230,6 +234,7 @@ public class ComfyFoldersAdvancedTests
         };
         var (module, repo) = Module(stored);
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
 
         await module.PersistAsync();
@@ -256,6 +261,7 @@ public class ComfyFoldersAdvancedTests
             .ReturnsAsync((UserSettings s, CancellationToken _) => s);
         var module = new ComfyFoldersModule(repo.Object);
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
 
         await module.PersistAsync();

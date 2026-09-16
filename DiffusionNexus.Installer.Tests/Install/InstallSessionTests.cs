@@ -440,4 +440,154 @@ public class InstallSessionTests
         tokenBeforeSkip.IsCancellationRequested.Should().BeTrue("the in-flight download is the one being skipped");
         provider!().IsCancellationRequested.Should().BeFalse("the next file must start with a live token");
     }
+
+    // ---- The log file (issue #14) ---------------------------------------------------------------
+    // What the 1.x wizard did: when a run ends, the whole log goes to a timestamped file in the
+    // install folder, so a user can find and send it without the installer still being open.
+
+    private static IInstallationOrchestrator LoggingOrchestrator(int lines, InstallationResult? result = null)
+    {
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((InstallationConfiguration _, string _, InstallationOptions _,
+                      IProgress<InstallLogEntry> log, IProgress<InstallationProgress> _,
+                      IProgress<DownloadProgress> _, Func<CancellationToken> _, CancellationToken _) =>
+            {
+                for (var i = 0; i < lines; i++)
+                    log.Report(new InstallLogEntry { Timestamp = DateTime.UtcNow, Message = $"line {i}", Level = SdkLogLevel.Info });
+                return Task.FromResult(result ?? InstallationResult.Success("done"));
+            });
+        return orchestrator.Object;
+    }
+
+    private static async Task<WizardPlan> PlanInAsync(string folder)
+    {
+        var plan = await PlanAsync();
+        plan.Selection.TargetFolder = folder;
+        return plan;
+    }
+
+    [Fact]
+    public async Task A_finished_run_writes_the_whole_log_to_the_install_folder()
+    {
+        var folder = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        try
+        {
+            var session = new InstallSession(LoggingOrchestrator(3));
+            await session.StartAsync(await PlanInAsync(folder));
+
+            var file = Directory.GetFiles(folder, "installation-log-verbose-*.txt").Should().ContainSingle().Subject;
+            var text = File.ReadAllText(file);
+            text.Should().Contain("Installation Log");
+            text.Should().Contain("Fooocus", "the header names the workload");
+            text.Should().Contain(folder, "and the install folder");
+            text.Should().Contain("line 0").And.Contain("line 2");
+            text.Should().Contain("[Info]", "every line carries its level, as the live view shows it");
+            text.Should().NotContain("earlier lines truncated");
+
+            session.LogFilePath.Should().Be(file);
+            session.LogLines.Should().Contain(l => l.Message.Contains("Log saved to") && l.Message.Contains(file),
+                "the live log says where the file went, as the 1.x wizard did");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_failed_run_still_writes_its_log_with_the_outcome_in_the_header()
+    {
+        var folder = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        try
+        {
+            var session = new InstallSession(LoggingOrchestrator(1, InstallationResult.Failure("pip exploded")));
+            await session.StartAsync(await PlanInAsync(folder));
+
+            var text = File.ReadAllText(Directory.GetFiles(folder, "installation-log-verbose-*.txt").Single());
+            text.Should().Contain("Failed").And.Contain("pip exploded");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task No_install_folder_means_no_file_and_a_run_that_still_ends_cleanly()
+    {
+        // An install that died before creating its folder has nowhere to put the file. Same as 1.x:
+        // skip it, never fail the run over it.
+        var missing = Path.Combine(Path.GetTempPath(), "dn-missing-" + Guid.NewGuid().ToString("N"));
+        var session = new InstallSession(LoggingOrchestrator(1));
+
+        await session.StartAsync(await PlanInAsync(missing));
+
+        session.Phase.Should().Be(InstallPhase.Completed);
+        session.LogFilePath.Should().BeNull();
+        Directory.Exists(missing).Should().BeFalse("the session must not create install folders on its own");
+    }
+
+    [Fact]
+    public async Task A_log_that_outgrew_the_buffer_says_so_in_the_file()
+    {
+        // The buffer keeps the newest 5000 lines. A file written from it after a long pip session
+        // would otherwise look complete while missing its beginning.
+        var folder = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        try
+        {
+            var session = new InstallSession(LoggingOrchestrator(InstallSession.MaxLogLines + 7));
+            await session.StartAsync(await PlanInAsync(folder));
+
+            var text = File.ReadAllText(Directory.GetFiles(folder, "installation-log-verbose-*.txt").Single());
+            text.Should().Contain("7 earlier lines truncated");
+            text.Should().NotContain($"] line 6{Environment.NewLine}").And.Contain($"] line 7{Environment.NewLine}");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_second_run_starts_with_no_log_file_path()
+    {
+        var folder = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        try
+        {
+            var session = new InstallSession(LoggingOrchestrator(1));
+            await session.StartAsync(await PlanInAsync(folder));
+            session.LogFilePath.Should().NotBeNull();
+
+            var missing = Path.Combine(Path.GetTempPath(), "dn-missing-" + Guid.NewGuid().ToString("N"));
+            await session.StartAsync(await PlanInAsync(missing));
+
+            session.LogFilePath.Should().BeNull("the previous run's file is not this run's");
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task The_log_snapshot_carries_the_lines_and_the_dropped_count_together()
+    {
+        // Review finding: read as two properties, the count could be taken after more lines were
+        // dropped than the copied text is missing. One accessor, one lock.
+        var missing = Path.Combine(Path.GetTempPath(), "dn-missing-" + Guid.NewGuid().ToString("N"));
+        var session = new InstallSession(LoggingOrchestrator(InstallSession.MaxLogLines + 7));
+        await session.StartAsync(await PlanInAsync(missing));
+
+        var (lines, truncated) = session.SnapshotLog();
+
+        lines.Should().HaveCount(InstallSession.MaxLogLines);
+        lines[0].Message.Should().Be("line 7");
+        truncated.Should().Be(7);
+    }
 }

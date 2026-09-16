@@ -17,6 +17,36 @@
         <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
     </div>
 
+    @* The "use my own model folder" switch (issue #15). On when a library folder is remembered,
+       off when none is. Off means ComfyUI's own models folders: nothing below it renders and no
+       extra_model_paths.yaml is written. Before it existed a remembered library was applied from
+       behind the collapsed Advanced section, where nobody saw it. *@
+    <label class="switch">
+        <input type="checkbox" role="switch" data-role="use-library"
+               checked="@Module.UseModelLibraryFolder" @onchange="OnUseLibraryChanged" />
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-text">
+            Use my own model folder
+            @* Off with a library still typed in: say what happens to it, since moving on forgets it. *@
+            <span class="panel-hint">
+                @if (Module.UseModelLibraryFolder)
+                {
+                    <text>On: models are read from your library through an extra_model_paths.yaml written into the install.</text>
+                }
+                else if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+                {
+                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written. Your library folder (<code>@Module.ModelBaseFolder</code>) is not used and will not be remembered unless you turn this back on.</text>
+                }
+                else
+                {
+                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written.</text>
+                }
+            </span>
+        </span>
+    </label>
+
+    @if (Module.UseModelLibraryFolder)
+    {
     <AdvancedDisclosure Subtitle="custom model folders" Badge="@(Module.HasCustomFolders ? "custom folders in use" : null)">
         <p class="panel-hint">
             Only needed if you keep models outside the install, or your library uses different
@@ -79,6 +109,7 @@
             </div>
         }
     </AdvancedDisclosure>
+    }
 </section>
 
 @code {
@@ -90,6 +121,12 @@
     /// user can never leave the stage.
     /// </summary>
     [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnUseLibraryChanged(ChangeEventArgs e)
+    {
+        Module.UseModelLibraryFolder = (bool)(e.Value ?? false);
+        await Changed.InvokeAsync();
+    }
 
     private async Task OnModelBaseFolderTyped(ChangeEventArgs e)
     {

@@ -48,6 +48,21 @@ public interface IInstallSession
     /// </summary>
     WizardPlan? Plan { get; }
 
+    /// <summary>
+    /// Where the finished run's log was written -- <c>installation-log-verbose-&lt;timestamp&gt;.txt</c>
+    /// in the install folder, as the 1.x wizard wrote it -- or null while a run is going, when the
+    /// install folder did not exist at the end, or when the file could not be written (issue #14).
+    /// </summary>
+    string? LogFilePath { get; }
+
+    /// <summary>
+    /// The whole buffer and how many older lines it has dropped this run, taken together under one
+    /// lock -- for "Copy log", which is usable mid-install while lines are still being dropped. The
+    /// count is zero for every run short enough to fit; when it is not, the copied text says so,
+    /// because a log that starts mid-pip looks complete and is not.
+    /// </summary>
+    InstallLogSnapshot SnapshotLog();
+
     /// <summary>Raised when any of the above changes. Subscribers re-render; they never own state.</summary>
     event Action? Changed;
 
