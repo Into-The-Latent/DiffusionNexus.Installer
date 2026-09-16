@@ -430,6 +430,14 @@ h2 {
     font-size: .85rem;
 }
 
+.catalog-channel-option {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0 1.25rem .75rem 0;
+    cursor: pointer;
+}
+
 .disclaimer-text {
     color: var(--muted);
     font-size: .85rem;
