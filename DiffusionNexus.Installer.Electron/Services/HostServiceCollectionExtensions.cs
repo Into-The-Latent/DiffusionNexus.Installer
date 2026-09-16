@@ -38,6 +38,9 @@ public static class HostServiceCollectionExtensions
 
         services.AddSingleton<UpdaterLog>();
 
+        // The catalog counterpart of Program.cs's startup AutoUpdater check.
+        services.AddHostedService<CatalogUpdateStartupCheck>();
+
         services.AddSingleton<IFeedbackReportingService>(_ => new FeedbackReportingService(
             new FeedbackReportingServiceOptions { RelayUrl = FeedbackRelayUrl }));
 

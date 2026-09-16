@@ -5,6 +5,7 @@ using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
@@ -17,6 +18,7 @@ using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Moq;
 using Microsoft.JSInterop;
 using Xunit;
@@ -213,5 +215,19 @@ public class DependencyInjectionTests
     {
         using var provider = Build();
         provider.GetRequiredService<Core.Install.IModelPreflight>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void The_catalog_update_coordinator_is_a_singleton_and_the_startup_check_is_hosted()
+    {
+        using var provider = Build();
+
+        var coordinator = provider.GetRequiredService<ICatalogUpdateCoordinator>();
+        coordinator.Should().BeSameAs(provider.GetRequiredService<ICatalogUpdateCoordinator>(),
+            "the top bar, the welcome page and /updates must all read one state");
+
+        // The startup check is what makes "most installs would simply never update" untrue for
+        // the catalog too. A dropped AddHostedService line would leave every page test green.
+        provider.GetServices<IHostedService>().Should().ContainSingle(h => h is CatalogUpdateStartupCheck);
     }
 }
