@@ -217,3 +217,42 @@ public 3.x release. Slice 1 is run from a dev build.
    back. Check the issue exists in the Feedback repo and is labelled as coming from the installer.
 9. Disconnect from the network and click Feedback again. **Expect:** the dialog stays open, shows
    the failure reason, and your typed text is still there.
+
+## 7. Catalog updates and the Preview channel
+
+The catalog editor (Tools repo) has two publish actions. **Preview** commits and pushes to
+`main`; the catalog repo's CI repoints the `preview` pre-release within about a minute.
+**Release** tags `vN`; CI creates the stable release GitHub serves as "Latest" (the redirect
+can lag a minute after the release appears). Stable is what users follow.
+
+1. In the editor, change one workload's description and press **Preview**. Wait until
+   `https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases/tag/preview` shows the
+   new commit hash in its title.
+2. Launch a Debug build with `DIFFUSIONNEXUS_CATALOG_CHANNEL=preview` set for the process.
+   **Expect:** within a few seconds the top bar's "Check for Updates" grows a dot (hover: "Catalog
+   update available") and the welcome screen shows "A catalog update is available: 1 workload and
+   0 workflows changed. Review and apply".
+3. Open `/updates`. **Expect:** "Following: Preview (set by DIFFUSIONNEXUS_CATALOG_CHANNEL)",
+   "Installed: vN (Stable), applied <date>", "Catalog vN+1 is available on Preview.", one
+   Updated row naming the workload you edited with its version text — the same row the editor's
+   Release dialog would show — and an **Apply catalog update** button.
+4. Press Apply. **Expect:** "Downloading… NN%" ticking, then "Catalog updated to vN+1." with a
+   "Back to all software" link; the dot and the welcome notice are gone. Follow the link and open
+   the workload. **Expect:** the edited description.
+5. Quit. Launch again **without** the variable. **Expect:** `/updates` says "Following: Stable",
+   the installed line still says vN+1 (Preview) — provenance, not preference — and the check
+   says "The catalog is up to date." or offers the stable content back if it differs (the diff is
+   hash-based; a Preview client returning to Stable is simply offered what Stable has).
+6. In a Debug build open Developer tools. **Expect:** a Catalog channel panel with Stable and
+   Preview radios; the saved one is checked. Pick the other, press **Check now**. **Expect:**
+   `/updates` opens and shows the new channel. Quit and relaunch. **Expect:** the choice stuck.
+   With the environment variable set, the radios are disabled and the hint says so.
+7. Editor: press **Release**, confirm. About a minute later launch on Stable. **Expect:** the
+   same update offered and applied.
+8. Start an install of any workload, then open `/updates` while it runs with an update pending.
+   **Expect:** no Apply button, instead "It can be applied once <workload> has finished." Let the
+   install finish. **Expect:** the button appears without leaving the page.
+9. Disconnect the network and press Check for updates. **Expect:** "The catalog check failed:
+   …" on `/updates`, nothing on the welcome screen, no dot.
+10. Run with `DIFFUSIONNEXUS_CATALOG_PATH` pointing at a catalog checkout. **Expect:** "Update
+    check skipped: a local catalog override is active at <path>." and no Apply button.
