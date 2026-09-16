@@ -51,8 +51,9 @@ public class ComfyFoldersAdvancedTests
     [Fact]
     public async Task A_saved_custom_name_prefills_its_row_and_counts_as_an_override()
     {
-        var (module, _) = Module(new UserSettings { DefaultLorasFolder = "Lora", UseModelLibraryFolder = true });
+        var (module, _) = Module(new UserSettings { DefaultLorasFolder = "Lora" });
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;
 
         module.FolderTypes.Single(t => t.Key == "loras").Value.Should().Be("Lora");
         module.FolderPathOverrides.Should().Equal(new Dictionary<string, string> { ["loras"] = "Lora" });
@@ -178,7 +179,7 @@ public class ComfyFoldersAdvancedTests
     [Fact]
     public async Task A_library_folder_counts_as_custom_because_it_now_lives_in_the_advanced_section()
     {
-        var (module, _) = Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true });
+        var (module, _) = Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
         await module.InitializeAsync(Selection());
 
         module.HasCustomFolders.Should().BeTrue("a saved library applied out of sight must still be flagged");
@@ -196,6 +197,7 @@ public class ComfyFoldersAdvancedTests
         };
         var (module, repo) = Module(stored);
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
         module.OutputFolder = @"D:\Out";
         module.SetFolderType("loras", "MyLoras");
@@ -232,6 +234,7 @@ public class ComfyFoldersAdvancedTests
         };
         var (module, repo) = Module(stored);
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
 
         await module.PersistAsync();
@@ -258,6 +261,7 @@ public class ComfyFoldersAdvancedTests
             .ReturnsAsync((UserSettings s, CancellationToken _) => s);
         var module = new ComfyFoldersModule(repo.Object);
         await module.InitializeAsync(Selection());
+        module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
 
         await module.PersistAsync();

@@ -88,12 +88,12 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     private List<(string BaseName, string MapsTo)> _loadedAdditional = [];
 
     /// <summary>
-    /// The "use my own model folder" switch (issue #15). Off -- the default -- means ComfyUI's own
-    /// models folders: the library folder, per-type names and additional folders below stay as
-    /// remembered answers but reach neither the selection nor the install, and no
-    /// extra_model_paths.yaml is written. Before this switch existed a remembered library was
-    /// applied on every ComfyUI install from behind the collapsed Advanced section, out of sight.
-    /// Persisted, so a user who turned it on stays on.
+    /// The "use my own model folder" switch (issue #15). Its state is the remembered library: a
+    /// saved library folder means on, none means off -- the owner's rule, and no separate flag.
+    /// Off means ComfyUI's own models folders: the library folder, per-type names and additional
+    /// folders below reach neither the selection nor the install and no extra_model_paths.yaml is
+    /// written. Off also persists an EMPTY library folder (see <see cref="PersistAsync"/>): the
+    /// switch derives from that field, so a folder left saved would switch it back on next start.
     /// </summary>
     public bool UseModelLibraryFolder
     {
@@ -190,7 +190,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         _user = user;
-        _useModelLibraryFolder = user.UseModelLibraryFolder;
+        _useModelLibraryFolder = !string.IsNullOrWhiteSpace(user.DefaultModelBaseFolder);
         ModelBaseFolder = user.DefaultModelBaseFolder;
         OutputFolder = user.OutputFolder;
 
@@ -267,11 +267,11 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         // Re-read, never the copy from InitializeAsync: the install-folder module saves just
         // before this one, and writing a stale object back would undo it.
-        // The folder is saved whether or not the switch is on: off is "do not apply", not
-        // "forget", so turning it back on next time restores the library.
+        // Off saves an empty library folder. The switch IS that field on the next start, so a
+        // folder left saved behind an "off" would be on again; within this run the typed path is
+        // kept so flipping the switch back on does not lose it.
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
-        user.UseModelLibraryFolder = UseModelLibraryFolder;
-        user.DefaultModelBaseFolder = ModelBaseFolder.Trim();
+        user.DefaultModelBaseFolder = UseModelLibraryFolder ? ModelBaseFolder.Trim() : string.Empty;
         user.OutputFolder = OutputFolder.Trim();
 
         if (AdvancedEdited)

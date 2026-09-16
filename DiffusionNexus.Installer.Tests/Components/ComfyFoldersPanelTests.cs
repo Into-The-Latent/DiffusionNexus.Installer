@@ -23,7 +23,8 @@ public class ComfyFoldersPanelTests : BunitContext
 {
     public ComfyFoldersPanelTests() => Services.AddSingleton(Mock.Of<IFolderPicker>());
 
-    private static async Task<ComfyFoldersModule> Module(UserSettings? settings = null)
+    /// <param name="on">Turns the switch on for a fixture that saves no library folder (it derives from that folder).</param>
+    private static async Task<ComfyFoldersModule> Module(UserSettings? settings = null, bool on = false)
     {
         var repo = new Mock<IUserSettingsRepository>();
         repo.Setup(r => r.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
@@ -33,6 +34,7 @@ public class ComfyFoldersPanelTests : BunitContext
         w.Repository.Type = RepositoryType.ComfyUI;
         w.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
         await module.InitializeAsync(new WizardSelection { Workload = w, TargetFolder = @"E:\Installer\9" });
+        if (on) module.UseModelLibraryFolder = true;
         return module;
     }
 
@@ -44,7 +46,7 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task Only_the_output_folder_shows_until_advanced_is_opened()
     {
-        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora", UseModelLibraryFolder = true }));
+        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" }));
 
         cut.Markup.Should().NotContain("saved model folder");
         cut.FindAll("[data-folder-key]").Should().BeEmpty("the per-type list is advanced");
@@ -67,20 +69,20 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task The_toggle_says_when_custom_folders_are_in_use()
     {
-        var plain = RenderPanel(await Module(new UserSettings { UseModelLibraryFolder = true }));
+        var plain = RenderPanel(await Module(on: true));
         plain.Find(".advanced-toggle").TextContent.Should().NotContain("custom folders in use");
 
-        var custom = RenderPanel(await Module(new UserSettings { DefaultLorasFolder = "Lora", UseModelLibraryFolder = true }));
+        var custom = RenderPanel(await Module(new UserSettings { DefaultLorasFolder = "Lora" }, on: true));
         custom.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
 
-        var library = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true }));
+        var library = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
         library.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
     }
 
     [Fact]
     public async Task The_library_box_is_first_in_advanced_and_shows_the_install_default_as_grey_text()
     {
-        var module = await Module(new UserSettings { UseModelLibraryFolder = true });
+        var module = await Module(on: true);
         var changed = false;
         var cut = RenderPanel(module, () => changed = true);
         cut.Find(".advanced-toggle").Click();
@@ -98,7 +100,7 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task Opening_advanced_shows_every_folder_type_with_reset_and_add()
     {
-        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true }));
+        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
 
         cut.Find(".advanced-toggle").Click();
 
@@ -112,7 +114,7 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task Typing_a_folder_name_updates_the_module_and_raises_Changed()
     {
-        var module = await Module(new UserSettings { UseModelLibraryFolder = true });
+        var module = await Module(on: true);
         var changed = false;
         var cut = RenderPanel(module, () => changed = true);
         cut.Find(".advanced-toggle").Click();
@@ -126,7 +128,7 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task Reset_puts_the_standard_names_back()
     {
-        var module = await Module(new UserSettings { DefaultLorasFolder = "Lora", UseModelLibraryFolder = true });
+        var module = await Module(new UserSettings { DefaultLorasFolder = "Lora" }, on: true);
         var cut = RenderPanel(module);
         cut.Find(".advanced-toggle").Click();
         cut.Find("[data-folder-key='loras']").GetAttribute("value").Should().Be("Lora");
@@ -140,7 +142,7 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task Additional_folders_can_be_added_edited_and_removed()
     {
-        var module = await Module(new UserSettings { UseModelLibraryFolder = true });
+        var module = await Module(on: true);
         var cut = RenderPanel(module);
         cut.Find(".advanced-toggle").Click();
 
@@ -160,9 +162,9 @@ public class ComfyFoldersPanelTests : BunitContext
     // ---- The switch itself (issue #15) ---------------------------------------------------------
 
     [Fact]
-    public async Task The_switch_is_visible_off_by_default_and_hides_everything_about_model_folders()
+    public async Task Without_a_remembered_library_the_switch_is_off_and_hides_everything_about_model_folders()
     {
-        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" }));
+        var cut = RenderPanel(await Module(new UserSettings { DefaultLorasFolder = "Lora" }));
 
         var toggle = cut.Find("input[data-role='use-library']");
         toggle.GetAttribute("type").Should().Be("checkbox");
@@ -173,23 +175,33 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.FindAll("[data-role='library']").Should().BeEmpty();
         cut.FindAll("[data-folder-key]").Should().BeEmpty();
         cut.FindAll("[data-role='output']").Should().ContainSingle("the output folder is not a model folder");
-        cut.Markup.Should().Contain("extra_model_paths.yaml", "the user is told what off means");
-        cut.Find(".switch-text").TextContent.Should().Contain("remembered library").And.Contain(@"D:\Models",
-            "an upgrading user must see WHY models they used to have are not found any more");
+        cut.Find(".switch-text").TextContent.Should().Contain("Off:").And.Contain("extra_model_paths.yaml", "the user is told what off means")
+            .And.NotContain("library folder (");
     }
 
     [Fact]
-    public async Task Without_a_remembered_library_the_off_hint_does_not_mention_one()
+    public async Task A_remembered_library_starts_the_switch_on()
     {
-        var cut = RenderPanel(await Module());
+        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
 
-        cut.Find(".switch-text").TextContent.Should().Contain("Off:").And.NotContain("remembered library");
+        cut.Find("input[data-role='use-library']").HasAttribute("checked").Should().BeTrue();
+        cut.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
+    }
+
+    [Fact]
+    public async Task Turning_the_switch_off_says_the_typed_library_will_not_be_remembered()
+    {
+        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
+
+        cut.Find("input[data-role='use-library']").Change(false);
+
+        cut.Find(".switch-text").TextContent.Should().Contain(@"D:\Models").And.Contain("will not be remembered");
     }
 
     [Fact]
     public async Task Turning_the_switch_on_reveals_the_advanced_section_and_raises_Changed()
     {
-        var module = await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
+        var module = await Module();
         var changed = false;
         var cut = RenderPanel(module, () => changed = true);
 
@@ -197,15 +209,14 @@ public class ComfyFoldersPanelTests : BunitContext
 
         module.UseModelLibraryFolder.Should().BeTrue();
         changed.Should().BeTrue();
-        cut.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use", "the remembered library is applied again");
         cut.Find(".advanced-toggle").Click();
-        cut.Find("[data-role='library']").GetAttribute("value").Should().Be(@"D:\Models");
+        cut.Find("[data-role='library']").GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\models");
     }
 
     [Fact]
     public async Task Turning_the_switch_off_again_hides_the_section_but_keeps_the_folder()
     {
-        var module = await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true });
+        var module = await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
         var cut = RenderPanel(module);
         cut.Find("input[data-role='use-library']").HasAttribute("checked").Should().BeTrue();
 

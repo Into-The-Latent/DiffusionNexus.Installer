@@ -104,9 +104,9 @@ public class ComfyFoldersModuleTests
     }
 
     // ---- The "use my own model folder" switch (issue #15) ---------------------------------------
-    // A remembered library used to be applied on every ComfyUI install, out of sight behind the
-    // collapsed Advanced section. Now nothing about model folders reaches the install unless the
-    // switch is on; off means ComfyUI's own folders and no extra_model_paths.yaml.
+    // The switch IS the remembered library: a saved folder means on, none means off. Off means
+    // ComfyUI's own folders and no extra_model_paths.yaml, and persists an empty folder -- a
+    // folder left saved behind an "off" would switch it back on at the next start.
 
     private static ComfyFoldersModule ModuleWith(UserSettings settings)
     {
@@ -118,19 +118,19 @@ public class ComfyFoldersModuleTests
     }
 
     [Fact]
-    public async Task The_switch_is_off_unless_the_user_turned_it_on_last_time()
+    public async Task The_switch_follows_the_remembered_library()
     {
-        var off = ModuleWith(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
-        await off.InitializeAsync(Selection(RepositoryType.ComfyUI));
-        off.UseModelLibraryFolder.Should().BeFalse("a remembered folder alone must not switch it on");
-
-        var on = ModuleWith(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true });
+        var on = ModuleWith(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
         await on.InitializeAsync(Selection(RepositoryType.ComfyUI));
-        on.UseModelLibraryFolder.Should().BeTrue();
+        on.UseModelLibraryFolder.Should().BeTrue("a saved library is the user's standing answer");
+
+        var off = ModuleWith(new UserSettings { DefaultLorasFolder = "Lora" });
+        await off.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        off.UseModelLibraryFolder.Should().BeFalse("per-type names without a library are not a library");
     }
 
     [Fact]
-    public async Task With_the_switch_off_a_remembered_library_reaches_neither_the_install_nor_the_selection()
+    public async Task With_the_switch_off_nothing_about_model_folders_reaches_the_install_or_the_selection()
     {
         var module = ModuleWith(new UserSettings
         {
@@ -142,7 +142,9 @@ public class ComfyFoldersModuleTests
         var selection = Selection(RepositoryType.ComfyUI);
         await module.InitializeAsync(selection);
 
-        module.ModelBaseFolder.Should().Be(@"D:\Models", "the folder is remembered, just not applied");
+        module.UseModelLibraryFolder = false;
+
+        module.ModelBaseFolder.Should().Be(@"D:\Models", "kept for this run so flipping back on loses nothing");
         module.HasCustomFolders.Should().BeFalse();
         selection.ModelBaseFolder.Should().BeNull();
         selection.FolderPathOverrides.Should().BeEmpty();
@@ -157,11 +159,13 @@ public class ComfyFoldersModuleTests
     }
 
     [Fact]
-    public async Task Turning_the_switch_on_applies_the_remembered_library_again()
+    public async Task Turning_the_switch_back_on_applies_the_library_again()
     {
         var module = ModuleWith(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" });
         var selection = Selection(RepositoryType.ComfyUI);
         await module.InitializeAsync(selection);
+        module.UseModelLibraryFolder = false;
+        selection.ModelBaseFolder.Should().BeNull();
 
         module.UseModelLibraryFolder = true;
 
@@ -177,35 +181,23 @@ public class ComfyFoldersModuleTests
     }
 
     [Fact]
-    public async Task Turning_the_switch_off_again_clears_the_selection_without_forgetting_the_folder()
+    public async Task Persist_forgets_the_library_when_the_switch_is_off()
     {
-        var module = ModuleWith(new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true });
-        var selection = Selection(RepositoryType.ComfyUI);
-        await module.InitializeAsync(selection);
-        selection.ModelBaseFolder.Should().Be(@"D:\Models");
-
-        module.UseModelLibraryFolder = false;
-
-        selection.ModelBaseFolder.Should().BeNull();
-        module.ModelBaseFolder.Should().Be(@"D:\Models");
-    }
-
-    [Fact]
-    public async Task Persist_saves_the_switch_and_keeps_the_remembered_folder_when_it_is_off()
-    {
-        var stored = new UserSettings { DefaultModelBaseFolder = @"D:\Models", UseModelLibraryFolder = true };
+        // The switch derives from the saved folder, so "off" has to save an empty one -- otherwise
+        // the next start would find the folder and be on again.
+        var stored = new UserSettings { DefaultModelBaseFolder = @"D:\Models", OutputFolder = @"D:\Out" };
         var module = ModuleWith(stored);
         await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
 
         module.UseModelLibraryFolder = false;
         await module.PersistAsync();
 
-        stored.UseModelLibraryFolder.Should().BeFalse();
-        stored.DefaultModelBaseFolder.Should().Be(@"D:\Models", "off is not forget: turning it back on next time must restore the folder");
+        stored.DefaultModelBaseFolder.Should().BeEmpty();
+        stored.OutputFolder.Should().Be(@"D:\Out", "the output folder is outside the switch");
     }
 
     [Fact]
-    public async Task Persist_saves_the_switch_when_it_was_turned_on()
+    public async Task Persist_saves_the_library_when_the_switch_is_on()
     {
         var stored = new UserSettings();
         var module = ModuleWith(stored);
@@ -215,7 +207,6 @@ public class ComfyFoldersModuleTests
         module.ModelBaseFolder = @"D:\Models";
         await module.PersistAsync();
 
-        stored.UseModelLibraryFolder.Should().BeTrue();
         stored.DefaultModelBaseFolder.Should().Be(@"D:\Models");
     }
 }

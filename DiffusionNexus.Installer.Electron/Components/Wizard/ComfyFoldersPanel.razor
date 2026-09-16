@@ -17,19 +17,17 @@
         <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
     </div>
 
-    @* The "use my own model folder" switch (issue #15). Off is the default and means ComfyUI's own
-       models folders: nothing below it renders and no extra_model_paths.yaml is written. Before it
-       existed a remembered library was applied on every ComfyUI install from behind the collapsed
-       Advanced section, where nobody saw it. *@
+    @* The "use my own model folder" switch (issue #15). On when a library folder is remembered,
+       off when none is. Off means ComfyUI's own models folders: nothing below it renders and no
+       extra_model_paths.yaml is written. Before it existed a remembered library was applied from
+       behind the collapsed Advanced section, where nobody saw it. *@
     <label class="switch">
         <input type="checkbox" role="switch" data-role="use-library"
                checked="@Module.UseModelLibraryFolder" @onchange="OnUseLibraryChanged" />
         <span class="switch-track" aria-hidden="true"></span>
         <span class="switch-text">
             Use my own model folder
-            @* With the switch off, a library remembered from an earlier install is named here: an
-               upgrading user whose models used to be found in D:\Models would otherwise see them
-               re-downloaded into the install with nothing on screen saying why. *@
+            @* Off with a library still typed in: say what happens to it, since moving on forgets it. *@
             <span class="panel-hint">
                 @if (Module.UseModelLibraryFolder)
                 {
@@ -37,7 +35,7 @@
                 }
                 else if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
                 {
-                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written. Your remembered library (<code>@Module.ModelBaseFolder</code>) is not used until you turn this on.</text>
+                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written. Your library folder (<code>@Module.ModelBaseFolder</code>) is not used and will not be remembered unless you turn this back on.</text>
                 }
                 else
                 {
