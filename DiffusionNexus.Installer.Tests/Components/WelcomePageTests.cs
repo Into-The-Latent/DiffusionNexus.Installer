@@ -1,10 +1,12 @@
 using Bunit;
 using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Gallery;
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog;
+using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
@@ -367,5 +369,83 @@ public class WelcomePageTests : BunitContext
         // Moved up from the old gallery footer; must survive an empty catalog.
         cut.WaitForAssertion(() => cut.Find("a[href='/licenses']").Should().NotBeNull());
         cut.FindAll(".community-link").Should().HaveCount(CommunityLink.Defaults.Count);
+    }
+
+    private static string Notice => ".catalog-update-notice";
+
+    [Fact]
+    public void Announces_a_waiting_catalog_update_with_its_counts()
+    {
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        _signals.Catalog.LastCheck = CatalogChecks.Available(
+            workloads: [CatalogChecks.WorkloadUpdated("A", "V1.0", "V1.1"), CatalogChecks.WorkloadAdded("B", "V1.0"), CatalogChecks.WorkloadRemoved("C", "V1.0")],
+            workflows: [CatalogChecks.WorkflowAdded("W", "V1.0", "A")]);
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var notice = cut.Find(Notice);
+            notice.TextContent.Should().Contain("A catalog update is available: 3 workloads and 1 workflow changed.");
+            notice.QuerySelector("a[href='/updates']")!.TextContent.Should().Be("Review and apply");
+        });
+    }
+
+    [Fact]
+    public void Points_at_the_app_update_when_the_catalog_needs_newer_software()
+    {
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        _signals.Catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.RequiresNewerSoftware);
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() =>
+            cut.Find(Notice).TextContent.Should().Contain("Update the installer to receive it."));
+    }
+
+    [Theory]
+    [InlineData(CatalogUpdateOutcome.UpToDate)]
+    [InlineData(CatalogUpdateOutcome.Failed)]
+    [InlineData(CatalogUpdateOutcome.OverrideActive)]
+    public void Says_nothing_for_other_outcomes(CatalogUpdateOutcome outcome)
+    {
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        _signals.Catalog.LastCheck = CatalogChecks.Outcome(outcome, "boom");
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().NotBeEmpty());
+        cut.FindAll(Notice).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Appears_when_the_startup_check_finishes_after_the_page_rendered()
+    {
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().NotBeEmpty());
+        cut.FindAll(Notice).Should().BeEmpty();
+
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+        _signals.Catalog.RaiseChanged();
+
+        cut.WaitForAssertion(() => cut.Find(Notice).TextContent.Should().Contain("1 workload and 0 workflows changed"));
+    }
+
+    [Fact]
+    public async Task Unsubscribes_from_the_coordinator_on_dispose()
+    {
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().NotBeEmpty());
+        var before = _signals.Catalog.Subscribers;   // page + its TopBar
+
+        await DisposeComponentsAsync();
+
+        _signals.Catalog.Subscribers.Should().Be(0, $"{before} handlers were attached and all must go");
     }
 }

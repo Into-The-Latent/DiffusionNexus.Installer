@@ -1206,6 +1206,24 @@ progress {
     color: var(--muted);
 }
 
+/* News about the list, not an error about it: accent border, no red. */
+.catalog-update-notice {
+    margin: 0 auto 1rem;
+    padding: .6rem 1rem;
+    max-width: 48rem;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--panel);
+    font-size: .9rem;
+    text-align: center;
+}
+
+.catalog-update-notice a {
+    color: var(--accent);
+    font-weight: 600;
+    margin-left: .4rem;
+}
+
 /* ---------- Software strip ("jukebox") ---------- */
 
 /* Arrows in their own columns rather than floated over the track: overlaying them covers the
