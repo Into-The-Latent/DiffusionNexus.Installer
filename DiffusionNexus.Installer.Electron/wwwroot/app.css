@@ -1041,6 +1041,85 @@ progress {
     background: var(--accent);
 }
 
+/* ---------- Announcements banner ---------- */
+
+/* Operator messages, between the top bar and the page. `flex: none` matters on the install screen:
+   there .screen is a fixed 100vh column whose body shrinks to fit, so the banner must take its
+   own height out of that budget rather than compete with the log panels for it. */
+.server-messages {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.server-message {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    background: #13262a;
+    font-size: .9rem;
+}
+
+.server-message-warning {
+    border-left-color: #e8c67a;
+    background: #221e12;
+}
+
+.server-message-critical {
+    border-left-color: #ff8f8f;
+    background: #2a1517;
+}
+
+/* Takes the slack, so the action and the X sit against the right edge however short the text.
+   min-width: 0 lets a long unbroken URL in the body wrap instead of pushing them off-screen. */
+.server-message-body {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.server-message-title {
+    margin-right: .5em;
+}
+
+/* The operator writes plain text; keep the line breaks they typed. On the text span, not the
+   body: there it would also preserve the markup's own newlines between title and text. */
+.server-message-text {
+    white-space: pre-line;
+}
+
+.server-message-action {
+    flex: none;
+    padding: 4px 12px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    color: var(--text);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.server-message-action:hover {
+    color: var(--accent-hover);
+}
+
+.server-message-dismiss {
+    flex: none;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.server-message-dismiss:hover {
+    color: var(--text);
+}
+
 /* ---------- Community footer ---------- */
 
 /* The window's bottom edge, on every screen of the flow -- so it spans the whole width the way

@@ -24,6 +24,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         // resolvable at construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
     }
 

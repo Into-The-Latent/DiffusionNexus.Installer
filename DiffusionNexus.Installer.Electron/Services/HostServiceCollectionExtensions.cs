@@ -1,5 +1,7 @@
+using DiffusionNexus.Installer.Core.Announcements;
 using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Host;
+using DiffusionNexus.Installer.SDK.Services.Settings;
 using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +34,14 @@ public static class HostServiceCollectionExtensions
     public const string CommunityLinksGistUrl =
         "https://gist.githubusercontent.com/Little-God1983/358c5fccc6655f6e56aef8470bb17c1c/raw/community-links.json";
 
+    /// <summary>
+    /// Where dismissed announcement ids are remembered: next to user_settings.json, and the very
+    /// file the 1.x installer writes. Shared on purpose -- both read the Gist as "installer", so
+    /// a notice dismissed in one must not come back in the other.
+    /// </summary>
+    public static string DismissedMessagesPath => Path.Combine(
+        Path.GetDirectoryName(UserSettingsPaths.Default)!, "dismissed_messages.json");
+
     public static IServiceCollection AddInstallerHostServices(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -53,6 +63,14 @@ public static class HostServiceCollectionExtensions
         services.AddSingleton<ICommunityLinksService>(_ => new GistCommunityLinksService(
             new CommunityLinksServiceOptions { Url = CommunityLinksGistUrl, UserAgent = "DiffusionNexus-Installer/3" }));
         services.AddSingleton<CommunityLinksCache>();
+
+        // The operator announcements: messages.json in the same Gist (issue #12). The SDK's
+        // default URL, deliberately -- moving the document is then one edit in the SDK, not a
+        // release per app. Own HttpClient for the same reason as above.
+        services.AddSingleton<IServerMessageService>(_ => new GistServerMessageService(
+            new ServerMessageServiceOptions { UserAgent = "DiffusionNexus-Installer/3" }));
+        services.AddSingleton(_ => new DismissedMessageStore(DismissedMessagesPath));
+        services.AddSingleton<ServerMessageCache>();
 
         // Registered as the concrete type AND the interface, deliberately: the modal component
         // resolves the concrete service to subscribe to it, the wizard resolves the interface.

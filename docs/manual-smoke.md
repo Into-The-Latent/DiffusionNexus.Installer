@@ -296,3 +296,24 @@ Call the installed version `A` and the test version `B` (next patch number).
    Stable. **Expect:** `B`. Then, in one Debug session, check on Preview and switch to Stable in
    Developer tools and check again. **Expect:** the Stable check behaves as in step 2 (the
    updater was pointed back at its own config), not "no update" against `C` alone.
+
+## 9. Announcements banner
+
+The banner shows operator messages from `messages.json` in the shared Gist (issue #12), read as
+app id `installer`. It needs a row whose `targets` is empty or contains `installer`; dismissals
+are remembered in `%LocalAppData%\DiffusionNexus\dismissed_messages.json`, the same file the 1.x
+installer writes. Delete that file first for a clean run.
+
+1. With no applicable row in the Gist, launch. **Expect:** no banner, and no empty stripe under
+   the top bar on any screen.
+2. Add an `info` row for `installer` with a `title`, an https `actionUrl` and `actionLabel`.
+   Relaunch. **Expect:** a teal-edged banner under the top bar within a moment of the welcome
+   screen painting; it is still there after picking a software and on every wizard stage.
+3. Click the action button. **Expect:** it opens in your normal browser; the installer window
+   does not navigate.
+4. Click the X. **Expect:** the banner goes at once. Relaunch. **Expect:** it stays gone.
+5. Set the row to `"severity": "critical", "dismissible": false`, with a new `id`. Relaunch.
+   **Expect:** a red-edged banner with no X.
+6. With that banner showing, run an install to the two-column install screen. **Expect:** the
+   buttons and the community footer are still inside the window, and both columns scroll.
+7. Disconnect the network and launch. **Expect:** no banner, no error, no delay to the window.

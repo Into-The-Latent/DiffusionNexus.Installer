@@ -200,6 +200,21 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void the_announcements_banner_takes_its_height_out_of_the_install_screens_budget()
+    {
+        // The install screen is a fixed 100vh flex column whose body shrinks to fit. A banner
+        // that could shrink too would be squeezed by the log panels; one that could grow would
+        // take height from them. Its body must be allowed to narrow, or a long URL in a message
+        // pushes the action and the dismiss button out of the window.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        Regex.Match(css, @"\.server-messages\s*\{(?<body>[^}]*)\}").Groups["body"].Value
+            .Should().Contain("flex: none");
+        Regex.Match(css, @"\.server-message-body\s*\{(?<body>[^}]*)\}").Groups["body"].Value
+            .Should().Contain("min-width: 0").And.Contain("overflow-wrap: anywhere");
+    }
+
+    [Fact]
     public void app_css_has_balanced_braces_outside_comments_and_strings()
     {
         var path = Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css");

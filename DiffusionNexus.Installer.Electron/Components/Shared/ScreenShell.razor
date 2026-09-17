@@ -13,6 +13,11 @@
 <div class="screen">
     <TopBar OnFeedback="() => _feedbackOpen = true" />
 
+    @* Operator announcements, under the bar and above the page on every screen: a "download the
+       fixed build" notice has to reach a user who is already three steps into the wizard. Renders
+       nothing when there is nothing to say. *@
+    <ServerMessageBanner />
+
     <div class="screen-body">
         @ChildContent
     </div>

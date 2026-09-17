@@ -46,6 +46,7 @@ public class WelcomeScriptFailureTests : BunitContext
         // originally covered only JSDisconnectedException, which is not what any of those throw.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
         Services.AddSingleton<IJSRuntime>(new BrokenJs());
 

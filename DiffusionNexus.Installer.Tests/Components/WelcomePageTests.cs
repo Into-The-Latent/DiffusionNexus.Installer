@@ -32,6 +32,7 @@ public class WelcomePageTests : BunitContext
         // construction time.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        Services.AddSingleton(OfflineServerMessages.Cache());
         _signals = UpdateSignals.Register(Services);
 
         // The software strip watches itself through wwwroot/js/jukebox.js once its cards exist.
