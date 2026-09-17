@@ -2,8 +2,12 @@
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Electron.Services
 @using ElectronNET.API
+@using System.Globalization
+@using DiffusionNexus.Installer.Core.Updates
+@using DiffusionNexus.Installer.SDK.Catalog.Updates
 @inject UpdaterLog Log
 @inject IInstallSession Session
+@inject ICatalogUpdateCoordinator Catalog
 @implements IDisposable
 
 <PageTitle>Into the Latent Easy Installer</PageTitle>
@@ -17,7 +21,7 @@
     </header>
 
     <section class="actions">
-        <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@(_busy || !ElectronActive)">
+        <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@_busy">
             @(_busy ? "Checking..." : "Check for updates")
         </button>
 
@@ -36,6 +40,61 @@
                 finished &mdash; applying it now would restart the app mid-install and leave that
                 folder unfinished.
             </p>
+        }
+    </section>
+
+    <section class="catalog">
+        <h2>Content catalog</h2>
+        <p class="catalog-channel">Following: <strong>@Catalog.Channel</strong>@(Catalog.ChannelSource == CatalogChannelSource.Environment ? " (set by DIFFUSIONNEXUS_CATALOG_CHANNEL)" : null)</p>
+        <p class="catalog-installed">Installed: @InstalledText</p>
+        <p class="catalog-outcome">
+            @OutcomeText
+            @if (Catalog.Phase == CatalogUpdatePhase.Applied)
+            {
+                <a href="/">Back to all software</a>
+            }
+        </p>
+
+        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
+        {
+            var rows = CatalogChangeRows.Build(available);
+            foreach (var group in new[] { ChangeKind.Added, ChangeKind.Updated, ChangeKind.Removed })
+            {
+                var inGroup = rows.Where(r => r.Change == group).ToList();
+                if (inGroup.Count == 0) continue;
+                <div class="catalog-changes">
+                    <h3>@group</h3>
+                    <ul>
+                        @foreach (var row in inGroup)
+                        {
+                            <li>
+                                <span class="catalog-change-kind">@row.Kind</span>
+                                <span class="catalog-change-name">@row.Name</span>
+                                <span class="catalog-change-version">@row.VersionText</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (Catalog.Phase == CatalogUpdatePhase.Applying)
+            {
+                <p class="catalog-progress">@ProgressText</p>
+            }
+            else if (Catalog.ApplyBlockedReason is { } blocked)
+            {
+                @* Same rule as "Restart and install" above: never swap content under a running plan. *@
+                <p class="panel-hint">@blocked</p>
+            }
+            else
+            {
+                <button class="primary" @onclick="ApplyCatalogAsync" disabled="@(!Catalog.CanApply)">Apply catalog update</button>
+            }
+
+            @if (Catalog.LastApply is { } failed && (failed.Error is not null || failed.Failed != CatalogSections.None))
+            {
+                <p class="catalog-error">@ApplyFailureText(failed)</p>
+            }
         }
     </section>
 
@@ -64,7 +123,7 @@
 
     private static string HostDescription => ElectronActive
         ? "Running inside the Electron shell."
-        : "Running as a plain web app - the updater is unavailable outside Electron.";
+        : "Running as a plain web app - the app updater is unavailable outside Electron; the catalog check still works.";
 
     protected override void OnInitialized()
     {
@@ -74,6 +133,7 @@
         // would still say it after X finished, with the user sitting on this page watching nothing
         // happen.
         Session.Changed += OnLogChanged;
+        Catalog.Changed += OnLogChanged;
     }
 
     // Fires on Electron's socket thread, so hop back onto the circuit before re-rendering.
@@ -84,13 +144,23 @@
         _busy = true;
         try
         {
-            await Electron.AutoUpdater.CheckForUpdatesAsync();
-        }
-        catch (Exception ex)
-        {
-            // A failed update check must never take the app down with it - the installer still
-            // works perfectly well on an older version.
-            Log.Append($"Update check failed: {ex.Message}");
+            // Both checks from one button. The catalog one never throws and needs no Electron;
+            // the app one is guarded exactly as before.
+            var catalog = Catalog.CheckAsync();
+            if (ElectronActive)
+            {
+                try
+                {
+                    await Electron.AutoUpdater.CheckForUpdatesAsync();
+                }
+                catch (Exception ex)
+                {
+                    // A failed update check must never take the app down with it - the installer
+                    // still works perfectly well on an older version.
+                    Log.Append($"Update check failed: {ex.Message}");
+                }
+            }
+            await catalog;
         }
         finally
         {
@@ -125,5 +195,50 @@
         // The session outlives every component on the circuit, so a handler left on it keeps this
         // page alive for the life of the app.
         Session.Changed -= OnLogChanged;
+        Catalog.Changed -= OnLogChanged;
     }
+
+    private string InstalledText => Catalog.Installed switch
+    {
+        null => "unknown",
+        { HighestCatalogVersion: 0 } => "not yet installed",
+        var s => $"v{s.HighestCatalogVersion} ({s.Channel}), applied {(s.Workloads?.AppliedAt ?? s.Workflows?.AppliedAt)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}",
+    };
+
+    private string OutcomeText
+    {
+        get
+        {
+            if (Catalog.Phase == CatalogUpdatePhase.Checking) return "Checking the catalog…";
+            if (Catalog.Phase == CatalogUpdatePhase.Applied) return $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion}.";
+            return Catalog.LastCheck switch
+            {
+                null => "Not checked yet.",
+                { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
+                { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
+                { Outcome: CatalogUpdateOutcome.RequiresNewerSoftware } => "This catalog update needs a newer version of the installer. Install the app update above first.",
+                { Outcome: CatalogUpdateOutcome.OverrideActive } => $"Update check skipped: a local catalog override is active at {Catalog.OverridePath}.",
+                { Outcome: CatalogUpdateOutcome.Failed } c => $"The catalog check failed: {c.Error}",
+                _ => string.Empty,
+            };
+        }
+    }
+
+    private string ProgressText => Catalog.Progress switch
+    {
+        null => "Downloading…",
+        { TotalBytes: > 0 } p => $"Downloading… {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
+        var p => $"Downloading… {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
+    };
+
+    private static string ApplyFailureText(CatalogApplyResult result) => result.Applied switch
+    {
+        CatalogSections.None => $"The catalog update failed: {result.Error?.TrimEnd('.')}. Nothing was changed.",
+        CatalogSections.Workloads => $"Workloads were updated; workflows failed: {result.Error}",
+        CatalogSections.Workflows => $"Workflows were updated; workloads failed: {result.Error}",
+        _ => $"The catalog update reported a problem: {result.Error}",
+    };
+
+    // Never throws; a refused click (state moved on) is a no-op the next render explains.
+    private Task ApplyCatalogAsync() => Catalog.ApplyAsync();
 }

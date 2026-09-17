@@ -5,9 +5,12 @@
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.Electron.Services
 @using DiffusionNexus.Installer.SDK.Catalog
+@using DiffusionNexus.Installer.Core.Updates
+@using DiffusionNexus.Installer.SDK.Catalog.Updates
 @inject SoftwareGalleryBuilder Builder
 @inject IWorkloadSource Workloads
 @inject IJSRuntime JS
+@inject ICatalogUpdateCoordinator Catalog
 
 <PageTitle>Into the Latent Easy Installer</PageTitle>
 
@@ -19,6 +22,26 @@
 
         <h1 class="welcome-title">Easy Workload Installer</h1>
         <p class="welcome-subtitle">Choose which AI application you want to install.</p>
+
+        @* Above the strip and below the title, so it reads as news about the list, not as an
+           error about it. Only the two outcomes the user can act on get a line; a failed
+           startup check stays quiet here -- /updates says why if they go looking. *@
+        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available)
+        {
+            <p class="catalog-update-notice">
+                @(available.Workloads.Count == 0 && available.Workflows.Count == 0
+                    ? "A catalog update is available."
+                    : $"A catalog update is available: {Plural(available.Workloads.Count, "workload")} and {Plural(available.Workflows.Count, "workflow")} changed.")
+                <a href="/updates">Review and apply</a>
+            </p>
+        }
+        else if (Catalog.LastCheck?.Outcome == CatalogUpdateOutcome.RequiresNewerSoftware)
+        {
+            <p class="catalog-update-notice">
+                The catalog has moved to a format this version cannot read. Update the installer to receive it.
+                <a href="/updates">Check for updates</a>
+            </p>
+        }
 
         @* Error first, loading second -- the same order SoftwareWorkloads.razor uses. Testing
            "not loaded yet" first would make the error state depend on the catch block also having
@@ -119,6 +142,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Catalog.Changed += OnCatalogChanged;
+
         try
         {
             _software = await Builder.BuildAsync();
@@ -232,6 +257,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        Catalog.Changed -= OnCatalogChanged;
+
         // Set first, so a render callback still awaiting its round trips sees it and tears down
         // whatever it has built rather than publishing it to a component that is already gone.
         _disposed = true;
@@ -260,6 +287,11 @@
         // Always: this one is a GC handle on THIS side, and leaking it pins the component.
         _self?.Dispose();
     }
+
+    private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    // Fires on a pool thread when the startup check lands; hop back onto the circuit.
+    private void OnCatalogChanged() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>
     /// Where a card navigates, or null when it must not navigate at all.

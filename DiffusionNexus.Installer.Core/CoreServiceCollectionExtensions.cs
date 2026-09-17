@@ -2,11 +2,15 @@ using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
+using DiffusionNexus.Installer.SDK.Services.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace DiffusionNexus.Installer.Core;
 
@@ -26,6 +30,17 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IWorkloadSource, CatalogWorkloadSource>();
         services.AddSingleton<IInstallSession, InstallSession>();
         services.AddSingleton<IModelPreflight, ModelPreflight>();
+
+        // The one writer of CatalogOptions.Channel. Explicit factory so the env-var reader is a
+        // plain delegate (tests pass their own) and the logger stays optional -- the DI test's
+        // container registers no logging, exactly like CommunityLinksCache.
+        services.AddSingleton<ICatalogUpdateCoordinator>(sp => new CatalogUpdateCoordinator(
+            sp.GetRequiredService<ICatalogUpdateService>(),
+            sp.GetRequiredService<CatalogOptions>(),
+            sp.GetRequiredService<IUserSettingsRepository>(),
+            sp.GetRequiredService<IInstallSession>(),
+            () => Environment.GetEnvironmentVariable(CatalogChannelResolver.EnvironmentVariable),
+            sp.GetService<ILogger<CatalogUpdateCoordinator>>()));
 
         // The SDK's own AddInstallationServices does not register this one — both Avalonia apps
         // construct it by hand — but the install-folder pre-flight needs it. TryAdd so a host that

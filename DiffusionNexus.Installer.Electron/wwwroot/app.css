@@ -145,6 +145,66 @@ html, body {
     font-size: .85rem;
 }
 
+/* /updates: the content-catalog section under the app updater. Same panel treatment as .shell
+   .log so the two sections read as siblings. */
+.shell .catalog {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+}
+
+.shell .catalog h2 {
+    margin: 1.5rem 0 .5rem;
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+}
+
+.shell .catalog p {
+    margin: .25rem 0;
+}
+
+.catalog-changes {
+    margin: .75rem 0;
+}
+
+.catalog-changes h3 {
+    margin: .5rem 0 .25rem;
+    font-size: .9rem;
+    color: var(--muted);
+}
+
+.catalog-changes ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.catalog-changes li {
+    display: flex;
+    gap: .6rem;
+    padding: .25rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: .9rem;
+}
+
+.catalog-change-kind {
+    color: var(--muted);
+    min-width: 5.5rem;
+}
+
+.catalog-change-version {
+    margin-left: auto;
+    font-family: Consolas, "Courier New", monospace;
+    color: var(--muted);
+}
+
+.catalog-error {
+    color: #ff8f8f;
+}
+
 /* ---------------------------------------------------------------------------
    Wizard, gallery and modal (slice 1)
 
@@ -380,6 +440,14 @@ h2 {
     margin: 0 0 .75rem;
     color: var(--muted);
     font-size: .85rem;
+}
+
+.catalog-channel-option {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0 1.25rem .75rem 0;
+    cursor: pointer;
 }
 
 .disclaimer-text {
@@ -963,6 +1031,16 @@ progress {
     color: var(--muted);
 }
 
+/* Something is waiting on /updates: a catalog update to apply or an app update to install. */
+.top-bar-attention::after {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
 /* ---------- Community footer ---------- */
 
 /* The window's bottom edge, on every screen of the flow -- so it spans the whole width the way
@@ -1194,6 +1272,24 @@ progress {
     text-align: center;
     font-size: clamp(13px, 1vw, 16px);
     color: var(--muted);
+}
+
+/* News about the list, not an error about it: accent border, no red. */
+.catalog-update-notice {
+    margin: 0 auto 1rem;
+    padding: .6rem 1rem;
+    max-width: 48rem;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--panel);
+    font-size: .9rem;
+    text-align: center;
+}
+
+.catalog-update-notice a {
+    color: var(--accent);
+    font-weight: 600;
+    margin-left: .4rem;
 }
 
 /* ---------- Software strip ("jukebox") ---------- */
