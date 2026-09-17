@@ -152,10 +152,10 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
-    public void The_hero_is_gone_once_the_user_moves_past_the_first_stage()
+    public void The_hero_stays_up_past_the_first_stage()
     {
-        // It answers "did I click the right thing?". Past the first stage that is answered, and
-        // carrying it along would push each stage's actual question further down the page.
+        // It began as a first-stage greeting. Kept through the question stages it is what makes
+        // the wizard read as one screen about one workload instead of unrelated forms.
         RegisterContent(EmptyScanner());
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         page.FindAll(".hero").Should().HaveCount(1);
@@ -163,7 +163,9 @@ public class InstallPageTests : BunitContext
         page.Find(".path-row input").Input(@"C:\Installs\Fooocus");
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
 
-        page.FindAll(".hero").Should().BeEmpty();
+        page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero-compact").Should().BeEmpty("only Confirm uses the compact form");
+        page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
     [Fact]

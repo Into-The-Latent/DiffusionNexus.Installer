@@ -125,4 +125,17 @@ public class WorkloadHeroTests : BunitContext
         cut.Find(".hero-name").TextContent.Should().Be("Fooocus");
         cut.Find(".hero-desc").TextContent.Trim().Should().BeEmpty();
     }
+
+    [Fact]
+    public void The_compact_form_keeps_the_picture_and_the_name_and_drops_the_description()
+    {
+        // The Confirm stage: a reminder of the choice above the summary, not a second presentation.
+        var workload = Workload(RepositoryType.AceStep, "ACE-Step-1.5", "**Music** model.");
+
+        var cut = Render<WorkloadHero>(p => p.Add(h => h.Workload, workload).Add(h => h.Compact, true));
+
+        cut.Find(".hero.hero-compact .hero-art img").Should().NotBeNull();
+        cut.Find(".hero-name").TextContent.Should().Be("ACE-Step-1.5");
+        cut.FindAll(".hero-desc").Should().BeEmpty();
+    }
 }

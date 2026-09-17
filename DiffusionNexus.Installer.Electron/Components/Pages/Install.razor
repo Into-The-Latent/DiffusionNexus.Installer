@@ -309,16 +309,14 @@
     }
 
     /// <summary>
-    /// Whether to open with the "here is what you picked" hero.
+    /// Whether the "here is what you picked" hero is up.
     ///
-    /// First stage only, for every workload. ComfyUI's workloads used to be excluded on the
-    /// grounds that the workload screen had just shown the card -- but the card has no room for
-    /// the description (it is a hover tooltip there), so this is the first place the user can
-    /// actually read what the pack does. Later stages drop it because by then the question it
-    /// answers -- "did I click the right thing?" -- has been answered.
+    /// Every stage that asks a question: it started as a first-stage greeting, and staying up
+    /// turned out to be what keeps the wizard feeling like one screen about one workload rather
+    /// than four unrelated forms. Compact on Confirm, where the summary is the thing to read.
+    /// Not on Install -- that stage is two full-height columns of log and report, and has the
+    /// plain heading instead.
     /// </summary>
-    // EXPERIMENT (uncommitted): the hero stays up through every question stage, compact on
-    // Confirm, and only the Install stage -- two columns of log -- goes without it.
     private bool ShowHero => _run is not null && _run.CurrentStage != WizardStage.Install;
 
     private void GoToGallery() => Nav.NavigateTo("/");

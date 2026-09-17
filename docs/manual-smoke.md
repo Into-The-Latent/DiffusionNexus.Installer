@@ -351,3 +351,6 @@ installer writes. Delete that file first for a clean run.
    log and progress intact -- not the welcome screen. Same via **Check for Updates** and (Debug
    build) **Developer tools**, whose Back is now at the top of the page.
 6. From the welcome screen open Licences and go Back. **Expect:** the welcome screen.
+7. Walk a ComfyUI workload through every stage. **Expect:** the hero stays up on Location,
+   System and Content; on Confirm it shrinks to a small picture beside the name (no
+   description) above "Ready to install"; the Install stage has the plain heading and no hero.
