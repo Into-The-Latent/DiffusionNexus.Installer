@@ -1335,8 +1335,14 @@ progress {
     padding: 10px 12px 12px;
 }
 
+/* Always two lines tall, whether the name needs them or not. Names run from "MiniMax H3" to
+   "Base-install-Triton-SageAttention-Manager", and with the box sized by its text the chip row
+   and everything under it sat at a different height on every other tile. 2 x the line-height;
+   a minimum rather than a clamp, so the rare three-line name at the narrowest tile still shows
+   its version instead of an ellipsis. */
 .workload-card-name {
     margin: 0;
+    min-height: 2.6em;
     font-size: 13px;
     font-weight: 600;
     line-height: 1.3;

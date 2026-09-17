@@ -126,6 +126,22 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void every_workload_tile_lays_out_the_same_whatever_its_name()
+    {
+        // One-line and two-line names used to put the chip row at two different heights across a
+        // row of tiles. The name box is two lines tall regardless, and the action sits on the
+        // card's bottom edge, so only the text differs from tile to tile.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var name = Regex.Match(css, @"\.workload-card-name\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        name.Should().Contain("line-height: 1.3").And.Contain("min-height: 2.6em", "two lines of 1.3");
+        name.Should().NotContain("line-clamp", "a clamp would cut the version off a three-line name");
+
+        var action = Regex.Match(css, @"\.workload-card-meta > :last-child\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        action.Should().Contain("margin-top: auto");
+    }
+
+    [Fact]
     public void the_bar_and_the_footer_stay_in_the_window()
     {
         // A long wizard stage used to grow the shell past the window, so the DOCUMENT scrolled and
