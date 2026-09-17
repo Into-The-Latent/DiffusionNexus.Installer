@@ -164,6 +164,38 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task The_progress_bar_gets_a_number_html_can_read_on_a_comma_decimal_machine()
+    {
+        // Blazor formats an attribute with the CURRENT culture, and nothing in the app overrides
+        // the OS one: on a German machine 5/12 rendered as value="41,666...", which is not a
+        // valid floating-point number, so <progress> fell back to indeterminate for every step
+        // that does not divide evenly.
+        var run = await RunAsync();
+        _session.SetupGet(s => s.Progress).Returns(new InstallationProgress
+        {
+            CurrentStep = InstallationStep.InstallTorch,
+            StepIndex = 5,
+            TotalSteps = 12,
+            Message = "Installing PyTorch..."
+        });
+
+        var before = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+        try
+        {
+            var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+            var value = stage.Find("progress").GetAttribute("value");
+            value.Should().NotContain(",");
+            double.Parse(value!, System.Globalization.CultureInfo.InvariantCulture).Should().BeApproximately(41.67, 0.01);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = before;
+        }
+    }
+
+    [Fact]
     public async Task A_step_in_flight_is_numbered_from_one()
     {
         var run = await RunAsync();

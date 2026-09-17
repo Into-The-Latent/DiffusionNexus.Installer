@@ -22,6 +22,7 @@ public class ScreenShellTests : BunitContext
     {
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
     }
 
@@ -50,6 +51,29 @@ public class ScreenShellTests : BunitContext
 
         cut.Find(".screen > .community").Should().NotBeNull();
         cut.FindAll(".community-link").Should().HaveCount(CommunityLink.Defaults.Count);
+    }
+
+    [Fact]
+    public void Puts_an_announcement_between_the_bar_and_the_pages_own_content()
+    {
+        // In the shell so every screen carries it (issue #12): a "download the fixed build"
+        // notice has to reach a user who is already past the welcome screen. Direct child of
+        // .screen, like the bar, so it spans the window rather than the page's column.
+        Services.AddSingleton(OfflineServerMessages.Cache(new ServerMessage { Id = "fix", Message = "Fixed build available." }));
+
+        var cut = RenderShell();
+
+        cut.WaitForAssertion(() =>
+            cut.Find(".screen > .top-bar + .server-messages + .screen-body").Should().NotBeNull());
+        cut.Find(".server-message-text").TextContent.Should().Be("Fixed build available.");
+    }
+
+    [Fact]
+    public void With_nothing_to_announce_the_body_follows_the_bar_directly()
+    {
+        var cut = RenderShell();
+
+        cut.Find(".screen > .top-bar + .screen-body").Should().NotBeNull();
     }
 
     [Fact]

@@ -38,7 +38,10 @@
         @if (Session.Progress is { } progress)
         {
             <p>Step @DisplayedStepNumber(progress) of @progress.TotalSteps — @StepLabel(progress)</p>
-            <progress max="100" value="@progress.ProgressPercentage"></progress>
+            @* Invariant, not the default: Blazor formats attributes with the current culture, and a
+               comma-decimal machine's "41,67" is not a number to <progress>, which then shows as
+               indeterminate. *@
+            <progress max="100" value="@progress.ProgressPercentage.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
         }
 
         @if (Session.CurrentDownload is { IsActive: true } download)

@@ -1,4 +1,5 @@
 using DiffusionNexus.Installer.Core;
+using DiffusionNexus.Installer.Core.Announcements;
 using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Host;
@@ -135,6 +136,16 @@ public class DependencyInjectionTests
         provider.GetRequiredService<ICommunityLinksService>().Should().BeOfType<GistCommunityLinksService>();
         provider.GetRequiredService<CommunityLinksCache>().Should()
             .BeSameAs(provider.GetRequiredService<CommunityLinksCache>());
+
+        // The announcements banner, the same shape: Gist service -> ONE cache (issue #12). The
+        // dismissal file sits beside user_settings.json under the name the 1.x installer uses, so
+        // a notice dismissed in either stays dismissed in both.
+        provider.GetRequiredService<IServerMessageService>().Should().BeOfType<GistServerMessageService>();
+        provider.GetRequiredService<DismissedMessageStore>().Should().NotBeNull();
+        provider.GetRequiredService<ServerMessageCache>().Should()
+            .BeSameAs(provider.GetRequiredService<ServerMessageCache>());
+        HostServiceCollectionExtensions.DismissedMessagesPath.Should().Be(
+            Path.Combine(Path.GetDirectoryName(UserSettingsPaths.Default)!, "dismissed_messages.json"));
 
         // Both spellings resolve to ONE instance: the modal component subscribes to the concrete
         // service and the wizard raises through the interface, so two instances mean a prompt that

@@ -178,6 +178,28 @@ public class StylesheetTests
     }
 
     [Fact]
+    public void an_announcement_does_not_starve_the_install_log()
+    {
+        // The filled install layout was measured without a banner, and at the 650px minimum the
+        // log is already on its 8rem floor -- so every pixel of banner came out of the log, behind
+        // the panel's overflow: hidden. Three long announcements hid the log AND the download
+        // row's "Skip this file" at every height up to 720 (PR #22 review, measured in headless
+        // Edge). Three parts: the banner's height is bounded on this screen, its rows scroll
+        // rather than squash inside that bound, and the log gives up its floor to a banner -- a
+        // short log that scrolls beats a tall one with its bottom cut off.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var capped = Regex.Match(css, @"\.screen:has\(\.install-split\) \.server-messages\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        capped.Should().Contain("max-height: 5rem").And.Contain("overflow-y: auto");
+
+        var row = Regex.Match(css, @"\.server-message\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        row.Should().Contain("flex: none", "a flex item shrinks by default, which squashes the text instead of scrolling it");
+
+        var floor = Regex.Match(css, @"\.screen:has\(\.server-messages\) \.install-split \.install-log\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        floor.Should().Contain("min-height: 2rem");
+    }
+
+    [Fact]
     public void the_install_outcome_keeps_its_colour()
     {
         // These were descendant selectors (.result-ok h3) matching an <h3> inside a wrapper div.
@@ -197,6 +219,21 @@ public class StylesheetTests
             Regex.IsMatch(css, $@"\.{rule}\s+\w").Should().BeFalse(
                 $".{rule} must not be a descendant selector -- nothing is nested inside the heading");
         }
+    }
+
+    [Fact]
+    public void the_announcements_banner_takes_its_height_out_of_the_install_screens_budget()
+    {
+        // The install screen is a fixed 100vh flex column whose body shrinks to fit. A banner
+        // that could shrink too would be squeezed by the log panels; one that could grow would
+        // take height from them. Its body must be allowed to narrow, or a long URL in a message
+        // pushes the action and the dismiss button out of the window.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        Regex.Match(css, @"\.server-messages\s*\{(?<body>[^}]*)\}").Groups["body"].Value
+            .Should().Contain("flex: none");
+        Regex.Match(css, @"\.server-message-body\s*\{(?<body>[^}]*)\}").Groups["body"].Value
+            .Should().Contain("min-width: 0").And.Contain("overflow-wrap: anywhere");
     }
 
     [Fact]

@@ -90,6 +90,7 @@ public class InstallPageTests : BunitContext
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
@@ -342,6 +343,7 @@ public class InstallPageTests : BunitContext
         // hosts <FeedbackDialog> -- which resolves this at construction even while closed.
         Services.AddSingleton(Mock.Of<IFeedbackReportingService>());
         Services.AddSingleton(OfflineCommunityLinks.Cache());
+        Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [

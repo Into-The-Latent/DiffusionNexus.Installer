@@ -1,0 +1,104 @@
+@using DiffusionNexus.Installer.Core.Announcements
+@using DiffusionNexus.Installer.Electron.Services
+@using DiffusionNexus.Installer.SDK.Shared.Services
+@implements IDisposable
+@inject ServerMessageCache Cache
+
+@* Operator announcements from the shared Gist (issue #12): the channel the 1.x installer, the
+   Configurator and the main app already have. No wrapper at all while there is nothing to say --
+   this sits in ScreenShell's flex column, and an empty padded child would be a stripe across
+   every screen of every install. *@
+@if (Cache.Messages.Count > 0)
+{
+    <div class="server-messages">
+        @foreach (var message in Cache.Messages)
+        {
+            <div class="server-message @SeverityClass(message.Severity)"
+                 role="@(message.Severity == ServerMessageSeverity.Critical ? "alert" : "status")"
+                 @key="message.Id">
+                <div class="server-message-body">
+                    @if (!string.IsNullOrWhiteSpace(message.Title))
+                    {
+                        <strong class="server-message-title">@message.Title</strong>
+                    }
+                    <span class="server-message-text">@message.Message</span>
+                </div>
+
+                @* Keyed on the URL alone: the SDK nulls anything that is not absolute https and
+                   still delivers the message, so a label can arrive with nowhere to go. *@
+                @if (!string.IsNullOrWhiteSpace(message.ActionUrl))
+                {
+                    <a class="server-message-action"
+                       href="@message.ActionUrl"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       @onclick="() => OpenAsync(message.ActionUrl)"
+                       @onclick:preventDefault="@ElectronHost.IsActive">@(string.IsNullOrWhiteSpace(message.ActionLabel) ? "Learn more" : message.ActionLabel)</a>
+                }
+
+                @if (message.Dismissible)
+                {
+                    <button type="button"
+                            class="server-message-dismiss"
+                            aria-label="Dismiss"
+                            title="Dismiss"
+                            @onclick="() => Cache.Dismiss(message.Id)">&times;</button>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Cache.Changed += OnMessagesChanged;
+
+        // Deliberately not awaited: the screen paints without a banner now and gains one when the
+        // fetch lands. The cache's task never faults, and it is the same task for every screen,
+        // so this costs one request per process, not per render.
+        _ = Cache.LoadAsync();
+    }
+
+    private async void OnMessagesChanged()
+    {
+        try
+        {
+            // Awaited, because InvokeAsync reports a torn-down renderer on the returned task,
+            // not as a synchronous throw: the fetch can land after the circuit that hosted this
+            // banner is gone, and that must end here rather than as an unobserved exception.
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static string SeverityClass(ServerMessageSeverity severity) => severity switch
+    {
+        ServerMessageSeverity.Critical => "server-message-critical",
+        ServerMessageSeverity.Warning => "server-message-warning",
+        _ => "server-message-info"
+    };
+
+    /// <summary>
+    /// Inside Electron a plain anchor navigates the APP's own window to the target -- see
+    /// CommunityLinks.razor. Hand the URL to the shell instead; outside Electron the anchor does
+    /// the right thing on its own and this is a no-op.
+    /// </summary>
+    private static async Task OpenAsync(string url)
+    {
+        if (!ElectronHost.IsActive) return;
+
+        try
+        {
+            await ElectronNET.API.Electron.Shell.OpenExternalAsync(url);
+        }
+        catch (Exception)
+        {
+            // An announcement link that fails to open must never take the screen down.
+        }
+    }
+
+    public void Dispose() => Cache.Changed -= OnMessagesChanged;
+}
