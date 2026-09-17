@@ -17,11 +17,13 @@
 <p class="panel-hint">Debug builds only. Not present in a Release build.</p>
 
 <section class="panel">
-    <h2>Catalog channel</h2>
+    <h2>Update channel</h2>
     <p class="panel-hint">
-        Preview follows every push to the catalog repo's main branch; Stable follows tagged
-        releases, which is what users get. Saved per user. A Release build switches only through
-        the DIFFUSIONNEXUS_CATALOG_CHANNEL environment variable.
+        One setting for the catalog and the app. Catalog: Preview follows every push to the
+        catalog repo's main branch; Stable follows tagged releases, which is what users get.
+        App: Preview also takes installer builds published as a GitHub pre-release; Stable takes
+        full releases only. Saved per user. A Release build switches only through the
+        DIFFUSIONNEXUS_CATALOG_CHANNEL environment variable.
     </p>
 
     @foreach (var channel in new[] { CatalogChannel.Stable, CatalogChannel.Preview })

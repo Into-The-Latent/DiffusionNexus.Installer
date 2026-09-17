@@ -24,6 +24,7 @@ namespace DiffusionNexus.Installer.Tests.Components;
 public class UpdatesPageTests : BunitContext
 {
     private readonly StubCatalogUpdateCoordinator _catalog = new();
+    private readonly FakeAppUpdaterShell _appUpdater = new();
 
     private Mock<IInstallSession> Register(InstallPhase phase, WizardPlan? plan = null)
     {
@@ -38,6 +39,7 @@ public class UpdatesPageTests : BunitContext
         Services.AddSingleton(log);
 
         Services.AddSingleton<ICatalogUpdateCoordinator>(_catalog);
+        Services.AddSingleton(new AppUpdateChecker(_catalog, _appUpdater, log, Mock.Of<IAppReleaseFeed>()));
 
         return session;
     }
@@ -281,6 +283,50 @@ public class UpdatesPageTests : BunitContext
         page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Checking the catalog…");
         page.FindAll(".catalog-changes").Should().BeEmpty();
         page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // ----- app channel (issue #19) -----
+
+    [Theory]
+    [InlineData(CatalogChannel.Stable)]
+    [InlineData(CatalogChannel.Preview)]
+    public void The_app_channel_is_shown_in_our_words(CatalogChannel channel)
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Channel = channel;
+
+        var page = Render<UpdatesPage>();
+
+        var line = page.Find("p.app-channel").TextContent;
+        line.Should().Contain(channel.ToString());
+        // electron-updater's vocabulary never reaches the user.
+        line.Should().NotContainAny("latest", "beta", "prerelease");
+    }
+
+    [Fact]
+    public void The_app_channel_follows_a_switch()
+    {
+        Register(InstallPhase.Idle);
+        var page = Render<UpdatesPage>();
+        page.Find("p.app-channel").TextContent.Should().Contain("Stable");
+
+        _catalog.Channel = CatalogChannel.Preview;
+        _catalog.RaiseChanged();
+
+        page.WaitForAssertion(() => page.Find("p.app-channel").TextContent.Should().Contain("Preview"));
+    }
+
+    [Fact]
+    public void The_check_button_checks_the_app_on_the_channel_the_catalog_follows()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Channel = CatalogChannel.Preview;
+        var page = Render<UpdatesPage>();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Check for updates").Click();
+
+        _appUpdater.Calls.Should().Equal(["allowPrerelease=True", "check"]);
+        _catalog.Checks.Should().Be(1);
     }
 
     [Fact]

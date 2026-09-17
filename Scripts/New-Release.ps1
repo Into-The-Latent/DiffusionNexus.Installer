@@ -22,7 +22,8 @@
     authenticates as the signed-in user rather than requiring a token in the build.
 
 .PARAMETER Version
-    Version to release, e.g. 3.0.5. Written to Directory.Build.props.
+    Version to release, e.g. 3.0.5. Written to Directory.Build.props. Always a plain X.Y.Z,
+    for a Preview build too - see -Prerelease for why a suffix is refused.
 
 .PARAMETER Notes
     Release notes body.
@@ -30,14 +31,31 @@
 .PARAMETER SkipUpload
     Build and package only; do not create the GitHub release.
 
+.PARAMETER Prerelease
+    Publish to the Preview channel: the GitHub release is created as a pre-release. Installs
+    following Preview (the channel setting, or DIFFUSIONNEXUS_CATALOG_CHANNEL=preview) are
+    offered it; installs on Stable are not, because they read GitHub's releases/latest, which
+    never names a pre-release.
+
+    The build is identical either way, and the version stays a plain X.Y.Z. That is deliberate:
+    a suffixed version (3.1.0-beta.1) flips electron-updater into matching releases by that
+    suffix and makes the installed app accept pre-releases whatever its channel setting says.
+
+    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries:
+        gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
+
 .EXAMPLE
     .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "Fixes the shortcut launch."
+
+.EXAMPLE
+    .\Scripts\New-Release.ps1 -Version 3.0.9 -Notes "For testers: new folders page." -Prerelease
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$Notes = "",
-    [switch]$SkipUpload
+    [switch]$SkipUpload,
+    [switch]$Prerelease
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,13 +135,22 @@ Write-Host "  app-update.yml present" -ForegroundColor Green
 
 if ($SkipUpload) { Write-Host "SkipUpload set - done." -ForegroundColor Yellow; return }
 
-Write-Host "Step 3/3: publishing v$Version to $ghRepo" -ForegroundColor Cyan
+$channelName = if ($Prerelease) { 'Preview (GitHub pre-release)' } else { 'Stable (full release)' }
+Write-Host "Step 3/3: publishing v$Version to $ghRepo on $channelName" -ForegroundColor Cyan
 $setup = Join-Path $publish "IntoTheLatent-EasyInstaller-Setup-$Version.exe"
 foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'))) {
     if (-not (Test-Path $f)) { throw "Expected artifact missing: $f" }
 }
-gh release create "v$Version" $setup "$setup.blockmap" (Join-Path $publish 'latest.yml') `
-    --repo $ghRepo --title $Version --notes $Notes
+# latest.yml for both channels: electron-updater reads it for any tag without a suffix, even
+# with allowPrerelease set, so a Preview build needs no separately named channel file and a
+# promoted one is already complete.
+$ghArgs = @('release', 'create', "v$Version", $setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'),
+            '--repo', $ghRepo, '--title', $Version, '--notes', $Notes)
+if ($Prerelease) { $ghArgs += '--prerelease' }
+gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
-Write-Host "Released v$Version" -ForegroundColor Green
+Write-Host "Released v$Version on $channelName" -ForegroundColor Green
+if ($Prerelease) {
+    Write-Host "Promote it to Stable with: gh release edit v$Version --repo $ghRepo --prerelease=false --latest" -ForegroundColor Yellow
+}

@@ -13,7 +13,11 @@ public enum CatalogUpdatePhase { Idle, Checking, Checked, Applying, Applied }
 /// </summary>
 public interface ICatalogUpdateCoordinator
 {
-    /// <summary>The channel the next check reads. Resolved env var → saved setting → Stable.</summary>
+    /// <summary>
+    /// The channel the next check reads -- the catalog's AND the app updater's; one setting on
+    /// purpose, because a Preview catalog on a Stable app is the RequiresNewerSoftware outcome.
+    /// Resolved env var → saved setting → Stable.
+    /// </summary>
     CatalogChannel Channel { get; }
     CatalogChannelSource ChannelSource { get; }
 
@@ -38,6 +42,13 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>Raised after every state change (download progress: only when the shown percent moves). Handlers marshal to their own context.</summary>
     event Action? Changed;
+
+    /// <summary>
+    /// Resolves <see cref="Channel"/> without running a check, and returns it. Never throws: a
+    /// settings file that cannot be read answers Stable. For the app updater, which follows the
+    /// same channel but checks on its own schedule and must not wait for a catalog check.
+    /// </summary>
+    Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default);
 
     /// <summary>Never throws. A check already in flight is joined, not repeated; while an apply runs it is a no-op that returns at once.</summary>
     Task CheckAsync(CancellationToken ct = default);

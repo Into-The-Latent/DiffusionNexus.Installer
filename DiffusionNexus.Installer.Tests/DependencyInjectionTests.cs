@@ -122,6 +122,7 @@ public class DependencyInjectionTests
 
         provider.GetRequiredService<IFeedbackReportingService>().Should().NotBeNull();
         provider.GetRequiredService<UpdaterLog>().Should().NotBeNull();
+        provider.GetRequiredService<AppUpdateChecker>().Should().NotBeNull();
         provider.GetRequiredService<IFolderPicker>().Should().NotBeNull();
         provider.GetRequiredService<IPostInstallActions>().Should().NotBeNull();
 

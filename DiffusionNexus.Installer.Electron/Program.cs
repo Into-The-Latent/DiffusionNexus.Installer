@@ -108,18 +108,11 @@ builder.UseElectron(args, async (IServiceProvider services) =>
 
     // Check once at startup. An installer is a short-lived, occasionally-run app: if it waited
     // for the user to ask, most installs would simply never update. Fire-and-forget so a slow
-    // or unreachable GitHub cannot delay the window appearing.
-    _ = Task.Run(async () =>
-    {
-        try
-        {
-            await Electron.AutoUpdater.CheckForUpdatesAsync();
-        }
-        catch (Exception ex)
-        {
-            log.Append($"Startup update check failed: {ex.Message}");
-        }
-    });
+    // or unreachable GitHub cannot delay the window appearing. Through AppUpdateChecker, never
+    // the updater directly: it is what puts the check on the Stable or Preview channel, and it
+    // never throws.
+    var appUpdates = services.GetRequiredService<AppUpdateChecker>();
+    _ = Task.Run(appUpdates.CheckAsync);
 });
 
 var app = builder.Build();

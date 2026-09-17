@@ -24,11 +24,13 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
 
     public int Checks { get; private set; }
     public int Applies { get; private set; }
+    public int ChannelResolutions { get; private set; }
     public CatalogChannel? ChannelSet { get; private set; }
     public int Subscribers => Changed?.GetInvocationList().Length ?? 0;
 
     public Task CheckAsync(CancellationToken ct = default) { Checks++; return Task.CompletedTask; }
     public Task ApplyAsync(CancellationToken ct = default) { Applies++; return Task.CompletedTask; }
+    public Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default) { ChannelResolutions++; return Task.FromResult(Channel); }
     /// <summary>Mimics the real coordinator's silent refusal: no state change, no Changed.</summary>
     public bool RefuseChannelChange { get; set; }
     public Exception? ChannelSaveFailure { get; set; }

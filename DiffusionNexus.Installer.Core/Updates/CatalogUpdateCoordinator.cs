@@ -283,6 +283,21 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         Raise();
     }
 
+    public async Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await EnsureChannelAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // EnsureChannelAsync absorbs the failures a settings file is expected to have; this is
+            // for everything else, because the caller is a fire-and-forget app update check.
+            _logger.LogWarning(ex, "The update channel could not be resolved; answering {Channel}", Channel);
+        }
+        lock (_gate) { return Channel; }
+    }
+
     private async Task EnsureChannelAsync(CancellationToken ct)
     {
         lock (_gate) { if (_channelResolved) return; }
@@ -301,6 +316,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
         lock (_gate)
         {
+            // A channel switch finished while the read above was awaited. Its answer is the newer
+            // one; applying the value read before it would silently undo the switch.
+            if (_channelResolved) return;
+
             ApplyResolution(_readEnvironment(), saved);
             // Only a successful read latches the resolution: a transient failure (locked file,
             // momentary permission error) must not pin the process to Stable for its whole
