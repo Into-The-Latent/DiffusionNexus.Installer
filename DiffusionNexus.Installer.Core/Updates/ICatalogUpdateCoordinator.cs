@@ -36,10 +36,10 @@ public interface ICatalogUpdateCoordinator
     /// <summary>Why Apply is withheld although an update is available (an install is running). Null otherwise.</summary>
     string? ApplyBlockedReason { get; }
 
-    /// <summary>Raised after every state change. Handlers marshal to their own context.</summary>
+    /// <summary>Raised after every state change (download progress: only when the shown percent moves). Handlers marshal to their own context.</summary>
     event Action? Changed;
 
-    /// <summary>Never throws. A check already in flight is joined, not repeated.</summary>
+    /// <summary>Never throws. A check already in flight is joined, not repeated; while an apply runs it is a no-op that returns at once.</summary>
     Task CheckAsync(CancellationToken ct = default);
 
     /// <summary>Never throws. A no-op unless <see cref="CanApply"/>.</summary>

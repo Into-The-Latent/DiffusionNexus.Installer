@@ -247,6 +247,11 @@ can lag a minute after the release appears). Stable is what users follow.
    Preview radios; the saved one is checked. Pick the other, press **Check now**. **Expect:**
    `/updates` opens and shows the new channel. Quit and relaunch. **Expect:** the choice stuck.
    With the environment variable set, the radios are disabled and the hint says so.
+   Then make `%LocalAppData%\DiffusionNexus\user_settings.json` read-only and pick the other channel.
+   **Expect:** "The channel could not be saved: …" and the dot jumps back to the channel still
+   in effect (not provable in bUnit — the browser keeps its own checked state). Clear the
+   read-only flag afterwards. While a check runs (press **Check for updates** on `/updates`,
+   switch back quickly) the radios are disabled.
 7. Editor: press **Release**, confirm. About a minute later launch on Stable. **Expect:** the
    same update offered and applied.
 8. Start an install of any workload, then open `/updates` while it runs with an update pending.

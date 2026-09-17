@@ -29,7 +29,17 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
 
     public Task CheckAsync(CancellationToken ct = default) { Checks++; return Task.CompletedTask; }
     public Task ApplyAsync(CancellationToken ct = default) { Applies++; return Task.CompletedTask; }
-    public Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default) { ChannelSet = channel; Channel = channel; return Task.CompletedTask; }
+    /// <summary>Mimics the real coordinator's silent refusal: no state change, no Changed.</summary>
+    public bool RefuseChannelChange { get; set; }
+    public Exception? ChannelSaveFailure { get; set; }
+
+    public Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default)
+    {
+        ChannelSet = channel;
+        if (ChannelSaveFailure is not null) return Task.FromException(ChannelSaveFailure);
+        if (!RefuseChannelChange) Channel = channel;
+        return Task.CompletedTask;
+    }
 
     public void RaiseChanged() => Changed?.Invoke();
 }

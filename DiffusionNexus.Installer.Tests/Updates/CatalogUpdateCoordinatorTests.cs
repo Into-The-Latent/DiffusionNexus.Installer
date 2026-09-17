@@ -274,15 +274,50 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public async Task A_check_requested_while_applying_joins_the_apply()
+    public async Task A_check_requested_while_applying_is_a_no_op_that_does_not_wait_for_the_download()
     {
+        // Handing back the apply's task would leave "Check for updates" stuck on "Checking..."
+        // for the whole download -- the same trap ApplyAsync's refusals already avoid.
         _service.HoldApply = new TaskCompletionSource();
         using var coordinator = await CheckedWithUpdateAsync();
         var apply = coordinator.ApplyAsync();
 
         var check = coordinator.CheckAsync();
-        check.Should().BeSameAs(apply);
+
+        check.IsCompletedSuccessfully.Should().BeTrue();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying, "the refused check must not disturb the apply");
         _service.CheckCalls.Should().Be(1);
+
+        _service.HoldApply.SetResult();
+        await apply;
+    }
+
+    [Fact]
+    public async Task Progress_raises_changed_only_when_the_displayed_value_moves()
+    {
+        // The SDK reports on every ~80 KB read; the pages show a whole percent (or 0.1 MB without
+        // a total), so thousands of reports are at most ~100 distinct renders.
+        _service.HoldApply = new TaskCompletionSource();
+        using var coordinator = await CheckedWithUpdateAsync();
+        var apply = coordinator.ApplyAsync();
+        SpinWait.SpinUntil(() => _service.Progress is not null, 2000).Should().BeTrue();
+        var raised = 0;
+        coordinator.Changed += () => raised++;
+
+        for (var bytes = 1; bytes <= 1000; bytes++)
+            _service.Progress!.Report(new CatalogDownloadProgress(bytes, 100_000));   // 0% .. 1%
+
+        raised.Should().BeLessThanOrEqualTo(2);
+        coordinator.Progress.Should().Be(new CatalogDownloadProgress(1000, 100_000), "the latest value is always stored");
+
+        raised = 0;
+        _service.Progress!.Report(new CatalogDownloadProgress(50_000, 100_000));
+        raised.Should().Be(1, "a new percent is a new render");
+
+        raised = 0;
+        for (var bytes = 1; bytes <= 50_000; bytes++)
+            _service.Progress!.Report(new CatalogDownloadProgress(bytes, null));      // under 0.1 MB
+        raised.Should().BeLessThanOrEqualTo(2);
 
         _service.HoldApply.SetResult();
         await apply;

@@ -26,10 +26,13 @@
 
     @foreach (var channel in new[] { CatalogChannel.Stable, CatalogChannel.Preview })
     {
-        <label class="catalog-channel-option">
+        @* Keyed on the refusal count: after a switch that did not happen, "checked" renders the
+           same values as before, so Blazor's diff patches nothing and the browser keeps the dot
+           where the user clicked. A new key makes it rebuild the inputs from what is in effect. *@
+        <label class="catalog-channel-option" @key="(channel, _radioGeneration)">
             <input type="radio" name="catalog-channel" value="@channel"
                    checked="@(Catalog.Channel == channel)"
-                   disabled="@EnvironmentPinned"
+                   disabled="@(EnvironmentPinned || CatalogBusy)"
                    @onchange="() => SetChannelAsync(channel)" />
             @channel
         </label>
@@ -128,7 +131,13 @@
     private bool _busy;
     private string? _channelError;
 
+    private int _radioGeneration;
+
     private bool EnvironmentPinned => Catalog.ChannelSource == CatalogChannelSource.Environment;
+
+    // The coordinator refuses a switch in these phases (the startup check included), so the
+    // radios say so up front instead of accepting a click that will not take.
+    private bool CatalogBusy => Catalog.Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying;
 
     private async Task SetChannelAsync(CatalogChannel channel)
     {
@@ -142,6 +151,14 @@
             // Debug-only page: an escaped exception here replaces it with the Blazor error banner,
             // which is a worse outcome than a message under the radios that still work afterwards.
             _channelError = $"The channel could not be saved: {ex.Message}";
+        }
+
+        // A refusal is a silent no-op on the coordinator's side (no Changed), and a failed save
+        // leaves the channel where it was: either way the clicked radio is now wrong.
+        if (Catalog.Channel != channel)
+        {
+            _radioGeneration++;
+            _channelError ??= "The channel was not switched: a catalog check or update is in progress. Try again when it has finished.";
         }
     }
 
@@ -157,9 +174,8 @@
         _workloads = await Workloads.GetInstallerWorkloadsAsync();
         _selected = _workloads.FirstOrDefault();
 
-        // A channel switch the coordinator refused (a check or apply in flight) is a silent no-op
-        // on its side; without this the radios would still show the switch the user just made
-        // instead of snapping back to what is actually in effect.
+        // The radios follow the coordinator: disabled while it checks or applies, and the channel
+        // it resolves on the first check may differ from the default rendered before it.
         Catalog.Changed += OnCatalogChanged;
     }
 

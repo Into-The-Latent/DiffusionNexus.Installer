@@ -87,11 +87,63 @@ public class DebugToolsPageTests : BunitContext
     }
 
     [Fact]
+    public void A_refused_switch_says_so_and_still_renders_the_channel_in_effect()
+    {
+        // The coordinator refuses silently (no Changed). What this cannot show: bUnit rebuilds its
+        // DOM on every render, so the browser keeping the clicked dot (Blazor patches nothing when
+        // "checked" renders the same values) is invisible here -- the @key on the radios handles
+        // that, and docs/manual-smoke.md section 7 is where it is proven.
+        _catalog.RefuseChannelChange = true;
+        var cut = Render<DebugTools>();
+
+        cut.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        cut.Markup.Should().Contain("The channel was not switched");
+        cut.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
+        cut.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_failed_save_shows_the_error_and_the_channel_still_in_effect()
+    {
+        _catalog.ChannelSaveFailure = new IOException("settings.json is locked");
+        var cut = Render<DebugTools>();
+
+        cut.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        cut.Markup.Should().Contain("The channel could not be saved: settings.json is locked");
+        cut.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_switch_that_took_shows_no_error()
+    {
+        var cut = Render<DebugTools>();
+
+        cut.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        cut.FindAll(".validation-error").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(CatalogUpdatePhase.Checking)]
+    [InlineData(CatalogUpdatePhase.Applying)]
+    public void Disables_the_radios_while_the_coordinator_would_refuse_a_switch(CatalogUpdatePhase phase)
+    {
+        _catalog.Phase = phase;
+        var cut = Render<DebugTools>();
+
+        cut.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeTrue();
+
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.RaiseChanged();
+
+        cut.WaitForAssertion(() => cut.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeFalse());
+    }
+
+    [Fact]
     public async Task Subscribes_to_the_coordinator_and_unsubscribes_on_dispose()
     {
-        // A channel switch the coordinator refuses (a check or apply already in flight) is a
-        // silent no-op on its side -- without this subscription the radios would keep showing the
-        // switch the user just clicked instead of snapping back to what is actually in effect.
         var cut = Render<DebugTools>();
         _catalog.Subscribers.Should().Be(1);
 

@@ -85,7 +85,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 _logger.LogInformation("Catalog check refused: a channel switch is in progress");
                 return Task.CompletedTask;
             }
-            if (_inFlight is { IsCompleted: false }) return _inFlight;
+            if (_inFlight is { IsCompleted: false })
+            {
+                // A running check is joined. A running apply is not: handing its task back would
+                // hold the caller ("Check for updates" sitting on "Checking...") for the length
+                // of the whole download -- the same trap ApplyAsync's refusals avoid below.
+                if (Phase != CatalogUpdatePhase.Applying) return _inFlight;
+                _logger.LogInformation("Catalog check refused: an apply is in progress");
+                return Task.CompletedTask;
+            }
             Phase = CatalogUpdatePhase.Checking;
             Progress = null;
             // A stale error from a previous failed apply must not survive into a fresh check --
@@ -212,11 +220,28 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     /// </summary>
     private sealed class ProgressRelay(CatalogUpdateCoordinator owner) : IProgress<CatalogDownloadProgress>
     {
+        private long? _lastShown;
+
         public void Report(CatalogDownloadProgress value)
         {
-            lock (owner._gate) { owner.Progress = value; }
-            owner.Raise();
+            // Only when what a page can show moves: the SDK reports on every ~80 KB read, and
+            // every page that shows the catalog state would re-render on each one for nothing
+            // (same reasoning as OnSessionChanged).
+            var shown = Shown(value);
+            bool moved;
+            lock (owner._gate)
+            {
+                owner.Progress = value;
+                moved = shown != _lastShown;
+                _lastShown = shown;
+            }
+            if (moved) owner.Raise();
         }
+
+        /// <summary>The resolution the pages display at: a whole percent, or 0.1 MB when the total is unknown.</summary>
+        private static long Shown(CatalogDownloadProgress value) => value.TotalBytes is > 0
+            ? (long)Math.Round(100.0 * value.BytesReceived / value.TotalBytes.Value)
+            : (long)Math.Round(value.BytesReceived / 104_857.6);
     }
 
     public async Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default)
