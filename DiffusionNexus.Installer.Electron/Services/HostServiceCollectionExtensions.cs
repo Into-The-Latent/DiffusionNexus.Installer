@@ -38,6 +38,7 @@ public static class HostServiceCollectionExtensions
 
         services.AddSingleton<UpdaterLog>();
         services.AddSingleton<IAppUpdaterShell, ElectronAppUpdaterShell>();
+        services.AddSingleton<IAppReleaseFeed, GitHubAppReleaseFeed>();
         services.AddSingleton<AppUpdateChecker>();
 
         // The catalog counterpart of Program.cs's startup AutoUpdater check.

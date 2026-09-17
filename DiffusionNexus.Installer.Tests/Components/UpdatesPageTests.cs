@@ -39,7 +39,7 @@ public class UpdatesPageTests : BunitContext
         Services.AddSingleton(log);
 
         Services.AddSingleton<ICatalogUpdateCoordinator>(_catalog);
-        Services.AddSingleton(new AppUpdateChecker(_catalog, _appUpdater, log));
+        Services.AddSingleton(new AppUpdateChecker(_catalog, _appUpdater, log, Mock.Of<IAppReleaseFeed>()));
 
         return session;
     }

@@ -288,3 +288,11 @@ Call the installed version `A` and the test version `B` (next patch number).
    an older build.
 8. Debug build, Developer tools. **Expect:** the panel is titled "Update channel" and its hint
    says the setting covers the catalog and the app.
+9. The hotfix case (PR #21 review). With an installed copy on `A`: publish pre-release `C`
+   (a minor bump, e.g. 3.1.0), **then** a Stable release `B` (next patch), so `B` is the newest
+   release but `C` the highest version. Launch on Preview. **Expect:** the log says "A newer
+   release was published after vC; checking vC directly." and `C` is offered -- not `B`. The
+   download is the full installer (no differential) on this path. Launch a second copy on
+   Stable. **Expect:** `B`. Then, in one Debug session, check on Preview and switch to Stable in
+   Developer tools and check again. **Expect:** the Stable check behaves as in step 2 (the
+   updater was pointed back at its own config), not "no update" against `C` alone.

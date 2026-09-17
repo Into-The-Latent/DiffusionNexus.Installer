@@ -55,8 +55,24 @@ The startup check in `Program.cs` and the button on `/updates` both go through i
 
 - **Stable** is electron-updater's default path: GitHub's `releases/latest`, which never
   names a pre-release.
-- **Preview** takes the newest entry of the releases feed, pre-release or not (verified in
-  the shipped electron-updater 6.8.9, `GitHubProvider.getLatestVersion`).
+- **Preview** means the highest version, pre-release or not. electron-updater alone does not
+  deliver that: with `allowPrerelease` it takes the **first entry** of `releases.atom`, the
+  most recently *created* release (verified in the shipped electron-updater 6.8.9,
+  `GitHubProvider.getLatestVersion`, the `currentChannel === null` branch). A Stable hotfix
+  `3.0.8` cut the day after pre-release `3.1.0` is first, and would hide `3.1.0` from every
+  tester (PR #21 review). So on Preview `AppUpdateChecker` reads the same feed first, and only
+  when the highest plain-`X.Y.Z` tag is not the first entry it pins the updater to that
+  release: a temp `app-update.yml` with the generic provider aimed at
+  `releases/download/<tag>`, handed over through `updateConfigPath`. The next check that does
+  not need the pin (Stable, or the feed back in order) points the updater at its shipped
+  config again. Any failure -- feed unreadable, temp not writable, bridge gone -- falls back
+  to the plain check. Costs, accepted: the pinned path downloads in full (no differential),
+  and one extra 10 s-capped request per Preview check.
+- `updateConfigPath` has no C# setter in ElectronNET.Core 0.5.2 although its JavaScript
+  bridge handles the message, so `ElectronAppUpdaterShell` emits it over the internal
+  `BridgeConnector.Socket` by reflection. A test resolves that target so a package bump
+  that moves it fails the suite; delivery was verified once against a live run. It cannot
+  be read back: electron-updater defines the setter only.
 - This holds only while app versions stay plain `X.Y.Z`. A suffixed version
   (`3.1.0-beta.1`) switches electron-updater to matching releases by suffix and makes the
   installed app allow pre-releases by default. `New-Release.ps1` keeps refusing one.
