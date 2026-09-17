@@ -1651,6 +1651,28 @@ progress {
     margin-bottom: 1rem;
 }
 
+/* The Confirm stage's reminder: same panel, a third of the height. */
+.hero-compact {
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    padding-block: .8rem;
+}
+
+.hero-compact .hero-art {
+    width: 88px;
+    border-radius: 8px;
+}
+
+.hero-compact .hero-name {
+    margin-bottom: .2rem;
+    font-size: 1.25rem;
+}
+
+.hero-compact .hero-tags {
+    margin: .25rem 0 0;
+}
+
 .hero-art {
     width: 200px;
     aspect-ratio: 1 / 1;

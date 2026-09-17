@@ -70,7 +70,8 @@
             {
                 @if (ShowHero)
                 {
-                    <WorkloadHero Workload="_run.Plan.Selection.Workload" FromWorkloadScreen="!_onlyWorkloadOfItsSoftware" />
+                    <WorkloadHero Workload="_run.Plan.Selection.Workload" FromWorkloadScreen="!_onlyWorkloadOfItsSoftware"
+                                  Compact="_run.CurrentStage == WizardStage.Confirm" />
                 }
 
                 @if (_run.CurrentStage == WizardStage.Confirm)
@@ -316,8 +317,9 @@
     /// actually read what the pack does. Later stages drop it because by then the question it
     /// answers -- "did I click the right thing?" -- has been answered.
     /// </summary>
-    private bool ShowHero =>
-        _run is { Plan.Stages: [var first, ..] } && _run.CurrentStage == first;
+    // EXPERIMENT (uncommitted): the hero stays up through every question stage, compact on
+    // Confirm, and only the Install stage -- two columns of log -- goes without it.
+    private bool ShowHero => _run is not null && _run.CurrentStage != WizardStage.Install;
 
     private void GoToGallery() => Nav.NavigateTo("/");
 

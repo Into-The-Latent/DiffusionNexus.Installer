@@ -9,7 +9,7 @@
    Shown at the top of the first wizard stage. It repeats the picture the user clicked one
    navigation ago at size, next to what the catalog says the workload actually does. *@
 
-<section class="hero">
+<section class="hero @(Compact ? "hero-compact" : null)">
     <div class="hero-art">
         @* The picture the user clicked one navigation ago, so it is the one that confirms the
            choice: the workload's own thumbnail when it was picked from a workload screen, the
@@ -50,9 +50,14 @@
             <p class="hero-tags"><span class="vram-chip">@vram</span></p>
         }
 
-        <div class="hero-desc">
-            <MarkdownText Text="@Workload.Description" />
-        </div>
+        @* Compact (the Confirm stage): the picture and the name still say WHAT is about to be
+           installed, but the summary below is the thing to read, so the description steps aside. *@
+        @if (!Compact)
+        {
+            <div class="hero-desc">
+                <MarkdownText Text="@Workload.Description" />
+            </div>
+        }
     </div>
 </section>
 
@@ -64,6 +69,9 @@
     /// false when the welcome tile came straight to the wizard.
     /// </summary>
     [Parameter] public bool FromWorkloadScreen { get; set; }
+
+    /// <summary>Small artwork, no description: a reminder of the choice rather than a presentation of it.</summary>
+    [Parameter] public bool Compact { get; set; }
 
     private string SoftwareName => SoftwareBranding.DisplayName(Workload.Repository.Type);
 }
