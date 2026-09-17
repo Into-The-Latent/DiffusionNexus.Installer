@@ -185,6 +185,34 @@ public sealed class ServerMessageCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task A_repeated_id_keeps_only_its_first_row()
+    {
+        // A row copied in the Gist with its id left unchanged. The banner keys its rows on the
+        // id, and Blazor throws on a duplicate key the first time the list shifts -- so the next
+        // dismissal took the whole screen down (PR #22 review).
+        var second = new ServerMessage { Id = "dup", Message = "the forgotten copy" };
+        var cache = CacheOver(ServiceReturning(Message("a"), Message("dup"), second, Message("b")));
+
+        await cache.LoadAsync();
+
+        cache.Messages.Select(m => m.Id).Should().Equal("a", "dup", "b");
+        cache.Messages[1].Message.Should().Be("body of dup", "the first row wins, as the document orders them");
+    }
+
+    [Fact]
+    public async Task Dismissing_cannot_take_a_mandatory_row_that_shares_the_id()
+    {
+        // The mandatory row is first, so it is the one that survives the de-duplication -- and
+        // the dismissible copy after it must not become a way to silence it.
+        var cache = CacheOver(ServiceReturning(Message("dup", dismissible: false), Message("dup")));
+        await cache.LoadAsync();
+
+        cache.Dismiss("dup");
+
+        cache.Messages.Should().ContainSingle().Which.Dismissible.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Dismissing_an_unknown_id_changes_nothing()
     {
         var cache = CacheOver(ServiceReturning(Message("a")));

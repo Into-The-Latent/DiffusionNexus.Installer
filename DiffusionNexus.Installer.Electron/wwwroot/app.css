@@ -1052,7 +1052,31 @@ progress {
     flex-direction: column;
 }
 
+/* On the install screen that budget is small. The filled layout was measured without a banner, and
+   at the 650px minimum window the log already sits on its 8rem floor -- so every pixel of banner
+   came out of the log, clipped behind the panel's overflow: hidden, and three long announcements
+   hid the log and the download row's "Skip this file" entirely. So here the banner is bounded: one
+   long message; more scrolls. Other screens grow with their content and need
+   no cap. */
+.screen:has(.install-split) .server-messages {
+    max-height: 5rem;
+    overflow-y: auto;
+}
+
+/* ...and the log gives up its floor to it. A short log that scrolls beats a tall one with its
+   bottom edge cut off, and the alternative -- the page-scrolling layout for every window under
+   ~760px whenever an announcement is up -- puts "Cancel installation" below the fold over one line
+   of text. Only binds between 650 and ~760: above that the log is taller than 8rem anyway.
+   Measured in headless Edge with a download in flight and the banner at its cap: nothing clipped,
+   buttons and footer on screen, from the 650px minimum up. */
+.screen:has(.server-messages) .install-split .install-log {
+    min-height: 2rem;
+}
+
 .server-message {
+    /* A row keeps its height when the capped wrapper above runs out: shrinking is a flex item's
+       default, and it would squash the text instead of scrolling it. */
+    flex: none;
     display: flex;
     align-items: center;
     gap: 12px;

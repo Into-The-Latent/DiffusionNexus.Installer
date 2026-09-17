@@ -129,13 +129,36 @@ public sealed class ServerMessageCache
                 result.SkippedMessages);
         }
 
+        var messages = DistinctById(result.Messages);
+
         lock (_gate)
         {
-            _messages = result.Messages;
+            _messages = messages;
             _result = result;
         }
 
         RaiseChanged();
+    }
+
+    /// <summary>
+    /// First row per id, in the document's order. Nothing upstream enforces unique ids, and a row
+    /// copied in the Gist with its id left alone is the likeliest slip there is. The banner keys
+    /// its rows on the id, so a repeat is an unhandled render exception -- the circuit -- on the
+    /// first dismissal that shifts the list; and <see cref="Dismiss"/> matches on the id, so a
+    /// dismissible copy would silence a mandatory twin.
+    /// </summary>
+    private IReadOnlyList<ServerMessage> DistinctById(IReadOnlyList<ServerMessage> messages)
+    {
+        var distinct = messages.DistinctBy(m => m.Id, StringComparer.Ordinal).ToArray();
+        if (distinct.Length == messages.Count)
+        {
+            return messages;
+        }
+
+        _logger.LogWarning(
+            "Announcements: {Repeated} row(s) repeat an id already used by an earlier row and were dropped.",
+            messages.Count - distinct.Length);
+        return distinct;
     }
 
     private void RaiseChanged()

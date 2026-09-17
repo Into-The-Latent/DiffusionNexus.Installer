@@ -316,4 +316,10 @@ installer writes. Delete that file first for a clean run.
    **Expect:** a red-edged banner with no X.
 6. With that banner showing, run an install to the two-column install screen. **Expect:** the
    buttons and the community footer are still inside the window, and both columns scroll.
-7. Disconnect the network and launch. **Expect:** no banner, no error, no delay to the window.
+   Shrink the window to its minimum height. **Expect:** the log gets shorter but keeps its
+   bottom edge, and "Skip this file" stays visible during a download. With three long rows in
+   the Gist, **expect** the banner to stop at about one message tall and scroll.
+7. Copy a row in the Gist without changing its `id`, keep another dismissible row beside it, and
+   relaunch. **Expect:** the copy does not show; dismissing the other row leaves the screen
+   working (this used to end in the "An unhandled error has occurred" bar).
+8. Disconnect the network and launch. **Expect:** no banner, no error, no delay to the window.

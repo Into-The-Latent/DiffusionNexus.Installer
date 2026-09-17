@@ -170,6 +170,25 @@ public class ServerMessageBannerTests : BunitContext
     }
 
     [Fact]
+    public void Dismissing_beside_a_repeated_id_does_not_take_the_screen_down()
+    {
+        // The rows are keyed on the id. Two rows sharing one render fine at first, and then the
+        // renderer throws "More than one sibling ... has the same key value" on the first diff
+        // that shifts the list -- an unhandled render exception, which ends the circuit.
+        var cut = Render<ServerMessageBanner>();
+        Land(
+            new ServerMessage { Id = "a", Message = "first" },
+            new ServerMessage { Id = "dup", Message = "original" },
+            new ServerMessage { Id = "dup", Message = "forgotten copy" });
+        cut.WaitForAssertion(() => cut.FindAll(".server-message").Should().NotBeEmpty());
+
+        cut.Find(".server-message-dismiss").Click();
+
+        cut.WaitForAssertion(() =>
+            cut.FindAll(".server-message-text").Select(e => e.TextContent).Should().Equal("original"));
+    }
+
+    [Fact]
     public void The_dismiss_button_says_what_it_does_to_a_screen_reader()
     {
         var cut = Render<ServerMessageBanner>();
