@@ -2,6 +2,7 @@ using Bunit;
 using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.Electron.Services;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace DiffusionNexus.Installer.Tests.Components;
@@ -33,9 +34,25 @@ public class LicensesPageTests : BunitContext
     [Fact]
     public void The_page_shows_the_notices_and_a_way_back()
     {
+        Services.AddSingleton<ReturnTarget>();
+
         var cut = Render<Licenses>();
 
         cut.Find("pre.notices").TextContent.Should().Contain("THIRD-PARTY SOFTWARE NOTICES AND INFORMATION");
-        cut.Find("a[href='/']").Should().NotBeNull();
+        cut.Find("a.back-link[href='/']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void The_way_back_leads_to_the_screen_the_user_came_from()
+    {
+        // Opened from the top bar in the middle of an install: Back must return there, where the
+        // singleton session rejoins the run, not drop the user on the welcome screen.
+        var target = new ReturnTarget();
+        target.Remember("install/6f9619ff-8b86-d011-b42d-00cf4fc964ff");
+        Services.AddSingleton(target);
+
+        var cut = Render<Licenses>();
+
+        cut.Find("a.back-link").GetAttribute("href").Should().Be("/install/6f9619ff-8b86-d011-b42d-00cf4fc964ff");
     }
 }

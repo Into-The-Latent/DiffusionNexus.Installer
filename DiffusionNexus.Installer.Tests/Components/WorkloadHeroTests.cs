@@ -16,6 +16,57 @@ public class WorkloadHeroTests : BunitContext
         Repository = new MainRepositorySettings { Type = software }
     };
 
+    private static InstallationConfiguration Krea(string? thumbnailPath, string vramProfiles = "")
+    {
+        var krea = Workload(RepositoryType.ComfyUI, "Krea-2-Turbo");
+        krea.ThumbnailPath = thumbnailPath;
+        krea.ConfigurationVersion = 2;
+        krea.ConfigurationSubVersion = 0;
+        krea.Vram = new VramSettings { VramProfiles = vramProfiles };
+        return krea;
+    }
+
+    private IRenderedComponent<WorkloadHero> RenderFromWorkloadScreen(InstallationConfiguration workload) =>
+        Render<WorkloadHero>(p => p.Add(h => h.Workload, workload).Add(h => h.FromWorkloadScreen, true));
+
+    [Fact]
+    public void A_workload_picked_from_a_workload_screen_shows_its_own_thumbnail()
+    {
+        // The card the user clicked one navigation ago carried this picture, not the ComfyUI logo.
+        var krea = Krea(@"C:\catalog\workloads\krea\thumbnail.webp");
+
+        var cut = RenderFromWorkloadScreen(krea);
+
+        cut.Find(".hero-art img").GetAttribute("src").Should().Be($"thumbnail/{krea.Id}");
+        cut.Find(".hero-software").TextContent.Should().Be("ComfyUI");
+    }
+
+    [Fact]
+    public void A_workload_without_a_thumbnail_falls_back_to_the_software_logo()
+    {
+        var cut = RenderFromWorkloadScreen(Krea(thumbnailPath: null));
+
+        cut.Find(".hero-art img").GetAttribute("src").Should().Be("img/software/comfyui.jpg");
+    }
+
+    [Fact]
+    public void A_workload_picked_from_a_workload_screen_shows_its_version_and_vram_range()
+    {
+        var cut = RenderFromWorkloadScreen(Krea(thumbnailPath: null, vramProfiles: "8,12,16,24"));
+
+        cut.Find(".hero-version").TextContent.Should().Contain("v2.0");
+        cut.Find(".hero-vram").TextContent.Should().Be("8-24 GB VRAM");
+    }
+
+    [Fact]
+    public void A_software_reached_from_its_tile_shows_no_version()
+    {
+        // One workload, one tile: there is no "which revision of which pack" to answer.
+        var cut = Render<WorkloadHero>(p => p.Add(h => h.Workload, Workload(RepositoryType.Fooocus, "Fooocus")));
+
+        cut.FindAll(".hero-version").Should().BeEmpty();
+    }
+
     [Fact]
     public void Shows_the_software_artwork_at_size()
     {

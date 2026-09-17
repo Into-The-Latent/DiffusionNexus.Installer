@@ -112,7 +112,7 @@ public class StylesheetTests
 
         // The shell has to have height before a screen can fill it.
         var screen = Regex.Match(css, @"\.screen\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
-        screen.Should().Contain("min-height: 100vh").And.Contain("flex-direction: column");
+        screen.Should().Contain("height: 100vh").And.Contain("flex-direction: column");
 
         // Every screen's body grows, which is what holds the community footer against the bottom
         // of the window rather than letting it float under short content.
@@ -123,6 +123,37 @@ public class StylesheetTests
         // 1000px the six tiles can never all be on screen however large the window gets.
         var wider = Regex.Match(css, @"\.screen-body:has\(>\s*\.welcome\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
         wider.Should().Contain("max-width: 1800px");
+    }
+
+    [Fact]
+    public void the_bar_and_the_footer_stay_in_the_window()
+    {
+        // A long wizard stage used to grow the shell past the window, so the DOCUMENT scrolled and
+        // took the top bar and the community footer with it. The shell is now exactly the window,
+        // and one region between the bar and the footer scrolls. Each line below is one way to
+        // quietly restore the bug.
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "DiffusionNexus.Installer.Electron", "wwwroot", "app.css"));
+
+        var screen = Regex.Match(css, @"\.screen\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        screen.Should().Contain("height: 100vh").And.NotContain("min-height",
+            "min-height lets the shell outgrow the window, which is what scrolled the chrome away");
+
+        var scroll = Regex.Match(css, @"\.screen-scroll\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        scroll.Should().Contain("overflow-y: auto");
+        scroll.Should().Contain("flex: 1").And.Contain("min-height: 0",
+            "a flex item's default minimum is its content, so without this it never gets shorter than the page");
+        scroll.Should().Contain("flex-direction: column", "the body inside still has to grow to hold the footer down");
+        scroll.Should().NotContain("max-width", "full width keeps the scrollbar at the window's edge");
+
+        // The body must keep its content minimum, or a long screen is squashed instead of scrolled.
+        var body = Regex.Match(css, @"\.screen-body\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
+        body.Should().NotContain("min-height").And.NotContain("overflow");
+
+        // And the short-window escape hatch of the install screen hands its content back to that
+        // same scroll region rather than un-pinning the shell.
+        var hatch = Regex.Match(css, @"@media \(max-width: 900px\), \(max-height: \d+px\)\s*\{\s*(/\*.*?\*/\s*)?\.screen-body:has\(\.install-split\)\s*\{(?<body>[^}]*)\}", RegexOptions.Singleline);
+        hatch.Success.Should().BeTrue();
+        hatch.Groups["body"].Value.Should().Contain("flex: none");
     }
 
     [Fact]
@@ -156,9 +187,10 @@ public class StylesheetTests
         var body = Regex.Match(css, @"\.screen-body:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
         body.Should().Contain("max-width: 1800px").And.Contain("min-height: 0");
 
-        var screen = Regex.Match(css, @"\.screen:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
-        screen.Should().Contain("height: 100vh",
-            "flex items resolve against a definite height; against min-height: 100vh they just take their content's");
+        // The definite height the chain resolves against is the shell's own, on every screen now
+        // (see the_bar_and_the_footer_stay_in_the_window), so this screen needs no rule for it.
+        Regex.IsMatch(css, @"\.screen:has\(\.install-split\)\s*\{").Should().BeFalse(
+            "the shell is 100vh everywhere; a per-screen copy would only drift from it");
 
         var wizard = Regex.Match(css, @"\.wizard:has\(\.install-split\)\s*\{(?<body>[^}]*)\}").Groups["body"].Value;
         wizard.Should().Contain("flex: 1").And.Contain("min-height: 0");

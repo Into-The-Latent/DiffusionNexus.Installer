@@ -130,20 +130,25 @@ public class InstallPageTests : BunitContext
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
         page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero-version").Should().BeEmpty("a lone workload came from the software tile");
         page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
     [Fact]
-    public void A_software_with_a_workload_screen_of_its_own_does_not_repeat_it_here()
+    public void A_workload_picked_from_a_workload_screen_opens_with_the_hero_too()
     {
+        // The workload card has no room for the description -- it is a hover tooltip there -- so
+        // this is the first place a ComfyUI user can read what the pack does. The version line is
+        // how the hero says it knows it came from a workload screen.
         var sibling = new InstallationConfiguration { Id = Guid.NewGuid(), Name = "Fooocus Nightly" };
         sibling.Repository.Type = RepositoryType.Fooocus;
         Register(Workload(), sibling);
 
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
-        page.FindAll(".hero").Should().BeEmpty();
-        page.Find("h1").TextContent.Should().Be("Fooocus");
+        page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero-version").Should().HaveCount(1);
+        page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
     [Fact]

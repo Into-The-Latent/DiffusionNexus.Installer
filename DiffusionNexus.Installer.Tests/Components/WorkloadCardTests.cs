@@ -21,7 +21,8 @@ public class WorkloadCardTests : BunitContext
         bool installable = true,
         string? thumbnailPath = @"C:\catalog\workloads\krea\thumbnail.webp",
         WorkflowType type = WorkflowType.Image,
-        string? description = "Text to image plus upscale, tuned for Krea 2 Turbo.") =>
+        string? description = "Text to image plus upscale, tuned for Krea 2 Turbo.",
+        string vramProfiles = "") =>
         new(
             new InstallationConfiguration
             {
@@ -30,6 +31,9 @@ public class WorkloadCardTests : BunitContext
                 WorkflowType = type,
                 ThumbnailPath = thumbnailPath,
                 Description = description ?? string.Empty,
+                ConfigurationVersion = 2,
+                ConfigurationSubVersion = 3,
+                Vram = new VramSettings { VramProfiles = vramProfiles },
                 Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI }
             },
             installable,
@@ -109,5 +113,29 @@ public class WorkloadCardTests : BunitContext
         cut.FindAll(".workload-card-install").Should().BeEmpty();
         cut.Find(".workload-card-unavailable").TextContent
             .Should().Contain("Coming soon — needs VramProfile");
+    }
+
+    [Fact]
+    public void Shows_the_catalog_version_beside_the_type()
+    {
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
+
+        cut.Find(".workload-card-tags .workload-card-version").TextContent.Should().Be("v2.3");
+    }
+
+    [Fact]
+    public void Shows_the_vram_range_of_a_workload_that_declares_profiles()
+    {
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry(vramProfiles: "24,32")));
+
+        cut.Find(".workload-card-vram").TextContent.Should().Be("24-32 GB VRAM");
+    }
+
+    [Fact]
+    public void Says_nothing_about_vram_when_the_workload_declares_no_profiles()
+    {
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
+
+        cut.FindAll(".workload-card-vram").Should().BeEmpty();
     }
 }

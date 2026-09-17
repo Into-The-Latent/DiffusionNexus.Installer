@@ -279,16 +279,32 @@ h2 {
     padding: 0;
 }
 
-/* Full window height, so a screen that wants to use the whole of it can. Without this the shell
-   is only as tall as its content and a maximised window is content at the top over a void. */
+/* Exactly the window's height, never more: the top bar and the community footer are the window's
+   furniture and stay on screen, and whatever does not fit scrolls BETWEEN them. This used to be
+   min-height, which let a long wizard stage grow the shell past the window -- the document
+   scrolled, and the bar and the footer went with it. */
 .screen {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
+}
+
+/* The one scrolling region of a shell screen. Full width, so its scrollbar sits at the window's
+   edge rather than beside the centred column; a column itself, so the body inside it can still
+   grow to hold the footer down. min-height: 0 because a flex item's default minimum is its
+   content, and with that it would refuse to be shorter than the page it is meant to scroll. */
+.screen-scroll {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
 }
 
 /* One copy of the centring, in the shell, rather than one per screen. `flex: 1` is what holds
-   the footer against the bottom of the window on a screen whose content does not reach it. */
+   the footer against the bottom of the window on a screen whose content does not reach it --
+   and the default minimum (its content) is what makes a long screen overflow .screen-scroll,
+   and so scroll, rather than be squashed. */
 .screen-body {
     flex: 1;
     width: 100%;
@@ -321,15 +337,6 @@ h2 {
     /* Without this the body is a flex item whose minimum is its own content, so it grows past the
        height the shell just fixed and every shrink below it is cancelled before it starts. */
     min-height: 0;
-}
-
-/* The shell is normally min-height: 100vh, which lets a long screen grow past the window. This one
-   must not: its two columns are BOTH scrollable, so growing means the buttons and the footer leave
-   the bottom of the window while the space to scroll them back into view is inside the panels. A
-   definite height is also what lets the chain below shrink at all -- flex items resolve against a
-   definite container, and against a min-height one they just take their content's size. */
-.screen:has(.install-split) {
-    height: 100vh;
 }
 
 /* The chain that turns the shell's height into the columns' height: body -> wizard -> split ->
@@ -708,8 +715,9 @@ progress {
    Measured with a model download in flight (its row costs the left column ~40px, which is what
    used to tip this over at 650): filled and fully visible from 650 up. */
 @media (max-width: 900px), (max-height: 640px) {
-    .screen:has(.install-split) {
-        height: auto;
+    /* Content-sized again, so it overflows .screen-scroll and scrolls like any other screen. */
+    .screen-body:has(.install-split) {
+        flex: none;
     }
 
     .install-split {
@@ -1318,6 +1326,8 @@ progress {
 }
 
 .workload-card-meta {
+    /* Takes the card's leftover height, so the action below can sit on the bottom edge. */
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1343,8 +1353,35 @@ progress {
     color: var(--accent);
 }
 
+/* The type badge and the version share a line: two facts about the pack, neither worth a row. */
+.workload-card-tags {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.workload-card-version {
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.workload-card-vram {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The card's action -- Install, or the reason there is none -- sits on the bottom edge, not under
+   whatever came last: names wrap to two lines and only some packs have a VRAM line, and a row of
+   buttons at four different heights reads as a mess. By position, because the "unavailable" text
+   is styled by the shared .card-unavailable and must not grow a rule of its own here. */
+.workload-card-meta > :last-child {
+    margin-top: auto;
+}
+
 .workload-card-install {
-    margin-top: 2px;
     padding: 6px 14px;
     border-radius: 8px;
     border: 1px solid var(--accent);
@@ -1577,7 +1614,7 @@ progress {
 
 /* ---------- Workload hero (first wizard stage) ---------- */
 
-/* Shown for a software whose tile came straight to the wizard. Same shape as .panel -- it is one
+/* Opens the first stage of every wizard. Same shape as .panel -- it is one
    of the stack of panels the stage renders -- with the artwork beside the text rather than above
    it, so the install-folder box below stays on screen without scrolling. */
 .hero {
@@ -1637,6 +1674,19 @@ progress {
     letter-spacing: -.01em;
 }
 
+.hero-vram::before {
+    content: "\00b7";
+    margin-inline: .45rem;
+}
+
+/* Tucked up under the name it belongs to, so it reads as part of the heading. */
+.hero-version {
+    margin: -.4rem 0 .55rem;
+    font-size: .82rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
 /* Capped and scrollable: descriptions are catalog content and the longest today is 659
    characters, but nothing stops a future one being longer, and this panel must not be allowed to
    push the install folder off the screen. */
@@ -1687,6 +1737,25 @@ progress {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+/* Same button as the workload screen's, so "the way back" looks like one thing everywhere. Its
+   own block because it sits above a heading in normal flow, not inside a flex header. */
+.back-link {
+    display: inline-block;
+    margin-bottom: 1rem;
+    padding: 5px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.back-link:hover {
+    border-color: var(--accent);
 }
 
 .workload-screen-back {

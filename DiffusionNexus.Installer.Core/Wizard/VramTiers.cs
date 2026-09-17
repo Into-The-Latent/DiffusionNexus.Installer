@@ -29,4 +29,16 @@ public static class VramTiers
 
         return [.. tiers];
     }
+
+    /// <summary>
+    /// The span of the declared tiers as the user reads it -- "24-32 GB VRAM", or "24 GB VRAM"
+    /// when there is a single tier. Null when the workload declares none, so a caller can simply
+    /// not render it.
+    /// </summary>
+    public static string? RangeText(string? profiles) => Parse(profiles) switch
+    {
+        [] => null,
+        [var only] => $"{only} GB VRAM",
+        [var min, .., var max] => $"{min}-{max} GB VRAM"
+    };
 }

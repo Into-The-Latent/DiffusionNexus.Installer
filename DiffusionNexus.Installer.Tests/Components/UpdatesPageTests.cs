@@ -35,6 +35,7 @@ public class UpdatesPageTests : BunitContext
         session.SetupGet(s => s.Plan).Returns(plan);
 
         Services.AddSingleton(session.Object);
+        Services.AddSingleton<ReturnTarget>();
 
         _log = new UpdaterLog();
         if (appUpdateReady) _log.MarkUpdateReady("3.0.8");
