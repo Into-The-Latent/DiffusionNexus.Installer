@@ -4,10 +4,12 @@
 @using ElectronNET.API
 @using System.Globalization
 @using DiffusionNexus.Installer.Core.Updates
+@using DiffusionNexus.Installer.SDK.Catalog.Packaging
 @using DiffusionNexus.Installer.SDK.Catalog.Updates
 @inject UpdaterLog Log
 @inject IInstallSession Session
 @inject ICatalogUpdateCoordinator Catalog
+@inject AppUpdateChecker AppUpdates
 @implements IDisposable
 
 <PageTitle>Into the Latent Easy Installer</PageTitle>
@@ -21,6 +23,10 @@
     </header>
 
     <section class="actions">
+        @* One setting drives both channels, so this can never disagree with the catalog line
+           below. Our words, Stable / Preview -- never electron-updater's "latest" / "beta". *@
+        <p class="app-channel">App updates: following <strong>@Catalog.Channel</strong>@(Catalog.Channel == CatalogChannel.Preview ? " - builds published for testing arrive here before everyone gets them." : null)</p>
+
         <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@_busy">
             @(_busy ? "Checking..." : "Check for updates")
         </button>
@@ -144,22 +150,10 @@
         _busy = true;
         try
         {
-            // Both checks from one button. The catalog one never throws and needs no Electron;
-            // the app one is guarded exactly as before.
+            // Both checks from one button, on one channel. Neither throws; the app one is a
+            // no-op outside Electron.
             var catalog = Catalog.CheckAsync();
-            if (ElectronActive)
-            {
-                try
-                {
-                    await Electron.AutoUpdater.CheckForUpdatesAsync();
-                }
-                catch (Exception ex)
-                {
-                    // A failed update check must never take the app down with it - the installer
-                    // still works perfectly well on an older version.
-                    Log.Append($"Update check failed: {ex.Message}");
-                }
-            }
+            await AppUpdates.CheckAsync();
             await catalog;
         }
         finally

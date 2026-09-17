@@ -84,6 +84,66 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.CheckCalls.Should().Be(1);
     }
 
+    // The app updater follows the same channel and runs its startup check on its own, so it has
+    // to be able to ask for the channel without a catalog check having happened first.
+    [Fact]
+    public async Task The_channel_can_be_resolved_without_running_a_check()
+    {
+        _saved.CatalogChannel = "Preview";
+        using var coordinator = Create();
+
+        var channel = await coordinator.ResolveChannelAsync();
+
+        channel.Should().Be(CatalogChannel.Preview);
+        coordinator.ChannelSource.Should().Be(CatalogChannelSource.Setting);
+        _options.Channel.Should().Be(CatalogChannel.Preview);
+        _service.CheckCalls.Should().Be(0);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Idle);
+    }
+
+    [Fact]
+    public async Task Resolving_the_channel_never_throws_and_falls_back_to_stable()
+    {
+        _settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("boom"));
+        using var coordinator = Create();
+
+        var channel = await coordinator.ResolveChannelAsync();
+
+        channel.Should().Be(CatalogChannel.Stable);
+    }
+
+    [Fact]
+    public async Task Resolving_the_channel_reads_the_settings_once()
+    {
+        using var coordinator = Create();
+
+        await coordinator.ResolveChannelAsync();
+        await coordinator.ResolveChannelAsync();
+        await coordinator.CheckAsync();
+
+        _settings.Verify(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A resolve that read the OLD saved value before a switch saved the new one must not land its
+    // answer after the switch: the app updater would then follow the channel the user just left.
+    [Fact]
+    public async Task A_resolve_that_straddles_a_channel_switch_does_not_undo_it()
+    {
+        var read = new TaskCompletionSource<UserSettings>();
+        _settings.SetupSequence(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+                 .Returns(read.Task)
+                 .ReturnsAsync(_saved);
+        using var coordinator = Create();
+
+        var resolving = coordinator.ResolveChannelAsync();
+        await coordinator.SetChannelAsync(CatalogChannel.Preview);
+        read.SetResult(new UserSettings { UserName = "tester", CatalogChannel = "Stable" });
+
+        (await resolving).Should().Be(CatalogChannel.Preview);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        _options.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
     [Fact]
     public void The_override_path_is_the_sdk_options_override_path()
     {
