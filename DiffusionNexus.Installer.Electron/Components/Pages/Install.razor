@@ -7,6 +7,7 @@
 @using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.Electron.Components.Wizard
+@using DiffusionNexus.Installer.Electron.Services
 @using DiffusionNexus.Installer.SDK.Models.Enums
 @using DiffusionNexus.Installer.SDK.Services
 @inject IWorkloadSource Workloads
@@ -15,6 +16,7 @@
 @inject IUserPrompt Prompt
 @inject IModelPreflight Preflight
 @inject NavigationManager Nav
+@inject ReturnTarget Return
 
 <PageTitle>Install</PageTitle>
 
@@ -164,6 +166,12 @@
         _moduleChanged = EventCallback.Factory.Create(this, StateHasChanged);
         _backToGallery = EventCallback.Factory.Create(this, GoToGallery);
 
+        // Read before anything is awaited or rendered: the shell this page renders records this
+        // URL as the return target, after which the answer is always yes.
+        var returning = Return.IsAt(Nav.ToBaseRelativePath(Nav.Uri));
+        var onScreen = Return.InstallOnScreen;
+        Return.InstallOnScreen = null;
+
         if (Session.Phase == InstallPhase.Running && Session.Plan is { } running)
         {
             // A circuit reconnect rebuilds this component while the install keeps running in the
@@ -172,6 +180,7 @@
             if (running.Selection.Workload.Id == WorkloadId)
             {
                 _run = new WizardRun(running, WizardStage.Install);
+                Return.InstallOnScreen = running;
                 return;
             }
 
@@ -179,6 +188,22 @@
             // user to an Install stage that silently starts nothing and then reports the other
             // install's progress, log and success banner under this workload's name.
             _busyWith = running.Selection.Workload.Name;
+            return;
+        }
+
+        // The same for a run that has FINISHED: Back from Licences to a failed install must show
+        // its report again, not a fresh wizard for the workload that just failed. Narrower than
+        // the running case on purpose -- only when returning to this very URL, and only to the run
+        // that was on screen when the user left. Picking the same workload again from the gallery
+        // is neither, and gets the new wizard it asked for. InstallStage starts nothing here: it
+        // sees the session's own plan and only renders it.
+        if (returning
+            && Session.Plan is { } finished
+            && ReferenceEquals(finished, onScreen)
+            && finished.Selection.Workload.Id == WorkloadId)
+        {
+            _run = new WizardRun(finished, WizardStage.Install);
+            Return.InstallOnScreen = finished;
             return;
         }
 
@@ -290,6 +315,10 @@
         }
 
         _run.TryNext();
+
+        // From here a side trip and Back must find this run again, finished or not.
+        if (_run.CurrentStage == WizardStage.Install)
+            Return.InstallOnScreen = _run.Plan;
     }
 
     public void Dispose()
@@ -319,7 +348,12 @@
     /// </summary>
     private bool ShowHero => _run is not null && _run.CurrentStage != WizardStage.Install;
 
-    private void GoToGallery() => Nav.NavigateTo("/");
+    private void GoToGallery()
+    {
+        // Done, Cancel: the user is finished with this run's screen, so nothing re-opens it.
+        Return.InstallOnScreen = null;
+        Nav.NavigateTo("/");
+    }
 
     private void ResumeRunning()
     {

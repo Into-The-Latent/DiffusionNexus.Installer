@@ -6,6 +6,7 @@ using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Wizard;
+using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
@@ -181,6 +182,75 @@ public class InstallPageTests : BunitContext
 
         page.Find(".wizard-actions button").Click();
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/");
+    }
+
+    /// <summary>A session whose most recent run, of the workload under test, ended in failure.</summary>
+    private async Task<WizardPlan> RegisterFinishedRun()
+    {
+        var session = Register(Workload());
+        var plan = await new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = Workload() });
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Failed);
+        session.SetupGet(s => s.Plan).Returns(plan);
+        return plan;
+    }
+
+    [Fact]
+    public async Task Coming_back_from_a_side_trip_re_opens_the_finished_installs_report()
+    {
+        // Review finding on PR #24: the rejoin was gated on Running, so a user reading a FAILED
+        // install's report who looked at Licences and pressed Back got a fresh "Install location"
+        // for the workload that had just failed, the report gone as if the run never happened.
+        var plan = await RegisterFinishedRun();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember($"install/{WorkloadId}");
+        target.InstallOnScreen = plan;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".install-split").Should().HaveCount(1, "the finished run's install stage, not a new wizard");
+        page.FindAll(".path-row input").Should().BeEmpty();
+        Mock.Get(Services.GetRequiredService<IInstallSession>())
+            .Verify(s => s.StartAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()), Times.Never,
+                "re-opening a report must never start an install");
+    }
+
+    [Fact]
+    public async Task Picking_the_same_workload_again_starts_a_new_wizard_not_the_old_report()
+    {
+        // The other half of that fix. The finished run is still the session's most recent plan,
+        // but the user arrived from the workload screen, not back to where they were -- they
+        // asked to install it again.
+        var plan = await RegisterFinishedRun();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember("software/Fooocus");
+        target.InstallOnScreen = plan;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".install-split").Should().BeEmpty();
+        page.FindAll(".path-row input").Should().HaveCount(1, "a fresh wizard opens on the install folder");
+    }
+
+    [Fact]
+    public async Task A_finished_run_the_user_already_left_is_not_re_opened_by_a_side_trip_from_a_new_wizard()
+    {
+        // Done was pressed (which forgets the run), the same workload was picked again, and the
+        // side trip happened from the NEW wizard's first stage. Same URL, so only the forgotten
+        // run tells this apart from the first case.
+        await RegisterFinishedRun();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember($"install/{WorkloadId}");
+        target.InstallOnScreen = null;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".install-split").Should().BeEmpty();
+        page.FindAll(".path-row input").Should().HaveCount(1);
     }
 
     [Fact]

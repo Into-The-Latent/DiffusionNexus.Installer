@@ -335,7 +335,7 @@ installer writes. Delete that file first for a clean run.
 ## 10. Wizard polish: hero for every workload, fixed chrome, versions, Back
 
 1. ComfyUI -> pick **Krea-2-Turbo**. **Expect:** the first stage opens with the workload's own
-   thumbnail, "COMFYUI" above the name, a muted `v2.0` on the name itself, an "8–24 GB VRAM"
+   thumbnail, "COMFYUI" above the name, a muted `v2.0` on the name itself, an "8–32 GB VRAM"
    chip under it, and the rendered description (bold, bullets) -- above "Install location".
 2. Pick a single-workload software (ACE-Step). **Expect:** the hero as before: software logo,
    no version line.
@@ -351,6 +351,9 @@ installer writes. Delete that file first for a clean run.
    log and progress intact -- not the welcome screen. Same via **Check for Updates** and (Debug
    build) **Developer tools**, whose Back is now at the top of the page.
 6. From the welcome screen open Licences and go Back. **Expect:** the welcome screen.
+   Let an install FINISH (or fail -- cancel one mid-run), and from its report click
+   **Licences**, then **Back**. **Expect:** the same report and log, not a new "Install
+   location" step. Press **Done**, pick the same workload again. **Expect:** a fresh wizard.
 7. Walk a ComfyUI workload through every stage. **Expect:** the hero stays up on Location,
    System and Content; on Confirm it shrinks to a small picture beside the name (no
    description) above "Ready to install"; the Install stage has the plain heading and no hero.
