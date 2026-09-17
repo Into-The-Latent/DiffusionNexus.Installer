@@ -35,7 +35,7 @@
             <label class="catalog-channel-option" @key="(channel, _radioGeneration)">
                 <input type="radio" name="update-channel" value="@channel"
                        checked="@(Catalog.Channel == channel)"
-                       disabled="@(EnvironmentPinned || CatalogBusy)"
+                       disabled="@(EnvironmentPinned || CatalogBusy || _busy)"
                        @onchange="() => SetChannelAsync(channel)" />
                 @channel
             </label>
@@ -173,6 +173,8 @@
 
     private bool EnvironmentPinned => Catalog.ChannelSource == CatalogChannelSource.Environment;
 
+    // _busy as well, on the radios: the catalog check finishes fast, the app check (feed read,
+    // pin, electron) does not, and a second switch in between starts a check under a running one.
     // The coordinator refuses a switch in these phases (the startup check included), so the
     // radios say so up front instead of accepting a click that will not take.
     private bool CatalogBusy => Catalog.Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying;

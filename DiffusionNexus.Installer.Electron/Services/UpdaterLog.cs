@@ -126,6 +126,10 @@ public sealed class UpdaterLog
         if (DownloadPercent == whole) return;
 
         DownloadPercent = whole;
+
+        // Progress is proof the download is alive. A failure may have ended Downloading (see
+        // MarkFailed) when it was an overlapping check that failed, not the download.
+        if (Status != AppUpdateStatus.Ready && Version is not null) Status = AppUpdateStatus.Downloading;
         Append($"Downloading... {whole}%");
     }
 
@@ -139,16 +143,23 @@ public sealed class UpdaterLog
     public void MarkFailed(string error)
     {
         Error = error;
-        Set(AppUpdateStatus.Failed);
+
+        // An error is the only way a download ends other than Ready, and the event does not say
+        // whether the download or an overlapping check failed -- so it must get through, or a
+        // dead download would read "Downloading" for ever. MarkProgress undoes a false alarm.
+        // A download already on disk is beyond any later error.
+        if (Status != AppUpdateStatus.Ready) Status = AppUpdateStatus.Failed;
+        Changed?.Invoke();
         Append($"Updater error: {error}");
     }
 
     private void Set(AppUpdateStatus status)
     {
-        // A download on disk stays on offer whatever a later check says: re-checking fires
-        // "checking" and "not available" (or fails offline) while the downloaded update is still
-        // waiting, and the restart button must not disappear under the user.
-        if (Status != AppUpdateStatus.Ready) Status = status;
+        // A download on disk, or still running, stays on offer whatever a later check says:
+        // re-checking (a channel switch does it by itself) fires "checking" and "not available"
+        // while the update found earlier is still there, and neither the restart button nor
+        // "Update Available" may disappear under the user.
+        if (Status is not (AppUpdateStatus.Ready or AppUpdateStatus.Downloading)) Status = status;
         Changed?.Invoke();
     }
 }

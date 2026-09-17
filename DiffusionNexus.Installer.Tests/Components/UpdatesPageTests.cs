@@ -413,6 +413,25 @@ public class UpdatesPageTests : BunitContext
         page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeFalse());
     }
 
+    // PR #23 review: the catalog check finishes fast, the app check (feed read, pin, electron)
+    // does not. Radios that come back in between invite a second switch under a running check.
+    [Fact]
+    public void The_radios_stay_disabled_until_the_app_check_is_done_too()
+    {
+        Register(InstallPhase.Idle, appUpdateReady: false);
+        _appUpdater.CheckGate = new TaskCompletionSource();
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        // The stub coordinator never leaves Idle, so only the app check can be holding these.
+        page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Stable)).HasAttribute("disabled").Should().BeTrue());
+
+        _appUpdater.CheckGate.SetResult();
+
+        page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Stable)).HasAttribute("disabled").Should().BeFalse());
+    }
+
     // ----- the app row, next to the catalog row -----
 
     [Fact]

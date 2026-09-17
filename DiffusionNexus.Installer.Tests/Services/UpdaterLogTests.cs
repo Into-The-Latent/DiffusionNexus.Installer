@@ -94,6 +94,38 @@ public class UpdaterLogTests
         _log.UpdateReady.Should().BeTrue();
     }
 
+    // PR #23 review: switching channel re-checks by itself, and that check answers "checking" then
+    // "not available" while electron-updater is still downloading what the last one found. The
+    // App row said "up to date" over a log still counting percent.
+    [Fact]
+    public void A_later_check_does_not_hide_a_running_download()
+    {
+        _log.MarkAvailable("3.1.0");
+
+        _log.MarkChecking();
+        _log.MarkUpToDate();
+
+        _log.Status.Should().Be(AppUpdateStatus.Downloading);
+        _log.UpdateAvailable.Should().BeTrue();
+    }
+
+    // An error is the only way a download ends other than Ready, so it must get through -- but
+    // the error event does not say whether it was the download or an overlapping check that
+    // failed. Progress arriving afterwards proves the download is alive.
+    [Fact]
+    public void A_failure_ends_a_download_and_progress_after_it_brings_the_download_back()
+    {
+        _log.MarkAvailable("3.1.0");
+
+        _log.MarkFailed("offline");
+        _log.Status.Should().Be(AppUpdateStatus.Failed);
+
+        _log.MarkProgress(60);
+
+        _log.Status.Should().Be(AppUpdateStatus.Downloading);
+        _log.DownloadPercent.Should().Be(60);
+    }
+
     // Outside Electron there is no updater at all; the page header already says so, so no line.
     [Fact]
     public void Unavailable_is_a_state_not_a_log_line()
