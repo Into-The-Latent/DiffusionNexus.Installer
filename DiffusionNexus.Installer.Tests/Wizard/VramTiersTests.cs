@@ -26,9 +26,9 @@ public class VramTiersTests
         => VramTiers.Parse(profiles).Should().BeEmpty();
 
     [Theory]
-    [InlineData("24,32", "24-32 GB VRAM")]
-    [InlineData("8,12,16,24,32", "8-32 GB VRAM")]
-    [InlineData("32,8", "8-32 GB VRAM")]
+    [InlineData("24,32", "24–32 GB VRAM")]
+    [InlineData("8,12,16,24,32", "8–32 GB VRAM")]
+    [InlineData("32,8", "8–32 GB VRAM")]
     [InlineData("24,24+", "24 GB VRAM")]
     [InlineData("16", "16 GB VRAM")]
     public void The_range_is_the_lowest_and_highest_tier_declared(string profiles, string expected)

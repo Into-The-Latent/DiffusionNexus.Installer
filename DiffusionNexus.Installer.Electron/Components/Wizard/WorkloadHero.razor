@@ -39,19 +39,15 @@
             <p class="hero-software">@SoftwareName</p>
         }
 
-        <h1 class="hero-name">@Workload.Name</h1>
+        @* The version only where one software offers many workloads: that is where "which
+           revision of this pack am I installing?" is a real question. Same shape as the card the
+           user just clicked -- version on the name, VRAM as a chip. *@
+        @* One line and a no-break space: the version wraps with the name's last word. *@
+        <h1 class="hero-name">@(Workload.Name)@if (FromWorkloadScreen) {<text>&nbsp;</text><span class="workload-version">@WorkloadVersion.Display(Workload)</span>}</h1>
 
-        @* Only where one software offers many workloads: that is where "which revision of this
-           pack am I installing?" is a real question. *@
-        @if (FromWorkloadScreen)
+        @if (FromWorkloadScreen && VramTiers.RangeText(Workload.Vram.VramProfiles) is { } vram)
         {
-            <p class="hero-version">
-                @WorkloadVersion.Display(Workload)
-                @if (VramTiers.RangeText(Workload.Vram.VramProfiles) is { } vram)
-                {
-                    <span class="hero-vram">@vram</span>
-                }
-            </p>
+            <p class="hero-tags"><span class="vram-chip">@vram</span></p>
         }
 
         <div class="hero-desc">

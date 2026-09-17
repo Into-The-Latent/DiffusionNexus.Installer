@@ -65,7 +65,8 @@ public class WorkloadCardTests : BunitContext
     {
         var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry(type: WorkflowType.Video)));
 
-        cut.Find(".workload-card-name").TextContent.Should().Be("Krea-2-Turbo");
+        // The name carries its version inline, so the heading reads "Krea-2-Turbo v2.3".
+        cut.Find(".workload-card-name").TextContent.Trim().Should().StartWith("Krea-2-Turbo");
         cut.Find(".workload-card-badge").TextContent.Should().Be("Video");
     }
 
@@ -116,11 +117,11 @@ public class WorkloadCardTests : BunitContext
     }
 
     [Fact]
-    public void Shows_the_catalog_version_beside_the_type()
+    public void Shows_the_catalog_version_on_the_name()
     {
         var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
 
-        cut.Find(".workload-card-tags .workload-card-version").TextContent.Should().Be("v2.3");
+        cut.Find(".workload-card-name .workload-version").TextContent.Should().Be("v2.3");
     }
 
     [Fact]
@@ -128,7 +129,8 @@ public class WorkloadCardTests : BunitContext
     {
         var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry(vramProfiles: "24,32")));
 
-        cut.Find(".workload-card-vram").TextContent.Should().Be("24-32 GB VRAM");
+        // A chip in the same row as the type badge, not a loose line of text under it.
+        cut.Find(".workload-card-tags .vram-chip").TextContent.Should().Be("24–32 GB VRAM");
     }
 
     [Fact]
@@ -136,6 +138,6 @@ public class WorkloadCardTests : BunitContext
     {
         var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
 
-        cut.FindAll(".workload-card-vram").Should().BeEmpty();
+        cut.FindAll(".vram-chip").Should().BeEmpty();
     }
 }

@@ -335,13 +335,14 @@ installer writes. Delete that file first for a clean run.
 ## 10. Wizard polish: hero for every workload, fixed chrome, versions, Back
 
 1. ComfyUI -> pick **Krea-2-Turbo**. **Expect:** the first stage opens with the workload's own
-   thumbnail, "COMFYUI" above the name, a `v2.0 - 8-24 GB VRAM`-style line under it, and the
-   rendered description (bold, bullets) -- above "Install location".
+   thumbnail, "COMFYUI" above the name, a muted `v2.0` on the name itself, an "8–24 GB VRAM"
+   chip under it, and the rendered description (bold, bullets) -- above "Install location".
 2. Pick a single-workload software (ACE-Step). **Expect:** the hero as before: software logo,
    no version line.
-3. On ComfyUI's workload screen. **Expect:** every card shows `vX.Y` beside its IMAGE/VIDEO
-   badge; packs with VRAM profiles show a "min-max GB VRAM" line (one number when there is a
-   single tier), packs without show none; Install buttons line up along each row.
+3. On ComfyUI's workload screen. **Expect:** every card shows a muted `vX.Y` on its name --
+   wrapping together with the name's last word, never alone on a line; packs with VRAM
+   profiles show a "min–max GB VRAM" chip beside the IMAGE/VIDEO badge (one number when
+   there is a single tier), packs without show none; Install buttons line up along each row.
 4. On any long stage (the Content stage with Advanced open) at the minimum window size, scroll.
    **Expect:** only the middle scrolls, its scrollbar at the window's right edge; the top bar
    and the community footer never move. The welcome screen and the two-column install screen

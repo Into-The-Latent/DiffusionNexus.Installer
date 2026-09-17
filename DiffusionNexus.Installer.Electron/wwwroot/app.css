@@ -1353,23 +1353,39 @@ progress {
     color: var(--accent);
 }
 
-/* The type badge and the version share a line: two facts about the pack, neither worth a row. */
+/* One row of chips: what kind of pack, and what it needs. Wraps as a last resort -- at the
+   190px minimum tile the two chips fit with ~10px to spare. */
 .workload-card-tags {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
-.workload-card-version {
-    font-size: 11px;
+/* The version, riding on the name it belongs to -- on the card and in the wizard hero alike.
+   Sized in em so it scales with whichever heading carries it. No margin: the markup joins it
+   to the name with a no-break space, so it is never stranded at the start of a line -- where a
+   margin would show up as an indent. */
+.workload-version {
+    font-size: .8em;
+    font-weight: 500;
+    letter-spacing: 0;
     color: var(--muted);
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
 
-.workload-card-vram {
-    margin: 0;
-    font-size: 11.5px;
-    color: var(--muted);
+/* Same geometry as .workload-card-badge, so the two read as one row of chips; neutral rather
+   than accent, because the type is what the filters above the grid speak in and this is not. */
+.vram-chip {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(139, 152, 165, 0.16);
+    color: var(--text);
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1674,17 +1690,10 @@ progress {
     letter-spacing: -.01em;
 }
 
-.hero-vram::before {
-    content: "\00b7";
-    margin-inline: .45rem;
-}
-
-/* Tucked up under the name it belongs to, so it reads as part of the heading. */
-.hero-version {
-    margin: -.4rem 0 .55rem;
-    font-size: .82rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
+/* Tucked up under the name it belongs to. */
+.hero-tags {
+    margin: -.2rem 0 .65rem;
+    display: flex;
 }
 
 /* Capped and scrollable: descriptions are catalog content and the longest today is 659

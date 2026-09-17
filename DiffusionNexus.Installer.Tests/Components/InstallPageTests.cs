@@ -130,7 +130,7 @@ public class InstallPageTests : BunitContext
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
         page.FindAll(".hero").Should().HaveCount(1);
-        page.FindAll(".hero-version").Should().BeEmpty("a lone workload came from the software tile");
+        page.FindAll(".hero .workload-version").Should().BeEmpty("a lone workload came from the software tile");
         page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
@@ -147,7 +147,7 @@ public class InstallPageTests : BunitContext
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
         page.FindAll(".hero").Should().HaveCount(1);
-        page.FindAll(".hero-version").Should().HaveCount(1);
+        page.FindAll(".hero .workload-version").Should().HaveCount(1);
         page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 

@@ -54,8 +54,8 @@ public class WorkloadHeroTests : BunitContext
     {
         var cut = RenderFromWorkloadScreen(Krea(thumbnailPath: null, vramProfiles: "8,12,16,24"));
 
-        cut.Find(".hero-version").TextContent.Should().Contain("v2.0");
-        cut.Find(".hero-vram").TextContent.Should().Be("8-24 GB VRAM");
+        cut.Find(".hero-name .workload-version").TextContent.Should().Be("v2.0");
+        cut.Find(".hero-tags .vram-chip").TextContent.Should().Be("8–24 GB VRAM");
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public class WorkloadHeroTests : BunitContext
         // One workload, one tile: there is no "which revision of which pack" to answer.
         var cut = Render<WorkloadHero>(p => p.Add(h => h.Workload, Workload(RepositoryType.Fooocus, "Fooocus")));
 
-        cut.FindAll(".hero-version").Should().BeEmpty();
+        cut.FindAll(".workload-version").Should().BeEmpty();
     }
 
     [Fact]
