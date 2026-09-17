@@ -261,3 +261,30 @@ can lag a minute after the release appears). Stable is what users follow.
    …" on `/updates`, nothing on the welcome screen, no dot.
 10. Run with `DIFFUSIONNEXUS_CATALOG_PATH` pointing at a catalog checkout. **Expect:** "Update
     check skipped: a local catalog override is active at <path>." and no Apply button.
+
+## 8. App updates on the Preview channel
+
+The app follows the same channel as the catalog (issue #19). Needs two **installed** copies of
+the current release, or one machine run twice: the updater does nothing under `dotnet run`.
+Call the installed version `A` and the test version `B` (next patch number).
+
+1. Publish a Preview build: `.\Scripts\New-Release.ps1 -Version B -Notes "smoke" -Prerelease`.
+   **Expect:** the release page shows `vB` with a **Pre-release** badge, and `vA` still carries
+   **Latest**.
+2. Launch the installed app on Stable (no variable, setting untouched). Open `/updates`.
+   **Expect:** "App updates: following **Stable**"; the updater log says "Following Stable app
+   releases." then "No update available". `vB` is **not** offered.
+3. Quit. Launch with `DIFFUSIONNEXUS_CATALOG_CHANNEL=preview` set for the process.
+   **Expect:** "App updates: following **Preview**" with the testing hint, the catalog line
+   below says Preview too, and the log says "Following Preview app releases.", "Update
+   available: B. Downloading...", then **Restart and install** appears. Do not press it yet.
+4. Still on that page, nothing should say `latest`, `beta` or `prerelease` anywhere.
+5. Promote it: `gh release edit vB --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest`.
+   Wait a minute (the `releases/latest` redirect lags). Launch the **Stable** copy again.
+   **Expect:** `vB` is now offered and downloads.
+6. Press **Restart and install** on either copy. **Expect:** the app comes back as `B`.
+7. On the copy that is now `B`, publish nothing new and launch on Preview, then on Stable.
+   **Expect:** "No update available" both times -- switching back to Stable never reinstalls
+   an older build.
+8. Debug build, Developer tools. **Expect:** the panel is titled "Update channel" and its hint
+   says the setting covers the catalog and the app.

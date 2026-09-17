@@ -31,7 +31,7 @@ which is the author and any tester, through the real download, verify and swap p
 | Where it is switched | Developer tools page (Debug builds) writes the setting. Release builds switch only through the environment variable. |
 | Sections | Apply both. The SDK-2 spec's per-kind toggles are dropped; the editor releases the catalog as a unit. |
 | Auto-apply | No. The check runs automatically, applying is the user's click. |
-| App self-updater channel | Out of scope, issue #19. The app has only the `latest` channel today. |
+| App self-updater channel | Out of scope here; built afterwards as issue #19 -- see §3.1. The same setting drives it. |
 | Seed refresh at build time | Stays manual (accepted 2026-09-15). Rule recorded in §10. |
 
 ## 3. Vocabulary
@@ -41,10 +41,31 @@ Two update mechanisms, three channels that exist:
 | Mechanism | Stable | Preview |
 |-----------|--------|---------|
 | Catalog | Releases `v1`, `v2`, `v3` ("Catalog vN"), read via `releases/latest/download/manifest.json`. Manifest says `"channel": "stable"`. | Pre-release tagged `preview`, title "Preview (sha)", rebuilt on every push to `main`. Manifest says `"channel": "preview"`. |
-| App | Full releases `v3.0.x` with `latest.yml`. electron-updater calls this `latest`. | Does not exist. See #19. |
+| App | Full releases `v3.0.x` with `latest.yml`. electron-updater calls this `latest`. | The same kind of release, published as a GitHub **pre-release** (`New-Release.ps1 -Prerelease`). Plain `X.Y.Z` version, same `latest.yml`. |
 
-The UI says **Stable** and **Preview** for the catalog, and "latest release" for the app.
-electron-updater's `latest` / `beta` words never appear.
+The UI says **Stable** and **Preview** for both. electron-updater's `latest` / `beta` /
+`prerelease` words never appear.
+
+### 3.1 App Preview channel (issue #19, added 2026-09-17)
+
+One setting, two mechanisms. `AppUpdateChecker` (Electron project) asks the coordinator for
+the channel (`ResolveChannelAsync` -- no catalog check needed, never throws), sets
+electron-updater's `allowPrerelease` to `channel == Preview` on **every** check, then checks.
+The startup check in `Program.cs` and the button on `/updates` both go through it.
+
+- **Stable** is electron-updater's default path: GitHub's `releases/latest`, which never
+  names a pre-release.
+- **Preview** takes the newest entry of the releases feed, pre-release or not (verified in
+  the shipped electron-updater 6.8.9, `GitHubProvider.getLatestVersion`).
+- This holds only while app versions stay plain `X.Y.Z`. A suffixed version
+  (`3.1.0-beta.1`) switches electron-updater to matching releases by suffix and makes the
+  installed app allow pre-releases by default. `New-Release.ps1` keeps refusing one.
+- **Promotion is not a rebuild**: `gh release edit vX.Y.Z --prerelease=false --latest`. The
+  binaries testers ran are the binaries everyone gets.
+- Downgrades stay off. A machine switched back to Stable while on a newer Preview build
+  keeps it until Stable overtakes it.
+- The settings stay one setting. Splitting them would allow a Preview catalog on a Stable
+  app, which is the `RequiresNewerSoftware` outcome the catalog check exists to report.
 
 Preview manifests carry `catalogVersion = last stable + 1`. When that content is later
 released as `v(N+1)`, a Preview client that already applied it sees no item-hash
@@ -363,7 +384,7 @@ leaving them showing the click the user just made.
 
 ## 10. Out of scope and constraints recorded
 
-- **App Preview channel**: #19.
+- **App Preview channel**: was out of scope here, since built -- §3.1.
 - **Seed refresh** stays manual. Rule: the embedded `Assets/Catalog/{catalog.zip,manifest.json}`
   must be packed from a commit **no newer than the latest stable tag**. A newer seed on a
   cold-started machine is "downgraded" to the older stable release on its first check,

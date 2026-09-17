@@ -44,6 +44,12 @@ It does **not** upload anything — publishing is opt-in, see below.
 
 ```
 .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "What changed."
+
+# For testers first: a GitHub pre-release, offered only to installs following Preview
+.\Scripts\New-Release.ps1 -Version 3.0.6 -Notes "What changed." -Prerelease
+
+# ...and later to everyone, without a rebuild
+gh release edit v3.0.6 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
 ```
 
 Do not hand-roll this. Packaging takes two steps, and skipping the second produces an installer
