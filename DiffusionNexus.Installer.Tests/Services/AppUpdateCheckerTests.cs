@@ -91,6 +91,7 @@ public class AppUpdateCheckerTests : IDisposable
 
         _shell.Calls.Should().BeEmpty();
         _log.Lines.Should().BeEmpty();
+        _log.Status.Should().Be(AppUpdateStatus.Unavailable);
     }
 
     [Fact]
@@ -236,6 +237,75 @@ public class AppUpdateCheckerTests : IDisposable
         _shell.Calls.Should().Equal(["allowPrerelease=True", "check"]);
     }
 
+    // Inside Electron but unpackaged, electron-updater returns without firing one event. The check
+    // still goes out (a packaged app whose config we failed to find must not lose its updates),
+    // but the page says why nothing came back instead of looking hung.
+    [Fact]
+    public async Task Without_a_shipped_config_it_says_the_build_is_not_installed()
+    {
+        await Create().CheckAsync();
+
+        _log.Status.Should().Be(AppUpdateStatus.NotInstalledBuild);
+        _log.Lines.Should().Contain("This build is not installed, so there is no app update to check for.");
+        _shell.Calls.Should().EndWith("check");
+    }
+
+    [Fact]
+    public async Task An_installed_build_is_not_called_uninstalled()
+    {
+        Installed();
+
+        await Create().CheckAsync();
+
+        _log.Status.Should().NotBe(AppUpdateStatus.NotInstalledBuild);
+    }
+
+    // The startup check and every button press used to log "Following Stable app releases."
+    // again, so the log filled with the same line.
+    [Fact]
+    public async Task The_channel_is_logged_once_until_it_changes()
+    {
+        Installed();
+        var checker = Create();
+
+        await checker.CheckAsync();
+        await checker.CheckAsync();
+        _catalog.Channel = CatalogChannel.Preview;
+        await checker.CheckAsync();
+
+        _log.Lines.Where(l => l.StartsWith("Following", StringComparison.Ordinal))
+            .Should().Equal("Following Stable app releases.", "Following Preview app releases.");
+    }
+
+    // PR #23 review: a channel switch checks by itself, and the startup check is fire-and-forget,
+    // so two checks can overlap. A Preview check parked on the feed read would resume AFTER a
+    // Stable check finished, pin the updater to a pre-release and download it on Stable.
+    [Fact]
+    public async Task Overlapping_checks_run_one_at_a_time_so_the_last_channel_wins()
+    {
+        var shipped = Installed();
+        _catalog.Channel = CatalogChannel.Preview;
+        _feed.Tags = ["v3.0.8", "v3.1.0"];
+        _feed.Gate = new TaskCompletionSource();
+        var checker = Create();
+
+        var preview = checker.CheckAsync();
+
+        // Awaited, not asserted at once: the shipped config is read from disk before the feed is.
+        await _feed.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        _catalog.Channel = CatalogChannel.Stable;
+        var stable = checker.CheckAsync();
+        _shell.Calls.Should().Equal(["allowPrerelease=True"], "the Stable check waits its turn");
+
+        _feed.Gate.SetResult();
+        await Task.WhenAll(preview, stable);
+
+        _shell.Calls.Should().Equal([
+            "allowPrerelease=True", $"configPath={PinnedPath}", "check",
+            "allowPrerelease=False", $"configPath={shipped}", "check"]);
+    }
+
     [Fact]
     public async Task The_log_names_the_channel_in_our_words()
     {
@@ -253,9 +323,22 @@ public class AppUpdateCheckerTests : IDisposable
         public Exception? Failure { get; set; }
         public List<string> UrlsRead { get; } = [];
 
-        public Task<string> ReadAsync(string url, CancellationToken ct = default)
+        /// <summary>When set, a read parks here until the test completes it.</summary>
+        public TaskCompletionSource? Gate { get; set; }
+
+        /// <summary>Completes when the first read arrives.</summary>
+        public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<string> ReadAsync(string url, CancellationToken ct = default)
         {
             UrlsRead.Add(url);
+            ReadStarted.TrySetResult();
+            if (Gate is not null) await Gate.Task;
+            return await ReadCoreAsync();
+        }
+
+        private Task<string> ReadCoreAsync()
+        {
             if (Failure is not null) return Task.FromException<string>(Failure);
             return Task.FromResult(
                 "<feed xmlns=\"http://www.w3.org/2005/Atom\">"

@@ -95,16 +95,12 @@ builder.UseElectron(args, async (IServiceProvider services) =>
     // Wired once, here, rather than from a component -- see UpdaterLog for why.
     var log = services.GetRequiredService<UpdaterLog>();
 
-    Electron.AutoUpdater.OnCheckingForUpdate += () => log.Append("Checking for updates...");
-    Electron.AutoUpdater.OnUpdateNotAvailable += _ => log.Append("No update available - this is the latest version.");
-    Electron.AutoUpdater.OnUpdateAvailable += info => log.Append($"Update available: {info.Version}. Downloading...");
-    Electron.AutoUpdater.OnDownloadProgress += p => log.Append($"Downloading... {p.Percent:F0}%");
-    Electron.AutoUpdater.OnError += error => log.Append($"Updater error: {error}");
-    Electron.AutoUpdater.OnUpdateDownloaded += info =>
-    {
-        log.Append($"Update {info.Version} downloaded and ready to install.");
-        log.MarkUpdateReady();
-    };
+    Electron.AutoUpdater.OnCheckingForUpdate += log.MarkChecking;
+    Electron.AutoUpdater.OnUpdateNotAvailable += _ => log.MarkUpToDate();
+    Electron.AutoUpdater.OnUpdateAvailable += info => log.MarkAvailable(info.Version);
+    Electron.AutoUpdater.OnDownloadProgress += p => log.MarkProgress(p.Percent);
+    Electron.AutoUpdater.OnError += error => log.MarkFailed(error);
+    Electron.AutoUpdater.OnUpdateDownloaded += info => log.MarkUpdateReady(info.Version);
 
     // Check once at startup. An installer is a short-lived, occasionally-run app: if it waited
     // for the user to ask, most installs would simply never update. Fire-and-forget so a slow

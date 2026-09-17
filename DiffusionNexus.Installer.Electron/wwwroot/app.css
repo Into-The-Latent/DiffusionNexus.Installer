@@ -73,13 +73,6 @@ html, body {
     letter-spacing: -.01em;
 }
 
-.shell .version {
-    margin: 0;
-    color: var(--accent);
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-}
-
 .shell .host {
     margin: .25rem 0 0;
     color: var(--muted);
@@ -145,25 +138,64 @@ html, body {
     font-size: .85rem;
 }
 
-/* /updates: the content-catalog section under the app updater. Same panel treatment as .shell
-   .log so the two sections read as siblings. */
+/* /updates: the channel picker, then the App and Catalog rows, then the log. Same panel treatment
+   as .shell .log so the three sections read as siblings. */
+.shell .update-channel,
 .shell .catalog {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
 }
 
-.shell .catalog h2 {
-    margin: 1.5rem 0 .5rem;
+.shell .update-channel h2 {
+    margin: 0 0 .75rem;
     font-size: .8rem;
     text-transform: uppercase;
     letter-spacing: .08em;
     color: var(--muted);
+    font-weight: 600;
+}
+
+.shell .update-channel .panel-hint:last-child {
+    margin-bottom: 0;
 }
 
 .shell .catalog p {
     margin: .25rem 0;
+}
+
+/* Label | version | status. The version column is fixed so the two statuses start at the same x. */
+.update-row {
+    display: grid;
+    grid-template-columns: 5rem 17rem 1fr;
+    gap: 1rem;
+    align-items: baseline;
+    padding: .5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.update-row-label {
+    color: var(--muted);
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    font-weight: 600;
+}
+
+.update-row-version {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.shell .catalog > button.primary {
+    margin-top: .25rem;
+}
+
+.shell .catalog .actions {
+    margin: 1rem 0 .25rem;
 }
 
 .catalog-changes {
@@ -440,6 +472,21 @@ h2 {
     margin: 0 0 .75rem;
     color: var(--muted);
     font-size: .85rem;
+}
+
+.catalog-channel-option input {
+    accent-color: var(--accent);
+}
+
+/* Chromium draws a disabled radio (channel pinned by the environment variable, or a check
+   running) grey whether it is checked or not, and ignores accent-color then. The label carries
+   the choice instead. */
+.catalog-channel-option:has(input:checked) {
+    font-weight: 600;
+}
+
+.catalog-channel-option:has(input:disabled:not(:checked)) {
+    color: var(--muted);
 }
 
 .catalog-channel-option {
@@ -1031,14 +1078,18 @@ progress {
     color: var(--muted);
 }
 
-/* Something is waiting on /updates: a catalog update to apply or an app update to install. */
-.top-bar-attention::after {
-    content: "";
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+/* Something is waiting on /updates: a catalog update to apply or an app update found. Filled with
+   the accent, same as a primary button, so it reads as the one thing on the bar to press. */
+.top-bar-attention {
     background: var(--accent);
+    border-color: var(--accent);
+    color: #06231f;
+    font-weight: 600;
+}
+
+.top-bar-attention:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 
 /* ---------- Announcements banner ---------- */

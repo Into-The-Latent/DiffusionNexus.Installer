@@ -6,54 +6,11 @@
 @inject IFolderPicker FolderPicker
 @inject LauncherScriptPreview Preview
 @inject NavigationManager Nav
-@using DiffusionNexus.Installer.Core.Updates
-@using DiffusionNexus.Installer.SDK.Catalog.Packaging
-@inject ICatalogUpdateCoordinator Catalog
-@implements IDisposable
 
 <PageTitle>Developer tools</PageTitle>
 
 <h1>Developer tools</h1>
 <p class="panel-hint">Debug builds only. Not present in a Release build.</p>
-
-<section class="panel">
-    <h2>Update channel</h2>
-    <p class="panel-hint">
-        One setting for the catalog and the app. Catalog: Preview follows every push to the
-        catalog repo's main branch; Stable follows tagged releases, which is what users get.
-        App: Preview also takes installer builds published as a GitHub pre-release; Stable takes
-        full releases only. Saved per user. A Release build switches only through the
-        DIFFUSIONNEXUS_CATALOG_CHANNEL environment variable.
-    </p>
-
-    @foreach (var channel in new[] { CatalogChannel.Stable, CatalogChannel.Preview })
-    {
-        @* Keyed on the refusal count: after a switch that did not happen, "checked" renders the
-           same values as before, so Blazor's diff patches nothing and the browser keeps the dot
-           where the user clicked. A new key makes it rebuild the inputs from what is in effect. *@
-        <label class="catalog-channel-option" @key="(channel, _radioGeneration)">
-            <input type="radio" name="catalog-channel" value="@channel"
-                   checked="@(Catalog.Channel == channel)"
-                   disabled="@(EnvironmentPinned || CatalogBusy)"
-                   @onchange="() => SetChannelAsync(channel)" />
-            @channel
-        </label>
-    }
-
-    @if (EnvironmentPinned)
-    {
-        <p class="panel-hint">Set by DIFFUSIONNEXUS_CATALOG_CHANNEL for this run; the saved setting is not in effect.</p>
-    }
-
-    <div class="wizard-actions">
-        <button class="btn-secondary" @onclick="CheckNow">Check now</button>
-    </div>
-
-    @if (_channelError is not null)
-    {
-        <p class="validation-error">@_channelError</p>
-    }
-</section>
 
 <section class="panel panel-warning">
     <h2>Export launcher scripts</h2>
@@ -131,60 +88,11 @@
     private string? _folder;
     private string? _error;
     private bool _busy;
-    private string? _channelError;
-
-    private int _radioGeneration;
-
-    private bool EnvironmentPinned => Catalog.ChannelSource == CatalogChannelSource.Environment;
-
-    // The coordinator refuses a switch in these phases (the startup check included), so the
-    // radios say so up front instead of accepting a click that will not take.
-    private bool CatalogBusy => Catalog.Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying;
-
-    private async Task SetChannelAsync(CatalogChannel channel)
-    {
-        _channelError = null;
-        try
-        {
-            await Catalog.SetChannelAsync(channel);
-        }
-        catch (Exception ex)
-        {
-            // Debug-only page: an escaped exception here replaces it with the Blazor error banner,
-            // which is a worse outcome than a message under the radios that still work afterwards.
-            _channelError = $"The channel could not be saved: {ex.Message}";
-        }
-
-        // A refusal is a silent no-op on the coordinator's side (no Changed), and a failed save
-        // leaves the channel where it was: either way the clicked radio is now wrong.
-        if (Catalog.Channel != channel)
-        {
-            _radioGeneration++;
-            _channelError ??= "The channel was not switched: a catalog check or update is in progress. Try again when it has finished.";
-        }
-    }
-
-    private void CheckNow()
-    {
-        // Fire and go: /updates shows "Checking the catalog…" and then the outcome.
-        _ = Catalog.CheckAsync();
-        Nav.NavigateTo("/updates");
-    }
-
     protected override async Task OnInitializedAsync()
     {
         _workloads = await Workloads.GetInstallerWorkloadsAsync();
         _selected = _workloads.FirstOrDefault();
-
-        // The radios follow the coordinator: disabled while it checks or applies, and the channel
-        // it resolves on the first check may differ from the default rendered before it.
-        Catalog.Changed += OnCatalogChanged;
     }
-
-    private void OnCatalogChanged() => _ = InvokeAsync(StateHasChanged);
-
-    // Method group, so -= removes the handler this component actually added.
-    public void Dispose() => Catalog.Changed -= OnCatalogChanged;
 
     private void OnWorkloadChanged(ChangeEventArgs e)
     {

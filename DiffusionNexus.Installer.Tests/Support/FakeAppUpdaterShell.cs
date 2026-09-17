@@ -20,9 +20,13 @@ internal sealed class FakeAppUpdaterShell : IAppUpdaterShell
         return ConfigPathFailure is null ? Task.CompletedTask : Task.FromException(ConfigPathFailure);
     }
 
-    public Task CheckForUpdatesAsync()
+    /// <summary>When set, the check parks here until the test completes it.</summary>
+    public TaskCompletionSource? CheckGate { get; set; }
+
+    public async Task CheckForUpdatesAsync()
     {
         Calls.Add("check");
-        return CheckFailure is null ? Task.CompletedTask : Task.FromException(CheckFailure);
+        if (CheckGate is not null) await CheckGate.Task;
+        if (CheckFailure is not null) throw CheckFailure;
     }
 }

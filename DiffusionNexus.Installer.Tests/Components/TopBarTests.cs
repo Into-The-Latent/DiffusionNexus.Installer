@@ -86,6 +86,7 @@ public class TopBarTests : BunitContext
 
         cut.Find(Updates).ClassList.Should().NotContain("top-bar-attention");
         cut.Find(Updates).HasAttribute("title").Should().BeFalse();
+        cut.Find(Updates).TextContent.Trim().Should().Be("Check for Updates");
     }
 
     [Fact]
@@ -98,6 +99,40 @@ public class TopBarTests : BunitContext
 
         cut.Find(Updates).ClassList.Should().Contain("top-bar-attention");
         cut.Find(Updates).GetAttribute("title").Should().Be("Catalog update available");
+    }
+
+    // A dot was too quiet to notice: the button now says it, on the accent background.
+    [Fact]
+    public void Says_update_available_instead_of_check_for_updates_when_something_is_waiting()
+    {
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Checked;
+
+        Render<TopBar>().Find(Updates).TextContent.Trim().Should().Be("Update Available");
+    }
+
+    // electron-updater downloads straight away, which can take minutes; the user hears about the
+    // update when it is found, not when the download ends.
+    [Fact]
+    public void Marks_it_as_soon_as_an_app_update_is_found()
+    {
+        _signals.App.MarkAvailable("3.0.8");
+
+        var cut = Render<TopBar>();
+
+        cut.Find(Updates).ClassList.Should().Contain("top-bar-attention");
+        cut.Find(Updates).TextContent.Trim().Should().Be("Update Available");
+        cut.Find(Updates).GetAttribute("title").Should().Be("App update 3.0.8 downloading");
+    }
+
+    [Fact]
+    public void Lights_up_when_the_app_check_finds_one_after_the_bar_rendered()
+    {
+        var cut = Render<TopBar>();
+
+        _signals.App.MarkAvailable("3.0.8");
+
+        cut.WaitForAssertion(() => cut.Find(Updates).TextContent.Trim().Should().Be("Update Available"));
     }
 
     [Fact]
