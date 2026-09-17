@@ -41,10 +41,17 @@ public sealed class AppUpdateChecker(
     // it was last told, so every check that does not pin has to put the shipped config back.
     private bool _pinned;
 
+    // The channel last written to the log. Every check used to repeat it.
+    private CatalogChannel? _loggedChannel;
+
     /// <summary>Never throws: a failed update check must not take the app down, which works fine on an older version.</summary>
     public async Task CheckAsync()
     {
-        if (!shell.IsAvailable) return;
+        if (!shell.IsAvailable)
+        {
+            log.MarkUnavailable();
+            return;
+        }
 
         try
         {
@@ -55,7 +62,17 @@ public sealed class AppUpdateChecker(
             // Sent on every check. The updater lives in Electron's main process and keeps what it
             // was last told, so a switch back to Stable has to be said, not assumed.
             shell.SetAllowPrerelease(channel == CatalogChannel.Preview);
-            log.Append($"Following {channel} app releases.");
+            if (_loggedChannel != channel)
+            {
+                _loggedChannel = channel;
+                log.Append($"Following {channel} app releases.");
+            }
+
+            // electron-updater skips an unpackaged app without firing a single event, so without
+            // this the page would sit on its last line as if the check had hung. The check below
+            // still goes out: if a packaged app's config was merely not found, its events will
+            // replace this state.
+            if (shell.UpdateConfigPath is null) log.MarkNotInstalledBuild();
 
             var pinTo = channel == CatalogChannel.Preview ? await ReleaseHiddenByANewerOneAsync().ConfigureAwait(false) : null;
             await ApplyPinAsync(pinTo).ConfigureAwait(false);

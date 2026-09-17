@@ -229,24 +229,27 @@ can lag a minute after the release appears). Stable is what users follow.
    `https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases/tag/preview` shows the
    new commit hash in its title.
 2. Launch a Debug build with `DIFFUSIONNEXUS_CATALOG_CHANNEL=preview` set for the process.
-   **Expect:** within a few seconds the top bar's "Check for Updates" grows a dot (hover: "Catalog
-   update available") and the welcome screen shows "A catalog update is available: 1 workload and
+   **Expect:** within a few seconds the top bar's "Check for Updates" turns into a filled accent
+   button reading **Update Available** (hover: "Catalog update available") and the welcome screen shows "A catalog update is available: 1 workload and
    0 workflows changed. Review and apply".
-3. Open `/updates`. **Expect:** "Following: Preview (set by DIFFUSIONNEXUS_CATALOG_CHANNEL)",
-   "Installed: vN (Stable), applied <date>", "Catalog vN+1 is available on Preview.", one
+3. Open `/updates`. **Expect:** the Update channel panel has Preview checked, both radios
+   disabled, and "Set by DIFFUSIONNEXUS_CATALOG_CHANNEL for this run"; the Catalog row reads
+   "vN (Stable), applied <date>" and "Catalog vN+1 is available on Preview.", one
    Updated row naming the workload you edited with its version text — the same row the editor's
    Release dialog would show — and an **Apply catalog update** button.
 4. Press Apply. **Expect:** "Downloading… NN%" ticking, then "Catalog updated to vN+1." with a
-   "Back to all software" link; the dot and the welcome notice are gone. Follow the link and open
+   "Back to all software" link; the top bar is back to "Check for Updates" and the welcome
+   notice is gone. Follow the link and open
    the workload. **Expect:** the edited description.
-5. Quit. Launch again **without** the variable. **Expect:** `/updates` says "Following: Stable",
-   the installed line still says vN+1 (Preview) — provenance, not preference — and the check
+5. Quit. Launch again **without** the variable. **Expect:** `/updates` has Stable checked, the
+   Catalog row still says vN+1 (Preview) — provenance, not preference — and the check
    says "The catalog is up to date." or offers the stable content back if it differs (the diff is
    hash-based; a Preview client returning to Stable is simply offered what Stable has).
-6. In a Debug build open Developer tools. **Expect:** a Catalog channel panel with Stable and
-   Preview radios; the saved one is checked. Pick the other, press **Check now**. **Expect:**
-   `/updates` opens and shows the new channel. Quit and relaunch. **Expect:** the choice stuck.
-   With the environment variable set, the radios are disabled and the hint says so.
+6. In a **Release** build open `/updates` (Developer tools no longer has a channel panel).
+   **Expect:** an Update channel panel with Stable and Preview radios; the saved one is checked.
+   Pick the other. **Expect:** the radios grey out while both checks run on the new channel and
+   the App and Catalog rows update without pressing anything. Quit and relaunch. **Expect:** the
+   choice stuck. With the environment variable set, the radios are disabled and the hint says so.
    Then make `%LocalAppData%\DiffusionNexus\user_settings.json` read-only and pick the other channel.
    **Expect:** "The channel could not be saved: …" and the dot jumps back to the channel still
    in effect (not provable in bUnit — the browser keeps its own checked state). Clear the
@@ -258,7 +261,7 @@ can lag a minute after the release appears). Stable is what users follow.
    **Expect:** no Apply button, instead "It can be applied once <workload> has finished." Let the
    install finish. **Expect:** the button appears without leaving the page.
 9. Disconnect the network and press Check for updates. **Expect:** "The catalog check failed:
-   …" on `/updates`, nothing on the welcome screen, no dot.
+   …" on `/updates`, nothing on the welcome screen, and the top bar still says "Check for Updates".
 10. Run with `DIFFUSIONNEXUS_CATALOG_PATH` pointing at a catalog checkout. **Expect:** "Update
     check skipped: a local catalog override is active at <path>." and no Apply button.
 
@@ -272,12 +275,16 @@ Call the installed version `A` and the test version `B` (next patch number).
    **Expect:** the release page shows `vB` with a **Pre-release** badge, and `vA` still carries
    **Latest**.
 2. Launch the installed app on Stable (no variable, setting untouched). Open `/updates`.
-   **Expect:** "App updates: following **Stable**"; the updater log says "Following Stable app
-   releases." then "No update available". `vB` is **not** offered.
+   **Expect:** Stable checked; the App row reads "vA" and "The app is up to date."; the updater
+   log says "Following Stable app releases." once (press Check for updates: it is not repeated)
+   then "No update available". `vB` is **not** offered.
 3. Quit. Launch with `DIFFUSIONNEXUS_CATALOG_CHANNEL=preview` set for the process.
-   **Expect:** "App updates: following **Preview**" with the testing hint, the catalog line
-   below says Preview too, and the log says "Following Preview app releases.", "Update
-   available: B. Downloading...", then **Restart and install** appears. Do not press it yet.
+   **Expect:** on the welcome screen, as soon as B is found (before its download finishes), the
+   top bar button reads **Update Available** on the accent background (hover: "App update B
+   downloading"). On `/updates`, Preview is checked, the App row reads "App vB is available.
+   Downloading… NN%" and then "App vB is ready to install.", the log says "Following Preview app
+   releases.", "Update available: B. Downloading...", and **Restart and install** appears. Do
+   not press it yet.
 4. Still on that page, nothing should say `latest`, `beta` or `prerelease` anywhere.
 5. Promote it: `gh release edit vB --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest`.
    Wait a minute (the `releases/latest` redirect lags). Launch the **Stable** copy again.
@@ -286,15 +293,16 @@ Call the installed version `A` and the test version `B` (next patch number).
 7. On the copy that is now `B`, publish nothing new and launch on Preview, then on Stable.
    **Expect:** "No update available" both times -- switching back to Stable never reinstalls
    an older build.
-8. Debug build, Developer tools. **Expect:** the panel is titled "Update channel" and its hint
-   says the setting covers the catalog and the app.
+8. `dotnet run` inside Electron (Debug). **Expect:** the App row and the log say "This build is
+   not installed, so there is no app update to check for." once, instead of the log stopping at
+   "Following Stable app releases." as if the check had hung.
 9. The hotfix case (PR #21 review). With an installed copy on `A`: publish pre-release `C`
    (a minor bump, e.g. 3.1.0), **then** a Stable release `B` (next patch), so `B` is the newest
    release but `C` the highest version. Launch on Preview. **Expect:** the log says "A newer
    release was published after vC; checking vC directly." and `C` is offered -- not `B`. The
    download is the full installer (no differential) on this path. Launch a second copy on
-   Stable. **Expect:** `B`. Then, in one Debug session, check on Preview and switch to Stable in
-   Developer tools and check again. **Expect:** the Stable check behaves as in step 2 (the
+   Stable. **Expect:** `B`. Then, in one session of the Preview copy, switch to Stable on
+   `/updates` (the switch checks again by itself). **Expect:** the Stable check behaves as in step 2 (the
    updater was pointed back at its own config), not "no update" against `C` alone.
 
 ## 9. Announcements banner

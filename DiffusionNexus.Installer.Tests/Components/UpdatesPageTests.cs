@@ -26,7 +26,9 @@ public class UpdatesPageTests : BunitContext
     private readonly StubCatalogUpdateCoordinator _catalog = new();
     private readonly FakeAppUpdaterShell _appUpdater = new();
 
-    private Mock<IInstallSession> Register(InstallPhase phase, WizardPlan? plan = null)
+    private UpdaterLog _log = new();
+
+    private Mock<IInstallSession> Register(InstallPhase phase, WizardPlan? plan = null, bool appUpdateReady = true)
     {
         var session = new Mock<IInstallSession>();
         session.SetupGet(s => s.Phase).Returns(phase);
@@ -34,12 +36,12 @@ public class UpdatesPageTests : BunitContext
 
         Services.AddSingleton(session.Object);
 
-        var log = new UpdaterLog();
-        log.MarkUpdateReady();
-        Services.AddSingleton(log);
+        _log = new UpdaterLog();
+        if (appUpdateReady) _log.MarkUpdateReady("3.0.8");
+        Services.AddSingleton(_log);
 
         Services.AddSingleton<ICatalogUpdateCoordinator>(_catalog);
-        Services.AddSingleton(new AppUpdateChecker(_catalog, _appUpdater, log, Mock.Of<IAppReleaseFeed>()));
+        Services.AddSingleton(new AppUpdateChecker(_catalog, _appUpdater, _log, Mock.Of<IAppReleaseFeed>()));
 
         return session;
     }
@@ -119,7 +121,7 @@ public class UpdatesPageTests : BunitContext
         var page = Render<UpdatesPage>();
 
         page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Not checked yet.");
-        page.Find(".catalog-channel").TextContent.Should().Contain("Stable");
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
         page.Find(".catalog-installed").TextContent.Should().Contain("unknown");
     }
 
@@ -135,16 +137,6 @@ public class UpdatesPageTests : BunitContext
         };
 
         Render<UpdatesPage>().Find(".catalog-installed").TextContent.Should().Contain("v3 (Stable), applied 2026-09-15");
-    }
-
-    [Fact]
-    public void Names_the_environment_variable_when_it_pins_the_channel()
-    {
-        Register(InstallPhase.Idle);
-        _catalog.Channel = CatalogChannel.Preview;
-        _catalog.ChannelSource = CatalogChannelSource.Environment;
-
-        Render<UpdatesPage>().Find(".catalog-channel").TextContent.Should().Contain("Preview (set by DIFFUSIONNEXUS_CATALOG_CHANNEL)");
     }
 
     [Fact]
@@ -285,35 +277,189 @@ public class UpdatesPageTests : BunitContext
         page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
     }
 
-    // ----- app channel (issue #19) -----
+    // ----- update channel: one picker for the app and the catalog -----
 
-    [Theory]
-    [InlineData(CatalogChannel.Stable)]
-    [InlineData(CatalogChannel.Preview)]
-    public void The_app_channel_is_shown_in_our_words(CatalogChannel channel)
+    private static string Radio(CatalogChannel channel) => $"input[name='update-channel'][value='{channel}']";
+
+    [Fact]
+    public void Shows_the_channel_the_coordinator_follows()
     {
         Register(InstallPhase.Idle);
-        _catalog.Channel = channel;
+        _catalog.Channel = CatalogChannel.Preview;
 
         var page = Render<UpdatesPage>();
 
-        var line = page.Find("p.app-channel").TextContent;
-        line.Should().Contain(channel.ToString());
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeTrue();
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeFalse();
+    }
+
+    // Shown once, for both. Two "Following: Stable" lines in two sections read as two settings.
+    [Fact]
+    public void The_channel_is_offered_once_in_our_words()
+    {
+        Register(InstallPhase.Idle);
+
+        var page = Render<UpdatesPage>();
+
+        page.FindAll("input[name='update-channel']").Should().HaveCount(2);
+        page.Markup.Should().NotContain("Following:");
+        var section = page.Find(".update-channel").TextContent;
+        section.Should().Contain("Stable").And.Contain("Preview");
         // electron-updater's vocabulary never reaches the user.
-        line.Should().NotContainAny("latest", "beta", "prerelease");
+        section.Should().NotContainAny("latest", "beta", "prerelease");
+    }
+
+    // The updater never downgrades, so a user leaving Preview needs to know the newer build stays.
+    [Fact]
+    public void The_hint_says_what_preview_is_and_that_leaving_it_does_not_downgrade()
+    {
+        Register(InstallPhase.Idle);
+
+        var hint = Render<UpdatesPage>().Find(".update-channel .panel-hint").TextContent;
+
+        hint.Should().Contain("before everyone else").And.Contain("until Stable catches up");
     }
 
     [Fact]
-    public void The_app_channel_follows_a_switch()
+    public void The_radios_follow_a_switch_made_elsewhere()
     {
         Register(InstallPhase.Idle);
         var page = Render<UpdatesPage>();
-        page.Find("p.app-channel").TextContent.Should().Contain("Stable");
 
         _catalog.Channel = CatalogChannel.Preview;
         _catalog.RaiseChanged();
 
-        page.WaitForAssertion(() => page.Find("p.app-channel").TextContent.Should().Contain("Preview"));
+        page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeTrue());
+    }
+
+    [Fact]
+    public void Picking_a_channel_saves_it_and_checks_both_on_the_new_channel()
+    {
+        Register(InstallPhase.Idle, appUpdateReady: false);
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        _catalog.ChannelSet.Should().Be(CatalogChannel.Preview);
+        page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeTrue());
+        // A switch forgets the last check, so without a fresh one the page would say nothing.
+        page.WaitForAssertion(() => _catalog.Checks.Should().Be(1));
+        _appUpdater.Calls.Should().Equal(["allowPrerelease=True", "check"]);
+        page.FindAll(".validation-error").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Disables_the_radios_when_the_environment_pins_the_channel()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Channel = CatalogChannel.Preview;
+        _catalog.ChannelSource = CatalogChannelSource.Environment;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeTrue();
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("disabled").Should().BeTrue();
+        page.Markup.Should().Contain("Set by DIFFUSIONNEXUS_CATALOG_CHANNEL for this run");
+    }
+
+    [Fact]
+    public void A_refused_switch_says_so_checks_nothing_and_still_renders_the_channel_in_effect()
+    {
+        // The coordinator refuses silently (no Changed). What this cannot show: bUnit rebuilds its
+        // DOM on every render, so the browser keeping the clicked dot (Blazor patches nothing when
+        // "checked" renders the same values) is invisible here -- the @key on the radios handles
+        // that, and docs/manual-smoke.md section 7 is where it is proven.
+        Register(InstallPhase.Idle);
+        _catalog.RefuseChannelChange = true;
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        page.Markup.Should().Contain("The channel was not switched");
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeFalse();
+        _catalog.Checks.Should().Be(0);
+        _appUpdater.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_failed_save_shows_the_error_and_the_channel_still_in_effect()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.ChannelSaveFailure = new IOException("settings.json is locked");
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+
+        page.Markup.Should().Contain("The channel could not be saved: settings.json is locked");
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
+        _catalog.Checks.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(CatalogUpdatePhase.Checking)]
+    [InlineData(CatalogUpdatePhase.Applying)]
+    public void Disables_the_radios_while_the_coordinator_would_refuse_a_switch(CatalogUpdatePhase phase)
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Phase = phase;
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeTrue();
+
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.RaiseChanged();
+
+        page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeFalse());
+    }
+
+    // ----- the app row, next to the catalog row -----
+
+    [Fact]
+    public void The_app_row_shows_the_version_the_rest_of_the_app_shows()
+    {
+        Register(InstallPhase.Idle);
+
+        Render<UpdatesPage>().Find(".app-version").TextContent.Trim().Should().Be($"v{AppVersion.Display}");
+    }
+
+    [Theory]
+    [InlineData("not-checked", "Not checked yet.")]
+    [InlineData("unavailable", "App updates are checked only inside the Electron shell.")]
+    [InlineData("not-installed", "This build is not installed, so there is no app update to check for.")]
+    [InlineData("checking", "Checking the app…")]
+    [InlineData("up-to-date", "The app is up to date.")]
+    [InlineData("found", "App v3.0.8 is available. Downloading…")]
+    [InlineData("downloading", "App v3.0.8 is available. Downloading… 42%")]
+    [InlineData("ready", "App v3.0.8 is ready to install.")]
+    [InlineData("failed", "The app check failed: offline")]
+    public void Each_app_state_has_its_own_line(string state, string expected)
+    {
+        Register(InstallPhase.Idle, appUpdateReady: false);
+        switch (state)
+        {
+            case "unavailable": _log.MarkUnavailable(); break;
+            case "not-installed": _log.MarkNotInstalledBuild(); break;
+            case "checking": _log.MarkChecking(); break;
+            case "up-to-date": _log.MarkUpToDate(); break;
+            case "found": _log.MarkAvailable("3.0.8"); break;
+            case "downloading": _log.MarkAvailable("3.0.8"); _log.MarkProgress(42); break;
+            case "ready": _log.MarkUpdateReady("3.0.8"); break;
+            case "failed": _log.MarkFailed("offline"); break;
+        }
+
+        Render<UpdatesPage>().Find(".app-status").TextContent.Trim().Should().Be(expected);
+    }
+
+    [Fact]
+    public void The_app_row_follows_the_updater()
+    {
+        Register(InstallPhase.Idle, appUpdateReady: false);
+        var page = Render<UpdatesPage>();
+
+        _log.MarkAvailable("3.0.8");
+
+        page.WaitForAssertion(() => page.Find(".app-status").TextContent.Should().Contain("v3.0.8 is available"));
     }
 
     [Fact]

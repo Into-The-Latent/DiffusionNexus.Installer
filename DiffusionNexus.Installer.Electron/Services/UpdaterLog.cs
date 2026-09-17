@@ -1,7 +1,31 @@
 namespace DiffusionNexus.Installer.Electron.Services;
 
+/// <summary>Where the app self-update stands, in the order a check normally moves through it.</summary>
+public enum AppUpdateStatus
+{
+    NotChecked,
+
+    /// <summary>Not running inside Electron (plain <c>dotnet run</c>, tests): there is no updater.</summary>
+    Unavailable,
+
+    /// <summary>Inside Electron but unpackaged: electron-updater skips the check without a single event.</summary>
+    NotInstalledBuild,
+
+    Checking,
+    UpToDate,
+
+    /// <summary>Found; electron-updater downloads it straight away.</summary>
+    Downloading,
+
+    /// <summary>Downloaded and waiting for "Restart and install".</summary>
+    Ready,
+
+    Failed,
+}
+
 /// <summary>
-/// Process-wide sink for auto-updater activity.
+/// Process-wide sink for auto-updater activity: the log lines, and the state the top bar and
+/// /updates read.
 /// </summary>
 /// <remarks>
 /// Electron's <c>AutoUpdater</c> is a singleton owned by the main process, and its events fire on
@@ -21,8 +45,22 @@ public sealed class UpdaterLog
     /// <summary>Raised after every mutation. Handlers must marshal to their own sync context.</summary>
     public event Action? Changed;
 
+    public AppUpdateStatus Status { get; private set; }
+
+    /// <summary>The version found or downloaded. Null until an update is found.</summary>
+    public string? Version { get; private set; }
+
+    /// <summary>Whole percent of the running download. Null until progress is reported.</summary>
+    public int? DownloadPercent { get; private set; }
+
+    /// <summary>The updater's message for <see cref="AppUpdateStatus.Failed"/>.</summary>
+    public string? Error { get; private set; }
+
+    /// <summary>True from the moment an update is found, through its download, until it is installed.</summary>
+    public bool UpdateAvailable => Status is AppUpdateStatus.Downloading or AppUpdateStatus.Ready;
+
     /// <summary>True once an update has been downloaded and is waiting to be installed.</summary>
-    public bool UpdateReady { get; private set; }
+    public bool UpdateReady => Status == AppUpdateStatus.Ready;
 
     public IReadOnlyList<string> Lines
     {
@@ -49,9 +87,68 @@ public sealed class UpdaterLog
         Changed?.Invoke();
     }
 
-    public void MarkUpdateReady()
+    public void MarkUnavailable() => Set(AppUpdateStatus.Unavailable);
+
+    public void MarkNotInstalledBuild()
     {
-        UpdateReady = true;
+        // Every check re-establishes this; the line says it once.
+        var first = Status != AppUpdateStatus.NotInstalledBuild;
+        Set(AppUpdateStatus.NotInstalledBuild);
+        if (first) Append("This build is not installed, so there is no app update to check for.");
+    }
+
+    public void MarkChecking()
+    {
+        Set(AppUpdateStatus.Checking);
+        Append("Checking for updates...");
+    }
+
+    public void MarkUpToDate()
+    {
+        Set(AppUpdateStatus.UpToDate);
+        Append("No update available - this is the latest version.");
+    }
+
+    public void MarkAvailable(string version)
+    {
+        Version = version;
+        DownloadPercent = null;
+
+        // Set directly, not through Set: a newer release found after one already downloaded
+        // replaces it, so Ready does not hold here.
+        Status = AppUpdateStatus.Downloading;
+        Append($"Update available: {version}. Downloading...");
+    }
+
+    public void MarkProgress(double percent)
+    {
+        var whole = (int)Math.Round(percent, MidpointRounding.AwayFromZero);
+        if (DownloadPercent == whole) return;
+
+        DownloadPercent = whole;
+        Append($"Downloading... {whole}%");
+    }
+
+    public void MarkUpdateReady(string? version = null)
+    {
+        Version = version ?? Version;
+        Status = AppUpdateStatus.Ready;
+        Append($"Update {Version} downloaded and ready to install.");
+    }
+
+    public void MarkFailed(string error)
+    {
+        Error = error;
+        Set(AppUpdateStatus.Failed);
+        Append($"Updater error: {error}");
+    }
+
+    private void Set(AppUpdateStatus status)
+    {
+        // A download on disk stays on offer whatever a later check says: re-checking fires
+        // "checking" and "not available" (or fails offline) while the downloaded update is still
+        // waiting, and the restart button must not disappear under the user.
+        if (Status != AppUpdateStatus.Ready) Status = status;
         Changed?.Invoke();
     }
 }

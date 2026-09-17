@@ -91,6 +91,7 @@ public class AppUpdateCheckerTests : IDisposable
 
         _shell.Calls.Should().BeEmpty();
         _log.Lines.Should().BeEmpty();
+        _log.Status.Should().Be(AppUpdateStatus.Unavailable);
     }
 
     [Fact]
@@ -234,6 +235,46 @@ public class AppUpdateCheckerTests : IDisposable
 
         _feed.UrlsRead.Should().BeEmpty();
         _shell.Calls.Should().Equal(["allowPrerelease=True", "check"]);
+    }
+
+    // Inside Electron but unpackaged, electron-updater returns without firing one event. The check
+    // still goes out (a packaged app whose config we failed to find must not lose its updates),
+    // but the page says why nothing came back instead of looking hung.
+    [Fact]
+    public async Task Without_a_shipped_config_it_says_the_build_is_not_installed()
+    {
+        await Create().CheckAsync();
+
+        _log.Status.Should().Be(AppUpdateStatus.NotInstalledBuild);
+        _log.Lines.Should().Contain("This build is not installed, so there is no app update to check for.");
+        _shell.Calls.Should().EndWith("check");
+    }
+
+    [Fact]
+    public async Task An_installed_build_is_not_called_uninstalled()
+    {
+        Installed();
+
+        await Create().CheckAsync();
+
+        _log.Status.Should().NotBe(AppUpdateStatus.NotInstalledBuild);
+    }
+
+    // The startup check and every button press used to log "Following Stable app releases."
+    // again, so the log filled with the same line.
+    [Fact]
+    public async Task The_channel_is_logged_once_until_it_changes()
+    {
+        Installed();
+        var checker = Create();
+
+        await checker.CheckAsync();
+        await checker.CheckAsync();
+        _catalog.Channel = CatalogChannel.Preview;
+        await checker.CheckAsync();
+
+        _log.Lines.Where(l => l.StartsWith("Following", StringComparison.Ordinal))
+            .Should().Equal("Following Stable app releases.", "Following Preview app releases.");
     }
 
     [Fact]

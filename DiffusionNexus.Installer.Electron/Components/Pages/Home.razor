@@ -17,29 +17,80 @@
 <div class="shell">
     <header>
         <h1>Into the Latent Easy Installer</h1>
-        <p class="version">Version @AppVersion.Display</p>
         <p class="host">@HostDescription</p>
         <p><a href="/">Back to all software</a></p>
     </header>
 
-    <section class="actions">
-        @* One setting drives both channels, so this can never disagree with the catalog line
-           below. Our words, Stable / Preview -- never electron-updater's "latest" / "beta". *@
-        <p class="app-channel">App updates: following <strong>@Catalog.Channel</strong>@(Catalog.Channel == CatalogChannel.Preview ? " - builds published for testing arrive here before everyone gets them." : null)</p>
+    @* One setting drives both the app and the catalog, so it is offered once, above both rows --
+       two "Following: Stable" lines in two sections read as two settings that could disagree.
+       Our words, Stable / Preview -- never electron-updater's "latest" / "beta". *@
+    <section class="update-channel">
+        <h2>Update channel</h2>
 
-        <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@_busy">
-            @(_busy ? "Checking..." : "Check for updates")
-        </button>
-
-        @* Never offered while an install is running. QuitAndInstall closes the app and swaps its
-           own binary; doing that mid-install abandons a half-written install folder -- a clone
-           with no venv, a venv with no torch, a model download stopped part-way -- and this page
-           is now one click from every wizard stage, because the top bar rides along with them. *@
-        @if (Log.UpdateReady && !InstallRunning)
+        @foreach (var channel in new[] { CatalogChannel.Stable, CatalogChannel.Preview })
         {
-            <button class="primary install" @onclick="InstallUpdate">Restart and install</button>
+            @* Keyed on the refusal count: after a switch that did not happen, "checked" renders the
+               same values as before, so Blazor's diff patches nothing and the browser keeps the dot
+               where the user clicked. A new key makes it rebuild the inputs from what is in effect. *@
+            <label class="catalog-channel-option" @key="(channel, _radioGeneration)">
+                <input type="radio" name="update-channel" value="@channel"
+                       checked="@(Catalog.Channel == channel)"
+                       disabled="@(EnvironmentPinned || CatalogBusy)"
+                       @onchange="() => SetChannelAsync(channel)" />
+                @channel
+            </label>
         }
-        else if (Log.UpdateReady)
+
+        <p class="panel-hint">
+            Preview gets new installer builds and catalog content before everyone else. Switching
+            back to Stable keeps a newer Preview build of the app until Stable catches up.
+        </p>
+
+        @if (EnvironmentPinned)
+        {
+            <p class="panel-hint">Set by DIFFUSIONNEXUS_CATALOG_CHANNEL for this run; the saved setting is not in effect.</p>
+        }
+
+        @if (_channelError is not null)
+        {
+            <p class="validation-error">@_channelError</p>
+        }
+    </section>
+
+    <section class="catalog">
+        <div class="update-row">
+            <span class="update-row-label">App</span>
+            <span class="update-row-version app-version">v@(AppVersion.Display)</span>
+            <span class="update-row-status app-status">@AppStatusText</span>
+        </div>
+        <div class="update-row">
+            <span class="update-row-label">Catalog</span>
+            <span class="update-row-version catalog-installed">@InstalledText</span>
+            <span class="update-row-status catalog-outcome">
+                @OutcomeText
+                @if (Catalog.Phase == CatalogUpdatePhase.Applied)
+                {
+                    <a href="/">Back to all software</a>
+                }
+            </span>
+        </div>
+
+        <div class="actions">
+            <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@_busy">
+                @(_busy ? "Checking..." : "Check for updates")
+            </button>
+
+            @* Never offered while an install is running. QuitAndInstall closes the app and swaps its
+               own binary; doing that mid-install abandons a half-written install folder -- a clone
+               with no venv, a venv with no torch, a model download stopped part-way -- and this page
+               is now one click from every wizard stage, because the top bar rides along with them. *@
+            @if (Log.UpdateReady && !InstallRunning)
+            {
+                <button class="primary install" @onclick="InstallUpdate">Restart and install</button>
+            }
+        </div>
+
+        @if (Log.UpdateReady && InstallRunning)
         {
             <p class="panel-hint">
                 An update is ready. It can be installed once <strong>@RunningWorkload</strong> has
@@ -47,19 +98,6 @@
                 folder unfinished.
             </p>
         }
-    </section>
-
-    <section class="catalog">
-        <h2>Content catalog</h2>
-        <p class="catalog-channel">Following: <strong>@Catalog.Channel</strong>@(Catalog.ChannelSource == CatalogChannelSource.Environment ? " (set by DIFFUSIONNEXUS_CATALOG_CHANNEL)" : null)</p>
-        <p class="catalog-installed">Installed: @InstalledText</p>
-        <p class="catalog-outcome">
-            @OutcomeText
-            @if (Catalog.Phase == CatalogUpdatePhase.Applied)
-            {
-                <a href="/">Back to all software</a>
-            }
-        </p>
 
         @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
         {
@@ -124,12 +162,20 @@
 
 @code {
     private bool _busy;
+    private string? _channelError;
+    private int _radioGeneration;
 
     private static bool ElectronActive => ElectronHost.IsActive;
 
     private static string HostDescription => ElectronActive
         ? "Running inside the Electron shell."
         : "Running as a plain web app - the app updater is unavailable outside Electron; the catalog check still works.";
+
+    private bool EnvironmentPinned => Catalog.ChannelSource == CatalogChannelSource.Environment;
+
+    // The coordinator refuses a switch in these phases (the startup check included), so the
+    // radios say so up front instead of accepting a click that will not take.
+    private bool CatalogBusy => Catalog.Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying;
 
     protected override void OnInitialized()
     {
@@ -162,6 +208,34 @@
         }
     }
 
+    private async Task SetChannelAsync(CatalogChannel channel)
+    {
+        _channelError = null;
+        try
+        {
+            await Catalog.SetChannelAsync(channel);
+        }
+        catch (Exception ex)
+        {
+            // An escaped exception here replaces the page with the Blazor error banner, which is a
+            // worse outcome than a message under the radios that still work afterwards.
+            _channelError = $"The channel could not be saved: {ex.Message}";
+        }
+
+        // A refusal is a silent no-op on the coordinator's side (no Changed), and a failed save
+        // leaves the channel where it was: either way the clicked radio is now wrong.
+        if (Catalog.Channel != channel)
+        {
+            _radioGeneration++;
+            _channelError ??= "The channel was not switched: a catalog check or update is in progress. Try again when it has finished.";
+            return;
+        }
+
+        // A switch forgets the last catalog check, so both rows would otherwise sit on "Not
+        // checked yet." until the user thought to press the button.
+        await CheckForUpdatesAsync();
+    }
+
     /// <summary>
     /// Whether an install is in flight. The session is a singleton, so this is true even though
     /// the wizard that started it is not the component on screen.
@@ -191,6 +265,19 @@
         Session.Changed -= OnLogChanged;
         Catalog.Changed -= OnLogChanged;
     }
+
+    // Worded like the catalog row beside it, so the two read as one list.
+    private string AppStatusText => Log.Status switch
+    {
+        AppUpdateStatus.Unavailable => "App updates are checked only inside the Electron shell.",
+        AppUpdateStatus.NotInstalledBuild => "This build is not installed, so there is no app update to check for.",
+        AppUpdateStatus.Checking => "Checking the app…",
+        AppUpdateStatus.UpToDate => "The app is up to date.",
+        AppUpdateStatus.Downloading => $"App v{Log.Version} is available. Downloading…{(Log.DownloadPercent is { } p ? $" {p}%" : null)}",
+        AppUpdateStatus.Ready => $"App v{Log.Version} is ready to install.",
+        AppUpdateStatus.Failed => $"The app check failed: {Log.Error}",
+        _ => "Not checked yet.",
+    };
 
     private string InstalledText => Catalog.Installed switch
     {

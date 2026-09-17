@@ -17,9 +17,9 @@
         {
             <a class="top-bar-btn top-bar-dev" href="/debug">Developer tools</a>
         }
-        @* A dot, not a count or a word: the bar is on every screen and must not shout. The title
-           says what is waiting for whoever hovers. *@
-        <a class="top-bar-btn @(Attention is null ? null : "top-bar-attention")" href="/updates" title="@Attention">Check for Updates</a>
+        @* Both startup checks (catalog and app) land here. A dot alone went unnoticed, so the button
+           says so on the accent background; the title names what is waiting for whoever hovers. *@
+        <a class="top-bar-btn @(Attention is null ? null : "top-bar-attention")" href="/updates" title="@Attention">@(Attention is null ? "Check for Updates" : "Update Available")</a>
     </div>
 </div>
 
@@ -42,11 +42,20 @@
         false;
 #endif
 
-    private string? Attention => (Catalog.UpdateAvailable, App.UpdateReady) switch
+    private string? Attention => (Catalog.UpdateAvailable, AppAttention) switch
     {
-        (true, true) => "Catalog update available and app update ready",
-        (true, false) => "Catalog update available",
-        (false, true) => "App update ready",
+        (true, { } app) => $"Catalog update available and {char.ToLowerInvariant(app[0])}{app[1..]}",
+        (true, null) => "Catalog update available",
+        (false, { } app) => app,
+        _ => null,
+    };
+
+    // Lit from the moment the app update is found: electron-updater downloads it straight away,
+    // and that can take minutes the user would otherwise spend not knowing.
+    private string? AppAttention => App.Status switch
+    {
+        AppUpdateStatus.Ready => "App update ready",
+        AppUpdateStatus.Downloading => $"App update {App.Version} downloading",
         _ => null,
     };
 
