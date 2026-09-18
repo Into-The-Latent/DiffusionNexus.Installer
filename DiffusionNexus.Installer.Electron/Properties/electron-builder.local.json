@@ -9,7 +9,7 @@
         "arch": "x64"
       }
     ],
-    "artifactName": "IntoTheLatent-EasyInstaller-Setup-${version}.${ext}"
+    "artifactName": "EasyWorkloadInstaller-ITL-Setup-${version}.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -17,7 +17,7 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Into the Latent Easy Installer",
+    "shortcutName": "Easy Workload Installer - ITL",
     "installerIcon": "bin/Assets/Branding/app.ico",
     "uninstallerIcon": "bin/Assets/Branding/app.ico",
     "installerHeaderIcon": "bin/Assets/Branding/app.ico",

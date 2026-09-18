@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Generates THIRD-PARTY-NOTICES.txt for the shipped Into the Latent Easy Installer (Electron).
+    Generates THIRD-PARTY-NOTICES.txt for the shipped Easy Workload Installer by Into the Latent (Electron).
 
 .DESCRIPTION
     The installer ships three kinds of third-party material:
@@ -298,7 +298,7 @@ function Add-Line { param([string]$Text = '') ; [void]$sb.AppendLine($Text) }
 
 Add-Line $rule
 Add-Line 'THIRD-PARTY SOFTWARE NOTICES AND INFORMATION'
-Add-Line 'Into the Latent Easy Installer'
+Add-Line 'Easy Workload Installer by Into the Latent'
 Add-Line $rule
 Add-Line ''
 Add-Line 'This product incorporates material from the projects listed below. The original'

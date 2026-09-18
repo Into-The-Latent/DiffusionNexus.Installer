@@ -46,7 +46,7 @@
       installed client's update path, so it is set deliberately and must not be churned.
     -->
     <ElectronPackageId>diffusion-nexus-installer</ElectronPackageId>
-    <Title>Into the Latent Easy Installer</Title>
+    <Title>Easy Workload Installer</Title>
     <ElectronExecutable>$(Title)</ElectronExecutable>
   </PropertyGroup>
 
@@ -58,6 +58,10 @@
     globe on the setup and uninstall exes. The .ico is copied beside the .NET output so the
     builder configs can reference it as bin/Assets/Branding/app.ico - electron-builder runs
     with the publish root as cwd and its config may not use parent paths.
+
+    app.ico is the Into the Latent logo (256 PNG + 128/64/48/32/24/16 32-bpp entries) built
+    from Assets/Branding/source/app-icon.png; it is also what the BrowserWindow is given
+    (Services/AppBranding), so a Debug session hosted by the stock electron.exe shows it too.
 
     The NSIS wizard artwork lives beside it: sidebar.bmp (164x314, welcome/finish page panel,
     install and uninstall) and header.bmp (150x57, the strip on every other page). NSIS wants

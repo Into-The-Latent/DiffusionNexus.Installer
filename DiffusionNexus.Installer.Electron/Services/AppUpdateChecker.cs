@@ -35,7 +35,7 @@ public sealed class AppUpdateChecker(
     string? pinnedConfigPath = null)
 {
     private readonly string _pinnedConfigPath = pinnedConfigPath
-        ?? Path.Combine(Path.GetTempPath(), "IntoTheLatent-EasyInstaller-app-update.yml");
+        ?? Path.Combine(Path.GetTempPath(), "EasyWorkloadInstaller-ITL-app-update.yml");
 
     // Whether the updater in Electron's main process is reading our pinned config. It keeps what
     // it was last told, so every check that does not pin has to put the shipped config back.

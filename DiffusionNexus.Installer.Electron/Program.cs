@@ -68,7 +68,7 @@ builder.UseElectron(args, async (IServiceProvider services) =>
 {
     var options = new BrowserWindowOptions
     {
-        Title = "Into the Latent Easy Installer",
+        Title = "Easy Workload Installer - Into the Latent",
         Icon = AppBranding.WindowIconPath,
         Width = 1100,
         Height = 800,
