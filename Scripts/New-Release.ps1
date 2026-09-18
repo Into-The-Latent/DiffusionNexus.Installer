@@ -97,19 +97,30 @@ dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 # Check the packaged SDK DLLs directly, because a clean publish is not proof of what was packaged.
-# Each one must carry the version the csproj pins. A local project build reports a bare "2.0.0+<sha>".
+# Each one must be byte-identical to the DLL inside the NuGet package the csproj pins, which the
+# restore above has just put in the global packages folder. The version string is NOT enough: a
+# local project build of the SDK repo stamps "<Version>+<sha>" from ITS Directory.Build.props, and
+# the moment the pin and that props value agree (2.0.0 vs 2.0.0-preview.N today; identical on the
+# next stable pin) a leaked local DLL and the package DLL look the same by version.
+$globalPackages = ((dotnet nuget locals global-packages -l) -replace '^global-packages:\s*', '').Trim()
+if (-not (Test-Path $globalPackages)) { throw "Could not resolve the NuGet global packages folder (got '$globalPackages')." }
 $csproj = [xml](Get-Content (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
 $sdkRefs = @($csproj.Project.ItemGroup.PackageReference | Where-Object { $_.Include -like 'DiffusionNexus.Installer.SDK.*' })
 if ($sdkRefs.Count -eq 0) { throw "No SDK PackageReferences found in the Electron csproj." }
 foreach ($ref in $sdkRefs) {
     $dll = Join-Path $publish "bin\$($ref.Include).dll"
     if (-not (Test-Path $dll)) { throw "Packaged SDK assembly missing: $dll" }
-    $actual = (Get-Item $dll).VersionInfo.ProductVersion
-    if ($actual -notlike "$($ref.Version)+*" -and $actual -ne $ref.Version) {
-        throw "$($ref.Include) in the publish output is '$actual', expected package $($ref.Version). The local SDK leaked into the release."
+    $packaged = Join-Path $globalPackages "$($ref.Include.ToLowerInvariant())\$($ref.Version)\lib\net10.0\$($ref.Include).dll"
+    if (-not (Test-Path $packaged)) { throw "Restored package assembly missing: $packaged. The restore did not come from the pinned package $($ref.Include) $($ref.Version)." }
+    $actualHash   = (Get-FileHash $dll -Algorithm SHA256).Hash
+    $expectedHash = (Get-FileHash $packaged -Algorithm SHA256).Hash
+    if ($actualHash -ne $expectedHash) {
+        $actualVersion   = (Get-Item $dll).VersionInfo.ProductVersion
+        $expectedVersion = (Get-Item $packaged).VersionInfo.ProductVersion
+        throw "$($ref.Include) in the publish output ('$actualVersion') is not the DLL from package $($ref.Version) ('$expectedVersion'). The local SDK leaked into the release."
     }
 }
-Write-Host "  SDK assemblies match the pinned packages" -ForegroundColor Green
+Write-Host "  SDK assemblies are byte-identical to the pinned packages" -ForegroundColor Green
 
 # The publish above is the first moment the packaged npm tree exists, so this is where the
 # notices can be checked against what actually ships. Drift means a dependency changed and the
