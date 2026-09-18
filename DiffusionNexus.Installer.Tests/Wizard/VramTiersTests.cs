@@ -24,4 +24,20 @@ public class VramTiersTests
     [InlineData("abc")]
     public void Junk_yields_no_tiers_rather_than_throwing(string? profiles)
         => VramTiers.Parse(profiles).Should().BeEmpty();
+
+    [Theory]
+    [InlineData("24,32", "24–32 GB VRAM")]
+    [InlineData("8,12,16,24,32", "8–32 GB VRAM")]
+    [InlineData("32,8", "8–32 GB VRAM")]
+    [InlineData("24,24+", "24 GB VRAM")]
+    [InlineData("16", "16 GB VRAM")]
+    public void The_range_is_the_lowest_and_highest_tier_declared(string profiles, string expected)
+        => VramTiers.RangeText(profiles).Should().Be(expected);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("abc")]
+    public void A_workload_without_tiers_has_no_range_to_show(string? profiles)
+        => VramTiers.RangeText(profiles).Should().BeNull();
 }

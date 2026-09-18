@@ -1,0 +1,8 @@
+@using DiffusionNexus.Installer.Electron.Services
+@inject ReturnTarget Return
+
+@* The way out of a side trip (/licenses, /updates, /debug), at the top of the page where it can
+   be found. One component because each page used to hand-roll its own -- two links and a button
+   buried in an action row -- and all of them led to the welcome screen even when the user had
+   come from a running install. *@
+<a class="back-link" href="@Return.Path">&larr; Back</a>

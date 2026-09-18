@@ -47,6 +47,7 @@ public static class HostServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<UpdaterLog>();
+        services.AddSingleton<ReturnTarget>();
         services.AddSingleton<IAppUpdaterShell, ElectronAppUpdaterShell>();
         services.AddSingleton<IAppReleaseFeed, GitHubAppReleaseFeed>();
         services.AddSingleton<AppUpdateChecker>();

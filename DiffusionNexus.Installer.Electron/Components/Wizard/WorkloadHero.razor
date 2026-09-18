@@ -1,19 +1,26 @@
 @using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.Electron.Services
 @using DiffusionNexus.Installer.SDK.Models.Configuration
 
 @* "Did I click the right thing?" answered before anything is asked of the user.
 
-   Shown at the top of the first wizard stage for a software that skipped the workload screen --
-   one workload, so the welcome tile was the only thing the user ever saw. It repeats that tile at
-   size, next to what the catalog says the software actually does. *@
+   Shown at the top of the first wizard stage. It repeats the picture the user clicked one
+   navigation ago at size, next to what the catalog says the workload actually does. *@
 
-<section class="hero">
+<section class="hero @(Compact ? "hero-compact" : null)">
     <div class="hero-art">
-        @* The SOFTWARE logo, not the workload thumbnail: this is the picture the user clicked on
-           the welcome screen one navigation ago, so it is the one that confirms the choice. *@
-        @if (SoftwareLogos.PathFor(Workload.Repository.Type) is { } logo)
+        @* The picture the user clicked one navigation ago, so it is the one that confirms the
+           choice: the workload's own thumbnail when it was picked from a workload screen, the
+           SOFTWARE logo when the welcome tile came straight here. *@
+        @if (FromWorkloadScreen && Workload.ThumbnailPath is not null)
+        {
+            @* Through the endpoint, never the disk path: ThumbnailPath is absolute and
+               unloadable in a browser. A 404 leaves the alt text, which is the workload name. *@
+            <img src="thumbnail/@Workload.Id" alt="@Workload.Name" />
+        }
+        else if (SoftwareLogos.PathFor(Workload.Repository.Type) is { } logo)
         {
             <img src="@logo" alt="@SoftwareName" />
         }
@@ -32,16 +39,39 @@
             <p class="hero-software">@SoftwareName</p>
         }
 
-        <h1 class="hero-name">@Workload.Name</h1>
+        @* The version only where one software offers many workloads: that is where "which
+           revision of this pack am I installing?" is a real question. Same shape as the card the
+           user just clicked -- version on the name, VRAM as a chip. *@
+        @* One line and a no-break space: the version wraps with the name's last word. *@
+        <h1 class="hero-name">@(Workload.Name)@if (FromWorkloadScreen) {<text>&nbsp;</text><span class="workload-version">@WorkloadVersion.Display(Workload)</span>}</h1>
 
-        <div class="hero-desc">
-            <MarkdownText Text="@Workload.Description" />
-        </div>
+        @if (FromWorkloadScreen && VramTiers.RangeText(Workload.Vram.VramProfiles) is { } vram)
+        {
+            <p class="hero-tags"><span class="vram-chip">@vram</span></p>
+        }
+
+        @* Compact (the Confirm stage): the picture and the name still say WHAT is about to be
+           installed, but the summary below is the thing to read, so the description steps aside. *@
+        @if (!Compact)
+        {
+            <div class="hero-desc">
+                <MarkdownText Text="@Workload.Description" />
+            </div>
+        }
     </div>
 </section>
 
 @code {
     [Parameter, EditorRequired] public InstallationConfiguration Workload { get; set; } = default!;
+
+    /// <summary>
+    /// True when the user picked this workload from its software's workload screen (ComfyUI),
+    /// false when the welcome tile came straight to the wizard.
+    /// </summary>
+    [Parameter] public bool FromWorkloadScreen { get; set; }
+
+    /// <summary>Small artwork, no description: a reminder of the choice rather than a presentation of it.</summary>
+    [Parameter] public bool Compact { get; set; }
 
     private string SoftwareName => SoftwareBranding.DisplayName(Workload.Repository.Type);
 }

@@ -1,4 +1,5 @@
 @using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.Core.Wizard
 
 @* The catalog ships a description for every workload and the tile has no room for it, so it goes
    on the title: hovering a card is the only place in the app the text is now reachable. Null when
@@ -18,8 +19,21 @@
     </div>
 
     <div class="workload-card-meta">
-        <p class="workload-card-name">@Entry.Workload.Name</p>
-        <span class="workload-card-badge">@Entry.Workload.WorkflowType</span>
+        @* The version rides on the name, the way a package's does: it is part of WHAT this is,
+           not a fact about it, and inline it wraps with a long name instead of needing a row.
+           One line and a no-break space, deliberately: the version then wraps together with the
+           name's last word, and can never be left alone on a line of its own. *@
+        <p class="workload-card-name">@Entry.Workload.Name&nbsp;<span class="workload-version">@WorkloadVersion.Display(Entry.Workload)</span></p>
+
+        <div class="workload-card-tags">
+            <span class="workload-card-badge">@Entry.Workload.WorkflowType</span>
+            @* Only for a pack that declares VRAM profiles: the span of them, so a card can be
+               ruled in or out before the wizard is opened. *@
+            @if (VramTiers.RangeText(Entry.Workload.Vram.VramProfiles) is { } vram)
+            {
+                <span class="vram-chip">@vram</span>
+            }
+        </div>
 
         @if (Entry.IsInstallable)
         {

@@ -279,16 +279,32 @@ h2 {
     padding: 0;
 }
 
-/* Full window height, so a screen that wants to use the whole of it can. Without this the shell
-   is only as tall as its content and a maximised window is content at the top over a void. */
+/* Exactly the window's height, never more: the top bar and the community footer are the window's
+   furniture and stay on screen, and whatever does not fit scrolls BETWEEN them. This used to be
+   min-height, which let a long wizard stage grow the shell past the window -- the document
+   scrolled, and the bar and the footer went with it. */
 .screen {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
+}
+
+/* The one scrolling region of a shell screen. Full width, so its scrollbar sits at the window's
+   edge rather than beside the centred column; a column itself, so the body inside it can still
+   grow to hold the footer down. min-height: 0 because a flex item's default minimum is its
+   content, and with that it would refuse to be shorter than the page it is meant to scroll. */
+.screen-scroll {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
 }
 
 /* One copy of the centring, in the shell, rather than one per screen. `flex: 1` is what holds
-   the footer against the bottom of the window on a screen whose content does not reach it. */
+   the footer against the bottom of the window on a screen whose content does not reach it --
+   and the default minimum (its content) is what makes a long screen overflow .screen-scroll,
+   and so scroll, rather than be squashed. */
 .screen-body {
     flex: 1;
     width: 100%;
@@ -321,15 +337,6 @@ h2 {
     /* Without this the body is a flex item whose minimum is its own content, so it grows past the
        height the shell just fixed and every shrink below it is cancelled before it starts. */
     min-height: 0;
-}
-
-/* The shell is normally min-height: 100vh, which lets a long screen grow past the window. This one
-   must not: its two columns are BOTH scrollable, so growing means the buttons and the footer leave
-   the bottom of the window while the space to scroll them back into view is inside the panels. A
-   definite height is also what lets the chain below shrink at all -- flex items resolve against a
-   definite container, and against a min-height one they just take their content's size. */
-.screen:has(.install-split) {
-    height: 100vh;
 }
 
 /* The chain that turns the shell's height into the columns' height: body -> wizard -> split ->
@@ -708,8 +715,9 @@ progress {
    Measured with a model download in flight (its row costs the left column ~40px, which is what
    used to tip this over at 650): filled and fully visible from 650 up. */
 @media (max-width: 900px), (max-height: 640px) {
-    .screen:has(.install-split) {
-        height: auto;
+    /* Content-sized again, so it overflows .screen-scroll and scrolls like any other screen. */
+    .screen-body:has(.install-split) {
+        flex: none;
     }
 
     .install-split {
@@ -1318,6 +1326,8 @@ progress {
 }
 
 .workload-card-meta {
+    /* Takes the card's leftover height, so the action below can sit on the bottom edge. */
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1325,8 +1335,14 @@ progress {
     padding: 10px 12px 12px;
 }
 
+/* Always two lines tall, whether the name needs them or not. Names run from "MiniMax H3" to
+   "Base-install-Triton-SageAttention-Manager", and with the box sized by its text the chip row
+   and everything under it sat at a different height on every other tile. 2 x the line-height;
+   a minimum rather than a clamp, so the rare three-line name at the narrowest tile still shows
+   its version instead of an ellipsis. */
 .workload-card-name {
     margin: 0;
+    min-height: 2.6em;
     font-size: 13px;
     font-weight: 600;
     line-height: 1.3;
@@ -1343,8 +1359,51 @@ progress {
     color: var(--accent);
 }
 
+/* One row of chips: what kind of pack, and what it needs. Wraps as a last resort -- at the
+   190px minimum tile the two chips fit with ~10px to spare. */
+.workload-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+/* The version, riding on the name it belongs to -- on the card and in the wizard hero alike.
+   Sized in em so it scales with whichever heading carries it. No margin: the markup joins it
+   to the name with a no-break space, so it is never stranded at the start of a line -- where a
+   margin would show up as an indent. */
+.workload-version {
+    font-size: .8em;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Same geometry as .workload-card-badge, so the two read as one row of chips; neutral rather
+   than accent, because the type is what the filters above the grid speak in and this is not. */
+.vram-chip {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(139, 152, 165, 0.16);
+    color: var(--text);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The card's action -- Install, or the reason there is none -- sits on the bottom edge, not under
+   whatever came last: names wrap to two lines and only some packs have a VRAM line, and a row of
+   buttons at four different heights reads as a mess. By position, because the "unavailable" text
+   is styled by the shared .card-unavailable and must not grow a rule of its own here. */
+.workload-card-meta > :last-child {
+    margin-top: auto;
+}
+
 .workload-card-install {
-    margin-top: 2px;
     padding: 6px 14px;
     border-radius: 8px;
     border: 1px solid var(--accent);
@@ -1577,7 +1636,7 @@ progress {
 
 /* ---------- Workload hero (first wizard stage) ---------- */
 
-/* Shown for a software whose tile came straight to the wizard. Same shape as .panel -- it is one
+/* Opens the first stage of every wizard. Same shape as .panel -- it is one
    of the stack of panels the stage renders -- with the artwork beside the text rather than above
    it, so the install-folder box below stays on screen without scrolling. */
 .hero {
@@ -1590,6 +1649,28 @@ progress {
     border-radius: 10px;
     padding: 1.1rem 1.25rem;
     margin-bottom: 1rem;
+}
+
+/* The Confirm stage's reminder: same panel, a third of the height. */
+.hero-compact {
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    padding-block: .8rem;
+}
+
+.hero-compact .hero-art {
+    width: 88px;
+    border-radius: 8px;
+}
+
+.hero-compact .hero-name {
+    margin-bottom: .2rem;
+    font-size: 1.25rem;
+}
+
+.hero-compact .hero-tags {
+    margin: .25rem 0 0;
 }
 
 .hero-art {
@@ -1635,6 +1716,12 @@ progress {
     font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: -.01em;
+}
+
+/* Tucked up under the name it belongs to. */
+.hero-tags {
+    margin: -.2rem 0 .65rem;
+    display: flex;
 }
 
 /* Capped and scrollable: descriptions are catalog content and the longest today is 659
@@ -1687,6 +1774,25 @@ progress {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+/* Same button as the workload screen's, so "the way back" looks like one thing everywhere. Its
+   own block because it sits above a heading in normal flow, not inside a flex header. */
+.back-link {
+    display: inline-block;
+    margin-bottom: 1rem;
+    padding: 5px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.back-link:hover {
+    border-color: var(--accent);
 }
 
 .workload-screen-back {

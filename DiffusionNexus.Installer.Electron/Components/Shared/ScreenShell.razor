@@ -10,6 +10,10 @@
    <TopBar> and forgot <FeedbackDialog> would get a Feedback button that silently did nothing, and
    no test would have caught it. *@
 
+@using DiffusionNexus.Installer.Electron.Services
+@inject ReturnTarget Return
+@inject NavigationManager Nav
+
 <div class="screen">
     <TopBar OnFeedback="() => _feedbackOpen = true" />
 
@@ -18,8 +22,11 @@
        nothing when there is nothing to say. *@
     <ServerMessageBanner />
 
-    <div class="screen-body">
-        @ChildContent
+    @* The only part of a shell screen that scrolls: the bar above and the footer below stay put. *@
+    <div class="screen-scroll">
+        <div class="screen-body">
+            @ChildContent
+        </div>
     </div>
 
     @* The footer belongs to the shell, not to the welcome screen that used to own it, for the
@@ -34,4 +41,9 @@
     [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
 
     private bool _feedbackOpen;
+
+    // Every flow screen wears this shell and no side trip does, so rendering it is the moment to
+    // record "this is where Back on /licenses, /updates or /debug should lead". On parameters set
+    // rather than on init: a route-parameter change re-uses the page instance.
+    protected override void OnParametersSet() => Return.Remember(Nav.ToBaseRelativePath(Nav.Uri));
 }

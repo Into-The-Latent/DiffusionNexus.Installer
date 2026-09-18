@@ -6,6 +6,7 @@ using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Wizard;
+using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
@@ -130,27 +131,32 @@ public class InstallPageTests : BunitContext
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
         page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero .workload-version").Should().BeEmpty("a lone workload came from the software tile");
         page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
     [Fact]
-    public void A_software_with_a_workload_screen_of_its_own_does_not_repeat_it_here()
+    public void A_workload_picked_from_a_workload_screen_opens_with_the_hero_too()
     {
+        // The workload card has no room for the description -- it is a hover tooltip there -- so
+        // this is the first place a ComfyUI user can read what the pack does. The version line is
+        // how the hero says it knows it came from a workload screen.
         var sibling = new InstallationConfiguration { Id = Guid.NewGuid(), Name = "Fooocus Nightly" };
         sibling.Repository.Type = RepositoryType.Fooocus;
         Register(Workload(), sibling);
 
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
 
-        page.FindAll(".hero").Should().BeEmpty();
-        page.Find("h1").TextContent.Should().Be("Fooocus");
+        page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero .workload-version").Should().HaveCount(1);
+        page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
     [Fact]
-    public void The_hero_is_gone_once_the_user_moves_past_the_first_stage()
+    public void The_hero_stays_up_past_the_first_stage()
     {
-        // It answers "did I click the right thing?". Past the first stage that is answered, and
-        // carrying it along would push each stage's actual question further down the page.
+        // It began as a first-stage greeting. Kept through the question stages it is what makes
+        // the wizard read as one screen about one workload instead of unrelated forms.
         RegisterContent(EmptyScanner());
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         page.FindAll(".hero").Should().HaveCount(1);
@@ -158,7 +164,9 @@ public class InstallPageTests : BunitContext
         page.Find(".path-row input").Input(@"C:\Installs\Fooocus");
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
 
-        page.FindAll(".hero").Should().BeEmpty();
+        page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero-compact").Should().BeEmpty("only Confirm uses the compact form");
+        page.FindAll("h1").Should().HaveCount(1, "the hero names the workload; a second heading repeats it");
     }
 
     [Fact]
@@ -174,6 +182,75 @@ public class InstallPageTests : BunitContext
 
         page.Find(".wizard-actions button").Click();
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith("/");
+    }
+
+    /// <summary>A session whose most recent run, of the workload under test, ended in failure.</summary>
+    private async Task<WizardPlan> RegisterFinishedRun()
+    {
+        var session = Register(Workload());
+        var plan = await new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = Workload() });
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Failed);
+        session.SetupGet(s => s.Plan).Returns(plan);
+        return plan;
+    }
+
+    [Fact]
+    public async Task Coming_back_from_a_side_trip_re_opens_the_finished_installs_report()
+    {
+        // Review finding on PR #24: the rejoin was gated on Running, so a user reading a FAILED
+        // install's report who looked at Licences and pressed Back got a fresh "Install location"
+        // for the workload that had just failed, the report gone as if the run never happened.
+        var plan = await RegisterFinishedRun();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember($"install/{WorkloadId}");
+        target.InstallOnScreen = plan;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".install-split").Should().HaveCount(1, "the finished run's install stage, not a new wizard");
+        page.FindAll(".path-row input").Should().BeEmpty();
+        Mock.Get(Services.GetRequiredService<IInstallSession>())
+            .Verify(s => s.StartAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()), Times.Never,
+                "re-opening a report must never start an install");
+    }
+
+    [Fact]
+    public async Task Picking_the_same_workload_again_starts_a_new_wizard_not_the_old_report()
+    {
+        // The other half of that fix. The finished run is still the session's most recent plan,
+        // but the user arrived from the workload screen, not back to where they were -- they
+        // asked to install it again.
+        var plan = await RegisterFinishedRun();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember("software/Fooocus");
+        target.InstallOnScreen = plan;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".install-split").Should().BeEmpty();
+        page.FindAll(".path-row input").Should().HaveCount(1, "a fresh wizard opens on the install folder");
+    }
+
+    [Fact]
+    public async Task A_finished_run_the_user_already_left_is_not_re_opened_by_a_side_trip_from_a_new_wizard()
+    {
+        // Done was pressed (which forgets the run), the same workload was picked again, and the
+        // side trip happened from the NEW wizard's first stage. Same URL, so only the forgotten
+        // run tells this apart from the first case.
+        await RegisterFinishedRun();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember($"install/{WorkloadId}");
+        target.InstallOnScreen = null;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".install-split").Should().BeEmpty();
+        page.FindAll(".path-row input").Should().HaveCount(1);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 @page "/updates"
 @using DiffusionNexus.Installer.Core.Install
+@using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.Electron.Services
 @using ElectronNET.API
 @using System.Globalization
@@ -16,9 +17,9 @@
 
 <div class="shell">
     <header>
+        <BackLink />
         <h1>Into the Latent Easy Installer</h1>
         <p class="host">@HostDescription</p>
-        <p><a href="/">Back to all software</a></p>
     </header>
 
     @* One setting drives both the app and the catalog, so it is offered once, above both rows --

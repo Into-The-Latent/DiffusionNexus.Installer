@@ -2,13 +2,14 @@
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.DevTools
 @using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.Electron.Components.Shared
 @inject IWorkloadSource Workloads
 @inject IFolderPicker FolderPicker
 @inject LauncherScriptPreview Preview
-@inject NavigationManager Nav
 
 <PageTitle>Developer tools</PageTitle>
 
+<BackLink />
 <h1>Developer tools</h1>
 <p class="panel-hint">Debug builds only. Not present in a Release build.</p>
 
@@ -31,7 +32,6 @@
         <button class="btn-secondary" disabled="@_busy" @onclick="ExportAll">
             Export all (@_workloads.Count)
         </button>
-        <button class="btn-secondary" @onclick="@(() => Nav.NavigateTo("/"))">Back to all software</button>
     </div>
 
     @if (_workloads.Count > 0)

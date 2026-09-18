@@ -4,6 +4,7 @@ using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
@@ -37,7 +38,7 @@ public class ScreenShellTests : BunitContext
         // Direct child of .screen, which is what app.css's `.page:has(> .screen)` opt-out keys on:
         // the bar spans the window and .screen-body does the centring.
         cut.Find(".screen > .top-bar").Should().NotBeNull();
-        cut.Find(".screen > .screen-body > .probe").TextContent.Should().Be("page content");
+        cut.Find(".screen > .screen-scroll > .screen-body > .probe").TextContent.Should().Be("page content");
     }
 
     [Fact]
@@ -64,7 +65,7 @@ public class ScreenShellTests : BunitContext
         var cut = RenderShell();
 
         cut.WaitForAssertion(() =>
-            cut.Find(".screen > .top-bar + .server-messages + .screen-body").Should().NotBeNull());
+            cut.Find(".screen > .top-bar + .server-messages + .screen-scroll").Should().NotBeNull());
         cut.Find(".server-message-text").TextContent.Should().Be("Fixed build available.");
     }
 
@@ -73,7 +74,7 @@ public class ScreenShellTests : BunitContext
     {
         var cut = RenderShell();
 
-        cut.Find(".screen > .top-bar + .screen-body").Should().NotBeNull();
+        cut.Find(".screen > .top-bar + .screen-scroll").Should().NotBeNull();
     }
 
     [Fact]
@@ -98,5 +99,29 @@ public class ScreenShellTests : BunitContext
         cut.Find(".feedback-cancel").Click();
 
         cut.WaitForAssertion(() => cut.FindAll(".feedback-dialog").Should().BeEmpty());
+    }
+
+    [Fact]
+    public void Only_the_pages_own_content_scrolls()
+    {
+        // The bar and the footer are siblings of the scrolling region, never inside it -- inside,
+        // they leave the window with the content, which is the bug this region exists to fix.
+        var cut = RenderShell();
+
+        cut.FindAll(".screen-scroll .top-bar, .screen-scroll .community").Should().BeEmpty();
+        cut.Find(".screen > .screen-scroll + .community").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Records_where_a_side_trip_should_come_back_to()
+    {
+        // Licences opened from a running install must lead back to that install, not the welcome
+        // screen. Every flow screen wears the shell, so the shell is what remembers.
+        Services.GetRequiredService<NavigationManager>().NavigateTo("/install/6f9619ff-8b86-d011-b42d-00cf4fc964ff?x=1");
+
+        RenderShell();
+
+        Services.GetRequiredService<DiffusionNexus.Installer.Electron.Services.ReturnTarget>()
+            .Path.Should().Be("/install/6f9619ff-8b86-d011-b42d-00cf4fc964ff");
     }
 }
