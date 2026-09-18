@@ -2925,7 +2925,7 @@ license file is covered by the standard text of its declared license.
 
   MIT            @socket.io/component-emitter 3.1.2
   MIT            @types/cors 2.8.19
-  MIT            @types/node 22.20.1
+  MIT            @types/node 22.20.3
   MIT            @types/ws 8.18.1
   MIT            accepts 1.3.8
   Python-2.0     argparse 2.0.1
@@ -2936,7 +2936,7 @@ license file is covered by the standard text of its declared license.
   MIT            dasherize 2.0.0
   MIT            debug 4.4.3
   MIT            electron-updater 6.8.9
-  MIT            engine.io 6.6.9
+  MIT            engine.io 6.6.10
   MIT            engine.io-parser 5.2.3
   MIT            fs-extra 10.1.0
   ISC            graceful-fs 4.2.11
@@ -3021,7 +3021,7 @@ Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
 --------------------------------------------------------------------------------
 
-### @types/node 22.20.1 - MIT
+### @types/node 22.20.3 - MIT
 Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
     MIT License
@@ -3559,7 +3559,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-### engine.io 6.6.9 - MIT
+### engine.io 6.6.10 - MIT
 Author: Guillermo Rauch <guillermo@learnboost.com>
 Source: git+https://github.com/socketio/socket.io.git
 

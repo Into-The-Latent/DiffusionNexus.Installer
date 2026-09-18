@@ -37,7 +37,7 @@ public sealed class RealCatalogInstallabilityTests : IAsyncLifetime
         "ACE-Step-1.5",
         "AI-Toolkit",
         "Blanck-ComfyUI",
-        "Base-install-Triton-SageAttention-Manager",
+        "Blank ComfyUI + Manager + Triton & SageAttention",
         "ComfyUI Llama Cpp test",
         "FlashVSR-Video&Image Upscale",
         "Ernie-Image-Turbo",

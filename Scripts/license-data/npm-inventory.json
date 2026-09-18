@@ -17,7 +17,7 @@
   },
   {
     "name": "@types/node",
-    "version": "22.20.1",
+    "version": "22.20.3",
     "license": "MIT",
     "author": "",
     "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
@@ -105,7 +105,7 @@
   },
   {
     "name": "engine.io",
-    "version": "6.6.9",
+    "version": "6.6.10",
     "license": "MIT",
     "author": "Guillermo Rauch <guillermo@learnboost.com>",
     "repository": "git+https://github.com/socketio/socket.io.git",
