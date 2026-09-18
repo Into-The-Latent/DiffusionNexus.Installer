@@ -1,30 +1,30 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": 3,
+  "catalogVersion": 4,
   "channel": "Stable",
-  "commit": "149f72d01b1363fff90323827ab5917cbfa1e406",
-  "generatedAt": "2026-09-15T19:11:28.8093644+00:00",
+  "commit": "443deafd39a0f7c79cce0648523e2663f524549a",
+  "generatedAt": "2026-09-18T14:54:15.9944593+00:00",
   "archive": {
     "name": "catalog.zip",
-    "sha256": "14aaf86922651c6d5cf41407f9d18a07e6ebca5be434b8fe530dda4978bf588f",
-    "bytes": 2479665
+    "sha256": "ae635f719d54463a0e341fa1343d326b110a3a5192f427e7cbaa4bc629ce17b7",
+    "bytes": 1771761
   },
   "workloads": [
     {
       "id": "08a686b2-42c4-4aeb-bd59-0321455d06e1",
       "name": "Ernie-Image-Turbo",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 2,
       "isReleaseConfig": true,
-      "hash": "f497399b1e5de011f2a32a60aba7c69e4970ae57d3e81c6c6f49ff582a0a2a86"
+      "hash": "642e529d3542e3078b1043a6f76154d21d62db0b75baeda86a24ba12aca166fe"
     },
     {
       "id": "0d7a24d9-80ae-443b-9ff3-497cd54f5b7b",
       "name": "Wan 2.2 - GGUF",
       "version": 1,
-      "subVersion": 4,
+      "subVersion": 5,
       "isReleaseConfig": true,
-      "hash": "229d96b7dcc645dd23b7632abc9572acab0ebf2a83b718905db8c2bb2e650ee7"
+      "hash": "bd818a4064dc1d1b0a636d8ff230cf03962853aa7e9cbcc3c74c3c97c408c06b"
     },
     {
       "id": "137929e4-5c05-4304-80d4-5d785d45fd3f",
@@ -36,11 +36,11 @@
     },
     {
       "id": "1f0a3aef-15d9-4b8a-80dc-b03f318e414f",
-      "name": "Base-install-Triton-SageAttention-Manager",
+      "name": "Blank ComfyUI \u002B Manager \u002B Triton \u0026 SageAttention",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": true,
-      "hash": "e962136acf2625ce922e8991a7cf8cfb13de3bf4c4464ee24ae85e713450965b"
+      "hash": "43d62743ac5742e153cfa3a556ea72ace34496ec361db25009539277b0cd83ad"
     },
     {
       "id": "3b463f60-a862-4135-ac0f-0ab18d8e3eb8",
@@ -78,9 +78,9 @@
       "id": "6bc68a3f-2e93-4866-9827-25d666d4249a",
       "name": "Ideogram-4.0",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 2,
       "isReleaseConfig": true,
-      "hash": "a431d960063801dbe3c8509629948fe8c4f0805bc7dc706a809c832e670b8d76"
+      "hash": "d1fc4594a6a94ee07ffd5d0c1f4481d276a0aacdc48774fe1e99fad097a1a34a"
     },
     {
       "id": "6e7dfafd-1261-4f9a-a63b-c79cd69a1267",
@@ -110,9 +110,9 @@
       "id": "725ffdfb-22b6-436f-905a-ce678bda287d",
       "name": "Qwen-Image-Edit-2511 - 2512 - Layered",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": true,
-      "hash": "df8ee9acc74828824d47700a98dc8b02693b4fcda2b60d14c71f4f15a7872f6a"
+      "hash": "3ee5ee7c6db44ee90738dac3e43b752e6888c854e21a404f68e16d30597dd2c1"
     },
     {
       "id": "737be0cb-5349-4d18-a058-82ea3ef61aae",
@@ -126,9 +126,9 @@
       "id": "8063df6d-2cdd-4535-bc7c-d3fddbef05ab",
       "name": "FlashVSR-Video\u0026Image Upscale",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": true,
-      "hash": "2c090e8319366c65ab43cd85b9cde3edc4faf55f6c4451eda8bf0d89ada8eb45"
+      "hash": "d75672540bd95b498d05934a2cd2255ca417ce4e6ba5ab9603c4bd457fde8faf"
     },
     {
       "id": "8819a1f9-09bf-48d7-9da0-214127852ab3",
@@ -142,9 +142,9 @@
       "id": "a229c02e-2586-47df-8be2-b342defc78ec",
       "name": "MiniMax H3",
       "version": 1,
-      "subVersion": 7,
+      "subVersion": 8,
       "isReleaseConfig": true,
-      "hash": "790242bbdfe53fcb90dc39fb0020714bb9f1286601096bead78ea147c4cffbc2"
+      "hash": "097c6c3e7cd1f39a40b7028f21d8daa49b949ce4d311bc2115f610e37502b26a"
     },
     {
       "id": "a6d086d1-0347-45fe-adab-432c7dd5b52a",
@@ -182,9 +182,9 @@
       "id": "e358f5aa-5204-4c5f-a1ed-266265c1f413",
       "name": "LTX-2-3-V1.1-Director-GGUF",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": true,
-      "hash": "67a51aa7eb08c2d8f4c2d8b74fab4ca2c2bdd0468528a0fde2fea9e5bbfa2fa5"
+      "hash": "719a05a99e74d4ad0ef66733fb7c735ad4e9f68e24b9873f7cd217d00192fd54"
     },
     {
       "id": "e4b40bf4-7cb1-4765-8ff2-24e663b6a271",
@@ -198,17 +198,17 @@
       "id": "e79c079a-2fd7-4fe7-8086-23731092555d",
       "name": "Krea-2-Turbo",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": true,
-      "hash": "a0e432e43a662d90994155d591ab214b113f403811793f13e557fe1f9f6389bc"
+      "hash": "790bdc3cb22bbf10e07d092278cb0d5665274e564d39615878a4ddacfcab1328"
     },
     {
       "id": "f07ee6e0-742f-47a5-9828-b48d2601ccf3",
       "name": "Flux-Klein 9b \u002B 4b",
       "version": 2,
-      "subVersion": 0,
+      "subVersion": 1,
       "isReleaseConfig": true,
-      "hash": "89bdccd51273629e1494adbd2aa4cdef58d698a54a29c15eb8ee94b20dc2d9d8"
+      "hash": "39a8b858b7840383c5729f7fef13d8fc3e64f1c4581babeebac6ae15759aaa8d"
     }
   ],
   "workflows": [
