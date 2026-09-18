@@ -11,7 +11,7 @@ namespace DiffusionNexus.Installer.Core.Install;
 /// </summary>
 public static class InstallLogFile
 {
-    public const string Title = "Into the Latent Easy Installer - Installation Log";
+    public const string Title = "Easy Workload Installer - Installation Log";
 
     /// <summary>
     /// The 1.x wizard's file name, kept so a user who knows where to look still finds it. Invariant

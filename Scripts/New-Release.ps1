@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds, packages and publishes a release of the Into the Latent Easy Installer.
+    Builds, packages and publishes a release of the Easy Workload Installer by Into the Latent.
 
 .DESCRIPTION
     Packaging happens in TWO steps, and the second one is not optional.
@@ -137,7 +137,7 @@ if ($SkipUpload) { Write-Host "SkipUpload set - done." -ForegroundColor Yellow; 
 
 $channelName = if ($Prerelease) { 'Preview (GitHub pre-release)' } else { 'Stable (full release)' }
 Write-Host "Step 3/3: publishing v$Version to $ghRepo on $channelName" -ForegroundColor Cyan
-$setup = Join-Path $publish "IntoTheLatent-EasyInstaller-Setup-$Version.exe"
+$setup = Join-Path $publish "EasyWorkloadInstaller-ITL-Setup-$Version.exe"
 foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'))) {
     if (-not (Test-Path $f)) { throw "Expected artifact missing: $f" }
 }

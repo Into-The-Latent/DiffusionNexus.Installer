@@ -1,6 +1,6 @@
-# Into the Latent Easy Installer
+# Easy Workload Installer by Into the Latent
 
-The Into the Latent Easy Installer (formerly the DiffusionNexus Installer), 3.x line — **Electron shell + Blazor UI, written in C#**.
+The Easy Workload Installer by Into the Latent (formerly the Into the Latent Easy Installer and, before that, the DiffusionNexus Installer), 3.x line — **Electron shell + Blazor UI, written in C#**.
 
 Replaces the 2.x Avalonia installer. Install logic is not duplicated here: it lives in the
 **DiffusionNexus Installer SDK** and is consumed as NuGet packages.

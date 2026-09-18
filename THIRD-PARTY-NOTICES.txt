@@ -1,6 +1,6 @@
 ================================================================================
 THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
-Into the Latent Easy Installer
+Easy Workload Installer by Into the Latent
 ================================================================================
 
 This product incorporates material from the projects listed below. The original
