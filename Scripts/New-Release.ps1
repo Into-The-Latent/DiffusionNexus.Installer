@@ -84,9 +84,32 @@ if (-not $env:GITHUB_PACKAGES_TOKEN) {
     throw "GITHUB_PACKAGES_TOKEN is not set. The release build restores the SDK from GitHub Packages (see nuget.config) and would fail the restore."
 }
 
+# Publish copies a file only when the source is NEWER than the copy already in the publish folder.
+# A package DLL keeps its older packed timestamp, so SDK DLLs left over from an earlier local-SDK
+# publish look newer and survive into the installer. v3.0.8 shipped that way. Start from an empty folder.
+if (Test-Path $publish) {
+    Write-Host "Clearing the previous publish output" -ForegroundColor Cyan
+    Remove-Item $publish -Recurse -Force
+}
+
 Write-Host "Step 1/3: dotnet publish (SDK from NuGet, not the local checkout)" -ForegroundColor Cyan
 dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -c Release --nologo -p:UseLocalSDK=false
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+
+# Check the packaged SDK DLLs directly, because a clean publish is not proof of what was packaged.
+# Each one must carry the version the csproj pins. A local project build reports a bare "2.0.0+<sha>".
+$csproj = [xml](Get-Content (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
+$sdkRefs = @($csproj.Project.ItemGroup.PackageReference | Where-Object { $_.Include -like 'DiffusionNexus.Installer.SDK.*' })
+if ($sdkRefs.Count -eq 0) { throw "No SDK PackageReferences found in the Electron csproj." }
+foreach ($ref in $sdkRefs) {
+    $dll = Join-Path $publish "bin\$($ref.Include).dll"
+    if (-not (Test-Path $dll)) { throw "Packaged SDK assembly missing: $dll" }
+    $actual = (Get-Item $dll).VersionInfo.ProductVersion
+    if ($actual -notlike "$($ref.Version)+*" -and $actual -ne $ref.Version) {
+        throw "$($ref.Include) in the publish output is '$actual', expected package $($ref.Version). The local SDK leaked into the release."
+    }
+}
+Write-Host "  SDK assemblies match the pinned packages" -ForegroundColor Green
 
 # The publish above is the first moment the packaged npm tree exists, so this is where the
 # notices can be checked against what actually ships. Drift means a dependency changed and the
