@@ -18,8 +18,12 @@ public sealed class SoftwareGalleryBuilder(GalleryBuilder inner)
             g.Key,
             SoftwareBranding.DisplayName(g.Key),
             g.ToList()))
-        // Most-offering first: ComfyUI carries 16 of the 21 workloads this installer can offer
-        // (the catalog holds 25, but four target DiffusionNexusCore and never reach here), so it
+        // A software whose every pack is legacy would read "0 workloads" and open onto a screen
+        // that stays empty until the user finds the legacy switch. It gets no card, and so no
+        // workload screen either -- its packs are out of reach (see SoftwareEntry.Workloads).
+        .Where(s => s.WorkloadCount > 0)
+        // Most-offering first, counted over current workloads only (legacy ones sit behind the
+        // workload screen's switch): ComfyUI carries most of what this installer offers, so it
         // belongs at the top rather than wherever the catalog's own order happens to put it.
         .OrderByDescending(s => s.WorkloadCount)
         .ThenBy(s => s.DisplayName, StringComparer.CurrentCultureIgnoreCase)

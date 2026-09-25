@@ -64,6 +64,19 @@
                        per-iteration since C# 5, so this lambda already closes over a fresh one. *@
                     <button class="@TypeClass(type)" type="button" @onclick="() => _type = type">@type</button>
                 }
+
+                @* Off whenever the screen opens, like the 1.x classic list's checkbox it replaces:
+                   superseded packs stay installable without crowding the current ones. Only where
+                   there is something to reveal -- a switch that changes nothing is a dead control. *@
+                @if (_entry.HasLegacyWorkloads)
+                {
+                    <label class="switch filters-switch">
+                        <input type="checkbox" role="switch" data-role="show-legacy"
+                               checked="@_showLegacy" @onchange="OnShowLegacyChanged" />
+                        <span class="switch-track" aria-hidden="true"></span>
+                        <span class="switch-text">Show legacy workloads</span>
+                    </label>
+                }
             </div>
 
             <div class="workload-grid">
@@ -84,6 +97,7 @@
     private SoftwareEntry? _entry;
     private bool _loaded;
     private WorkflowType? _type;
+    private bool _showLegacy;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
     private string? _loadError;
 
@@ -112,8 +126,9 @@
         _loadedFor = Software;
 
         // Filter state is per-software: arriving at a different software must not inherit the
-        // previous one's chosen type.
+        // previous one's chosen type, nor its legacy switch.
         _type = null;
+        _showLegacy = false;
         _entry = null;
         _loaded = false;
         _errors = [];
@@ -146,18 +161,37 @@
         }
     }
 
-    private IEnumerable<GalleryEntry> Filtered() => _entry!.Workloads
+    /// <summary>
+    /// What the switch lets on screen, before the type filter narrows it. Switched on, the legacy
+    /// packs follow the current ones: GalleryBuilder sorts them last, so the current packs keep
+    /// their places.
+    /// </summary>
+    private IReadOnlyList<GalleryEntry> Visible() => _showLegacy ? _entry!.Workloads : _entry!.CurrentWorkloads;
+
+    private IEnumerable<GalleryEntry> Filtered() => Visible()
         .Where(e => _type is null || e.Workload.WorkflowType == _type);
 
     /// <summary>
-    /// Derived from this software's own workloads, so the button set answers "what can ComfyUI
-    /// make", not "what types exist somewhere in the catalog". A filter that can only ever return
-    /// nothing is a dead control.
+    /// Derived from the workloads on screen, so the button set answers "what can ComfyUI make",
+    /// not "what types exist somewhere in the catalog" -- nor what a hidden legacy pack makes. A
+    /// filter that can only ever return nothing is a dead control.
     /// </summary>
-    private IEnumerable<WorkflowType> AvailableTypes() => _entry!.Workloads
+    private IEnumerable<WorkflowType> AvailableTypes() => Visible()
         .Select(e => e.Workload.WorkflowType)
         .Distinct()
         .OrderBy(t => t.ToString(), StringComparer.CurrentCultureIgnoreCase);
+
+    private void OnShowLegacyChanged(ChangeEventArgs e)
+    {
+        _showLegacy = (bool)(e.Value ?? false);
+
+        // Switching off can take away the chosen type's button along with its only packs. Left
+        // set, the grid would go empty with nothing lit to say why.
+        if (_type is { } type && !AvailableTypes().Contains(type))
+        {
+            _type = null;
+        }
+    }
 
     private string TypeClass(WorkflowType? type) => _type == type ? "filter-active" : "filter";
 

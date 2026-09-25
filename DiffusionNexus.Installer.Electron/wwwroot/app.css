@@ -1359,8 +1359,10 @@ progress {
     color: var(--accent);
 }
 
-/* One row of chips: what kind of pack, and what it needs. Wraps as a last resort -- at the
-   190px minimum tile the two chips fit with ~10px to spare. */
+/* One row of chips: what kind of pack, what it needs, and whether it is legacy. Wraps as a last
+   resort -- at the 190px minimum tile the type and VRAM chips fit with ~10px to spare, so a legacy
+   pack's third chip takes a second row there. That costs nothing: the Install action is pinned to
+   the card's bottom edge (below), so the buttons still line up across the row. */
 .workload-card-tags {
     display: flex;
     flex-wrap: wrap;
@@ -1393,6 +1395,20 @@ progress {
     color: var(--text);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+}
+
+/* Same geometry again. Amber, the app's warning colour: not a fault, but the one chip that says
+   a newer pack has replaced this one. On a card only with the "Show legacy workloads" switch on,
+   and again in that pack's wizard hero. */
+.legacy-chip {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(232, 198, 122, 0.16);
+    color: #e8c67a;
+    white-space: nowrap;
 }
 
 /* The card's action -- Install, or the reason there is none -- sits on the bottom edge, not under
@@ -1718,10 +1734,13 @@ progress {
     letter-spacing: -.01em;
 }
 
-/* Tucked up under the name it belongs to. */
+/* Tucked up under the name it belongs to. The card's chip row, repeated: same gap as
+   .workload-card-tags, for the VRAM and legacy chips side by side. */
 .hero-tags {
     margin: -.2rem 0 .65rem;
     display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 /* Capped and scrollable: descriptions are catalog content and the longest today is 659
@@ -1984,6 +2003,23 @@ progress {
 .switch-text .panel-hint {
     font-weight: 400;
     margin: 0;
+}
+
+/* The workload screen's "Show legacy workloads" switch, at the far end of the type filters' row
+   and speaking at their size. After .switch so it wins on source order. */
+.filters-switch {
+    margin: 0 0 0 auto;
+    align-items: center;
+    font-size: .82rem;
+}
+
+.filters-switch .switch-track {
+    margin-top: 0;
+}
+
+.filters-switch .switch-text {
+    font-weight: 400;
+    color: var(--muted);
 }
 
 /* A panel heading with an action beside it (the Installing panel's "Copy log"). */

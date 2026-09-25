@@ -75,6 +75,24 @@ public class CatalogWorkloadSourceTests
         // The list and the by-id lookup answer the same question, so a workload the gallery does
         // not show must not be reachable by navigating straight to its id either.
         var id = Guid.NewGuid();
+        var workload = Workload("ComfyUI Llama Cpp test", WorkloadTargetType.Installer);
+        workload.Id = id;
+        workload.IsReleaseConfig = false;
+
+        var catalog = new Mock<ICatalog>(MockBehavior.Strict);
+        catalog.Setup(c => c.GetWorkloadAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(workload);
+
+        var result = await Source(catalog.Object).GetInstallerWorkloadAsync(id);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_legacy_workload_is_found_by_id_so_its_thumbnail_is_served()
+    {
+        // The by-id lookup is the thumbnail endpoint's authorization gate. A legacy card revealed
+        // by the workload screen's switch must get its picture like any other card.
+        var id = Guid.NewGuid();
         var workload = Workload("LTX2 - GGUF - Legacy", WorkloadTargetType.Installer);
         workload.Id = id;
         workload.IsLegacy = true;
@@ -84,7 +102,7 @@ public class CatalogWorkloadSourceTests
 
         var result = await Source(catalog.Object).GetInstallerWorkloadAsync(id);
 
-        result.Should().BeNull();
+        result!.Name.Should().Be("LTX2 - GGUF - Legacy");
     }
 
     [Fact]
@@ -101,11 +119,10 @@ public class CatalogWorkloadSourceTests
     }
 
     [Fact]
-    public async Task Legacy_workloads_are_not_offered()
+    public async Task Legacy_workloads_are_returned_for_the_workload_screen_to_hide()
     {
-        // Was "returned but flagged", with GalleryBuilder sorting them last. Sorting is not
-        // hiding: the ComfyUI card listed all sixteen ComfyUI catalog entries, five of them
-        // legacy or superseded, and that is the bug this test now pins.
+        // Hiding them by default is the workload screen's job, behind its "Show legacy workloads"
+        // switch. Dropped here, that switch would have nothing to reveal.
         var legacy = Workload("Old pack", WorkloadTargetType.Installer);
         legacy.IsLegacy = true;
 
@@ -119,7 +136,7 @@ public class CatalogWorkloadSourceTests
 
         var result = await Source(catalog.Object).GetInstallerWorkloadsAsync();
 
-        result.Should().ContainSingle().Which.Name.Should().Be("Current pack");
+        result.Select(w => w.Name).Should().BeEquivalentTo("Old pack", "Current pack");
     }
 
     [Fact]

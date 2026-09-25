@@ -171,7 +171,9 @@ public 3.x release. Slice 1 is run from a dev build.
    **Maximised on a 1080p display, all six tiles are visible at once and both arrows are dim.**
    That was the shape of the first attempt's failure — everything pinned to the size that fitted a
    720p window, adrift in a big one — so it is worth looking at deliberately.
-2. **Expect:** the ComfyUI card reads "16 workloads"; the other five read "straight to setup".
+2. **Expect:** the ComfyUI card reads "10 workloads" in a Release build (11 in Debug, which also
+   offers the "ComfyUI Llama Cpp test" draft); the other five read "straight to setup". Legacy
+   packs never count here — they sit behind the workload screen's switch (step 5a).
    A card whose single workload is blocked would read "1 workload" instead, never "straight to
    setup" — that card has no link behind it at all.
 2a. **The strip.** **First: it must open showing ComfyUI whole, at the left-hand end.** A packaged
@@ -187,9 +189,9 @@ public 3.x release. Slice 1 is run from a dev build.
    to catch.
 4. Click Licences, then come back. Click Check for Updates, then come back. **Expect:** both pages
    still work from the top bar.
-5. Click ComfyUI. **Expect:** the Select workload screen, with 16 cards showing their artwork,
-   an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** four
-   cards. Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
+5. Click ComfyUI. **Expect:** the Select workload screen, with 10 cards showing their artwork,
+   an "All / Image / Video" filter and no software filter. Filter to Video. **Expect:** three
+   cards (LTX-2-3-GGUF, the fourth Video pack, is legacy — step 5a). Click "← All software", then pick ComfyUI again. **Expect:** the filter is back on All.
    Now the filter-persistence half: from ComfyUI's screen with Video selected, use the browser/window
    Back and Forward controls (or navigate to `/software/Fooocus` and back to `/software/ComfyUI` by
    hand). **Expect:** re-entering ComfyUI's screen shows All — filter state is per software — and at
@@ -200,6 +202,18 @@ public 3.x release. Slice 1 is run from a dev build.
    rather than by hand.
    Hover a workload card. **Expect:** a tooltip with the catalog's description for that workload —
    the tile has no room for it and this is now the only place in the app it appears.
+5a. **Legacy workloads.** On ComfyUI's screen a "Show legacy workloads" switch sits at the right
+   end of the filter row, **off**, and no card carries a LEGACY tag. Turn it on. **Expect:** the
+   released legacy packs join the end of the grid, each with an amber LEGACY tag — against the
+   current stable catalog LTX-2-3-GGUF, LTX2 - GGUF - Legacy and Qwen-Image-Edit-2511 - 2512 -
+   Layered (the embedded seed has only the first two). Turn it off. **Expect:** back to the 10.
+   The ten current cards keep their order; the legacy ones only follow them. Turn it on again and
+   Install a legacy pack. **Expect:** its wizard opens like any other ComfyUI pack's, its own
+   artwork and version in the hero, and the amber LEGACY chip beside its VRAM chip. The chip is
+   still there on Confirm, where the hero shrinks. Go back to `/` and pick ComfyUI again.
+   **Expect:** the switch is off again — it is never remembered. The legacy packs that are also
+   drafts (Blanck-ComfyUI, Config535, Qwen-Image-Edit-2511 - Deprecated) never appear in a Release
+   build, switch or not.
 6. Click Fooocus. **Expect:** the wizard opens directly — no workload screen — and its first stage
    opens with the hero: the same tile artwork at size, "Fooocus" beside it, the catalog's
    description under that with **bold** actually bold and the bullets as bullets (no stray `**` or

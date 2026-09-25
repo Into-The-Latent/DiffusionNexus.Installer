@@ -29,13 +29,13 @@ public sealed class RealCatalogVisibilityTests : IAsyncLifetime
         _workloads.Where(visibility.IsOffered).ToList();
 
     [Fact]
-    public void Nothing_a_user_is_offered_is_legacy_core_targeted_or_unreleased()
+    public void Nothing_a_user_is_offered_is_core_targeted_or_unreleased()
     {
         var offered = Offered(WorkloadVisibility.ReleaseOnly);
 
         offered.Should().NotBeEmpty("a broken extraction must fail loudly, not vacuously pass below");
         offered.Should().OnlyContain(w =>
-            w.WorkloadTarget == WorkloadTargetType.Installer && w.IsReleaseConfig && !w.IsLegacy);
+            w.WorkloadTarget == WorkloadTargetType.Installer && w.IsReleaseConfig);
     }
 
     [Fact]
@@ -43,12 +43,11 @@ public sealed class RealCatalogVisibilityTests : IAsyncLifetime
     {
         // Without this the test above passes just as well against a catalog with nothing to hide,
         // which is precisely the state the shipped build was wrongly in.
-        _workloads.Should().Contain(w => w.WorkloadTarget == WorkloadTargetType.Installer && w.IsLegacy);
         _workloads.Should().Contain(w => w.WorkloadTarget == WorkloadTargetType.Installer && !w.IsReleaseConfig);
     }
 
     [Fact]
-    public void The_comfyui_card_drops_the_legacy_and_unreleased_packs()
+    public void A_shipped_build_drops_only_the_unreleased_comfyui_packs()
     {
         var comfy = _workloads
             .Where(w => w.Repository.Type == RepositoryType.ComfyUI
@@ -61,23 +60,31 @@ public sealed class RealCatalogVisibilityTests : IAsyncLifetime
             .ToList();
 
         // Named rather than counted: if a later catalog revision un-flags one of these, the
-        // failure should say which pack came back rather than just "expected 10, found 11".
+        // failure should say which pack came back rather than just "expected 12, found 13".
         comfy.Select(w => w.Name).Except(offered).Should().BeEquivalentTo(
             "Blanck-ComfyUI",
             "ComfyUI Llama Cpp test",
             "Config535",
-            "LTX-2-3-GGUF",
-            "LTX2 - GGUF - Legacy",
             "Qwen-Image-Edit-2511 - Deprecated");
     }
 
     [Fact]
-    public void Developer_builds_see_the_unreleased_packs_but_still_not_the_legacy_ones()
+    public void The_released_legacy_packs_are_what_the_switch_reveals()
+    {
+        // Offered, but kept off the default workload screen: these are exactly the cards the
+        // "Show legacy workloads" switch adds. Without any, the switch would never render at all.
+        Offered(WorkloadVisibility.ReleaseOnly)
+            .Where(w => w.IsLegacy)
+            .Select(w => w.Name)
+            .Should().BeEquivalentTo("LTX-2-3-GGUF", "LTX2 - GGUF - Legacy");
+    }
+
+    [Fact]
+    public void Developer_builds_see_the_unreleased_packs()
     {
         var local = Offered(WorkloadVisibility.IncludingNonRelease);
 
         local.Should().Contain(w => !w.IsReleaseConfig, "non-release entries exist to be testable locally");
-        local.Should().NotContain(w => w.IsLegacy);
         local.Should().NotContain(w => w.WorkloadTarget != WorkloadTargetType.Installer);
     }
 }

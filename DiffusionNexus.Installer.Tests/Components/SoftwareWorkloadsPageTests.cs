@@ -5,6 +5,7 @@ using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.Tests.Support;
@@ -28,13 +29,21 @@ public class SoftwareWorkloadsPageTests : BunitContext
         UpdateSignals.Register(Services);
     }
 
-    private static InstallationConfiguration Workload(RepositoryType software, string name, WorkflowType type) => new()
+    private static InstallationConfiguration Workload(
+        RepositoryType software, string name, WorkflowType type, bool legacy = false) => new()
     {
         Id = Guid.NewGuid(),
         Name = name,
         WorkflowType = type,
+        IsLegacy = legacy,
         Repository = new MainRepositorySettings { Type = software }
     };
+
+    private static List<string> CardNames(IRenderedComponent<SoftwareWorkloads> cut) =>
+        cut.FindAll(".workload-card-name").Select(n => n.FirstChild!.TextContent.Trim()).ToList();
+
+    private static List<string> TypeButtons(IRenderedComponent<SoftwareWorkloads> cut) =>
+        cut.FindAll(".filters button").Select(b => b.TextContent.Trim()).ToList();
 
     private Mock<IWorkloadSource> Arrange(params InstallationConfiguration[] workloads)
     {
@@ -203,6 +212,119 @@ public class SoftwareWorkloadsPageTests : BunitContext
             s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()),
             Times.Once,
             "re-supplying the same Software must not re-read the catalog");
+    }
+
+    [Fact]
+    public void Legacy_workloads_stay_hidden_until_the_switch_is_turned_on()
+    {
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image),
+            Workload(RepositoryType.ComfyUI, "LTX2 - GGUF - Legacy", WorkflowType.Image, legacy: true));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => CardNames(cut).Should().Equal("Krea-2-Turbo"));
+
+        var toggle = cut.Find("input[data-role='show-legacy']");
+        toggle.GetAttribute("role").Should().Be("switch");
+        toggle.HasAttribute("checked").Should().BeFalse("the switch starts off");
+
+        toggle.Change(true);
+        CardNames(cut).Should().Equal("Krea-2-Turbo", "LTX2 - GGUF - Legacy");
+
+        cut.Find("input[data-role='show-legacy']").Change(false);
+        CardNames(cut).Should().Equal("Krea-2-Turbo");
+    }
+
+    [Fact]
+    public void Legacy_workloads_join_after_every_current_one_blocked_or_not()
+    {
+        // Sorting installable-first put an installable legacy pack AHEAD of a blocked current one,
+        // so switching on reshuffled the current packs and parked the legacy group mid-grid.
+        var blocked = Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image);
+        blocked.ModelDownloads.Add(new ModelDownload());
+        Arrange(
+            blocked,
+            Workload(RepositoryType.ComfyUI, "Wan 2.2 - GGUF", WorkflowType.Video),
+            Workload(RepositoryType.ComfyUI, "LTX-2-3-GGUF", WorkflowType.Video, legacy: true));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => CardNames(cut).Should().Equal("Wan 2.2 - GGUF", "Krea-2-Turbo"));
+
+        cut.Find("input[data-role='show-legacy']").Change(true);
+
+        CardNames(cut).Should().Equal("Wan 2.2 - GGUF", "Krea-2-Turbo", "LTX-2-3-GGUF");
+    }
+
+    [Fact]
+    public void Has_no_legacy_switch_when_the_software_has_no_legacy_workloads()
+    {
+        // A switch that can never change what is on screen is a dead control.
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image),
+            Workload(RepositoryType.ComfyUI, "Wan 2.2 - GGUF", WorkflowType.Video));
+
+        var cut = RenderFor("ComfyUI");
+
+        cut.WaitForAssertion(() => cut.FindAll(".workload-card").Should().HaveCount(2));
+        cut.FindAll("[data-role='show-legacy']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Offers_no_type_button_that_only_a_hidden_legacy_workload_has()
+    {
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image),
+            Workload(RepositoryType.ComfyUI, "LTX-2-3-GGUF", WorkflowType.Video, legacy: true));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => TypeButtons(cut).Should().Equal("All", "Image"));
+
+        cut.Find("input[data-role='show-legacy']").Change(true);
+
+        TypeButtons(cut).Should().Equal("All", "Image", "Video");
+    }
+
+    [Fact]
+    public void Turning_the_switch_off_under_a_legacy_only_type_falls_back_to_all()
+    {
+        // Otherwise the grid goes empty with no filter button lit to explain why, and the button
+        // that would undo it has just disappeared.
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image),
+            Workload(RepositoryType.ComfyUI, "LTX-2-3-GGUF", WorkflowType.Video, legacy: true));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => cut.FindAll("[data-role='show-legacy']").Should().ContainSingle());
+        cut.Find("input[data-role='show-legacy']").Change(true);
+        cut.FindAll(".filters button").Single(b => b.TextContent.Trim() == "Video").Click();
+        CardNames(cut).Should().Equal("LTX-2-3-GGUF");
+
+        cut.Find("input[data-role='show-legacy']").Change(false);
+
+        CardNames(cut).Should().Equal("Krea-2-Turbo");
+        cut.Find(".filters .filter-active").TextContent.Trim().Should().Be("All");
+    }
+
+    [Fact]
+    public void Does_not_carry_the_legacy_switch_over_to_another_software()
+    {
+        // Same reset as the type filter's: the switch is per screen, and arriving at another
+        // software is arriving at another screen.
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image),
+            Workload(RepositoryType.ComfyUI, "LTX2 - GGUF - Legacy", WorkflowType.Image, legacy: true),
+            Workload(RepositoryType.Fooocus, "Fooocus-Image", WorkflowType.Image),
+            Workload(RepositoryType.Fooocus, "Fooocus-Video", WorkflowType.Video),
+            Workload(RepositoryType.Fooocus, "Fooocus 1.x", WorkflowType.Image, legacy: true));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => cut.FindAll("[data-role='show-legacy']").Should().ContainSingle());
+        cut.Find("input[data-role='show-legacy']").Change(true);
+
+        cut.Render(p => p.Add(x => x.Software, "Fooocus"));
+
+        cut.WaitForAssertion(() => CardNames(cut).Should().Equal("Fooocus-Image", "Fooocus-Video"));
+        cut.Find("input[data-role='show-legacy']").HasAttribute("checked").Should().BeFalse();
     }
 
     [Fact]
