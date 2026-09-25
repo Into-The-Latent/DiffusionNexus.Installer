@@ -9,15 +9,24 @@ namespace DiffusionNexus.Installer.Core.Gallery;
 /// here would make this UI-agnostic half depend on another project's folder layout. The component
 /// resolves the logo from <see cref="Type"/> (Electron/Services/SoftwareLogos.cs).
 /// </summary>
+/// <param name="Workloads">
+/// Every offered workload, legacy ones included: the workload screen's "Show legacy workloads"
+/// switch reveals them from this list. Everything the card itself says is counted over
+/// <see cref="CurrentWorkloads"/> instead, because that switch starts off.
+/// </param>
 public sealed record SoftwareEntry(
     RepositoryType Type,
     string DisplayName,
     IReadOnlyList<GalleryEntry> Workloads)
 {
-    public int WorkloadCount => Workloads.Count;
+    /// <summary>The workloads the workload screen shows by default: every one not marked legacy.</summary>
+    public IReadOnlyList<GalleryEntry> CurrentWorkloads =>
+        Workloads.Where(e => !e.Workload.IsLegacy).ToList();
 
-    /// <summary>The only workload, when there is exactly one. Null otherwise.</summary>
-    public GalleryEntry? SingleWorkload => Workloads.Count == 1 ? Workloads[0] : null;
+    public int WorkloadCount => CurrentWorkloads.Count;
+
+    /// <summary>The only current workload, when there is exactly one. Null otherwise.</summary>
+    public GalleryEntry? SingleWorkload => CurrentWorkloads.Count == 1 ? CurrentWorkloads[0] : null;
 
     /// <summary>
     /// True when picking this card should open the wizard directly. A screen that asks the user

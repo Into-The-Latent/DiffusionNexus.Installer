@@ -30,24 +30,24 @@ public class WorkloadVisibilityTests
     }
 
     [Fact]
-    public void A_legacy_workload_is_never_offered_in_either_mode()
+    public void A_released_legacy_workload_is_offered()
     {
-        // Legacy is not a build-configuration question: the 1.x wizard hid legacy workloads
-        // unconditionally and only the classic list had the opt-in toggle. This installer has no
-        // such toggle, so legacy is simply not offered.
-        var legacy = Workload(isLegacy: true);
-
-        WorkloadVisibility.ReleaseOnly.IsOffered(legacy).Should().BeFalse();
-        WorkloadVisibility.IncludingNonRelease.IsOffered(legacy).Should().BeFalse();
+        // Offered so the workload screen's "Show legacy workloads" switch has something to reveal
+        // and the install page can open what it reveals. Keeping it out of the DEFAULT view is the
+        // screen's job (SoftwareEntry, SoftwareWorkloads.razor): dropped here, the switch would
+        // have nothing to show and a legacy card's Install would bounce back to the welcome screen.
+        WorkloadVisibility.ReleaseOnly.IsOffered(Workload(isLegacy: true)).Should().BeTrue();
     }
 
     [Fact]
-    public void A_legacy_workload_is_not_rescued_by_being_a_release_config()
+    public void Being_legacy_does_not_get_a_draft_past_the_release_gate()
     {
-        // The catalog's two LTX entries are exactly this shape -- isReleaseConfig true AND
-        // isLegacy true -- so an OR between the two flags would leave them on the ComfyUI card.
-        WorkloadVisibility.ReleaseOnly.IsOffered(Workload(isRelease: true, isLegacy: true))
-            .Should().BeFalse();
+        // Blanck-ComfyUI, Config535 and Qwen-Image-Edit-2511 - Deprecated are legacy AND
+        // unreleased. The switch reveals superseded packs, not drafts.
+        var legacyDraft = Workload(isRelease: false, isLegacy: true);
+
+        WorkloadVisibility.ReleaseOnly.IsOffered(legacyDraft).Should().BeFalse();
+        WorkloadVisibility.IncludingNonRelease.IsOffered(legacyDraft).Should().BeTrue();
     }
 
     [Fact]

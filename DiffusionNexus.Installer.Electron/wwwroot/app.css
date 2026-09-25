@@ -1395,6 +1395,19 @@ progress {
     font-variant-numeric: tabular-nums;
 }
 
+/* Same geometry again. Amber, the app's warning colour: not a fault, but the one chip that says
+   a newer pack has replaced this one. Only on screen with the "Show legacy workloads" switch on. */
+.legacy-chip {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(232, 198, 122, 0.16);
+    color: #e8c67a;
+    white-space: nowrap;
+}
+
 /* The card's action -- Install, or the reason there is none -- sits on the bottom edge, not under
    whatever came last: names wrap to two lines and only some packs have a VRAM line, and a row of
    buttons at four different heights reads as a mess. By position, because the "unavailable" text
@@ -1984,6 +1997,23 @@ progress {
 .switch-text .panel-hint {
     font-weight: 400;
     margin: 0;
+}
+
+/* The workload screen's "Show legacy workloads" switch, at the far end of the type filters' row
+   and speaking at their size. After .switch so it wins on source order. */
+.filters-switch {
+    margin: 0 0 0 auto;
+    align-items: center;
+    font-size: .82rem;
+}
+
+.filters-switch .switch-track {
+    margin-top: 0;
+}
+
+.filters-switch .switch-text {
+    font-weight: 400;
+    color: var(--muted);
 }
 
 /* A panel heading with an action beside it (the Installing panel's "Copy log"). */

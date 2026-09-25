@@ -22,13 +22,15 @@ public class WorkloadCardTests : BunitContext
         string? thumbnailPath = @"C:\catalog\workloads\krea\thumbnail.webp",
         WorkflowType type = WorkflowType.Image,
         string? description = "Text to image plus upscale, tuned for Krea 2 Turbo.",
-        string vramProfiles = "") =>
+        string vramProfiles = "",
+        bool legacy = false) =>
         new(
             new InstallationConfiguration
             {
                 Id = KreaId,
                 Name = "Krea-2-Turbo",
                 WorkflowType = type,
+                IsLegacy = legacy,
                 ThumbnailPath = thumbnailPath,
                 Description = description ?? string.Empty,
                 ConfigurationVersion = 2,
@@ -139,5 +141,23 @@ public class WorkloadCardTests : BunitContext
         var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
 
         cut.FindAll(".vram-chip").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Tags_a_legacy_workload()
+    {
+        // The workload screen's switch puts these next to the packs that replaced them. Sorted
+        // last, but sorting alone does not tell the user which card is the superseded one.
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry(legacy: true)));
+
+        cut.Find(".workload-card-tags .legacy-chip").TextContent.Should().Be("Legacy");
+    }
+
+    [Fact]
+    public void Does_not_tag_a_current_workload()
+    {
+        var cut = Render<WorkloadCard>(p => p.Add(x => x.Entry, Entry()));
+
+        cut.FindAll(".legacy-chip").Should().BeEmpty();
     }
 }

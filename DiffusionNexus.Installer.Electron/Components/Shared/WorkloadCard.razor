@@ -33,6 +33,12 @@
             {
                 <span class="vram-chip">@vram</span>
             }
+            @* Only on screen once the workload screen's "Show legacy workloads" switch is on, next
+               to the packs that superseded it -- this is what tells the two apart. *@
+            @if (Entry.Workload.IsLegacy)
+            {
+                <span class="legacy-chip">Legacy</span>
+            }
         </div>
 
         @if (Entry.IsInstallable)

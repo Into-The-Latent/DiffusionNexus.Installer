@@ -153,6 +153,22 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
+    public void A_legacy_sibling_does_not_make_a_lone_workload_look_picked_from_a_workload_screen()
+    {
+        // The welcome tile counts only current workloads (SoftwareEntry.CurrentWorkloads), so one
+        // current Fooocus pack beside a legacy one still comes straight here from the tile. The
+        // hero has to answer the same question the tile did.
+        var legacy = new InstallationConfiguration { Id = Guid.NewGuid(), Name = "Fooocus 1.x", IsLegacy = true };
+        legacy.Repository.Type = RepositoryType.Fooocus;
+        Register(Workload(), legacy);
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".hero").Should().HaveCount(1);
+        page.FindAll(".hero .workload-version").Should().BeEmpty("the software tile came straight here");
+    }
+
+    [Fact]
     public void The_hero_stays_up_past_the_first_stage()
     {
         // It began as a first-stage greeting. Kept through the question stages it is what makes

@@ -216,10 +216,12 @@
             return;
         }
 
-        // Counted over the same list the welcome screen groups into software cards, so this asks
-        // exactly the question that screen answered: did picking the tile open a workload screen,
-        // or come straight here?
-        _onlyWorkloadOfItsSoftware = workloads.Count(w => w.Repository.Type == workload.Repository.Type) == 1;
+        // Counted the way the welcome screen counts its software cards -- current workloads only,
+        // legacy ones sit behind the workload screen's switch (SoftwareEntry.CurrentWorkloads) -- so
+        // this asks exactly the question that screen answered: did picking the tile open a
+        // workload screen, or come straight here?
+        _onlyWorkloadOfItsSoftware = workloads.Count(w =>
+            w.Repository.Type == workload.Repository.Type && !w.IsLegacy) == 1;
 
         var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload });
 
