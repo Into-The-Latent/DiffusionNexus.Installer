@@ -2925,18 +2925,17 @@ license file is covered by the standard text of its declared license.
 
   MIT            @socket.io/component-emitter 3.1.2
   MIT            @types/cors 2.8.19
-  MIT            @types/node 22.20.3
+  MIT            @types/node 22.20.4
   MIT            @types/ws 8.18.1
   MIT            accepts 1.3.8
   Python-2.0     argparse 2.0.1
-  MIT            base64id 2.0.0
   MIT            builder-util-runtime 9.7.0
   MIT            cookie 0.7.2
   MIT            cors 2.8.6
   MIT            dasherize 2.0.0
   MIT            debug 4.4.3
   MIT            electron-updater 6.8.9
-  MIT            engine.io 6.6.10
+  MIT            engine.io 6.6.11
   MIT            engine.io-parser 5.2.3
   MIT            fs-extra 10.1.0
   ISC            graceful-fs 4.2.11
@@ -2955,7 +2954,7 @@ license file is covered by the standard text of its declared license.
   MIT            queue 6.0.2
   BlueOak-1.0.0  sax 1.6.1
   ISC            semver 7.7.4
-  MIT            socket.io 4.8.3
+  MIT            socket.io 4.8.4
   MIT            socket.io-adapter 2.5.8
   MIT            socket.io-parser 4.2.7
   MIT            tiny-typed-emitter 2.1.0
@@ -3021,7 +3020,7 @@ Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
 --------------------------------------------------------------------------------
 
-### @types/node 22.20.3 - MIT
+### @types/node 22.20.4 - MIT
 Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
     MIT License
@@ -3364,35 +3363,6 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-### base64id 2.0.0 - MIT
-Author: Kristian Faeldt <faeldt_kristian@cyberagent.co.jp>
-Source: https://github.com/faeldt/base64id.git
-
-(The MIT License)
-
-Copyright (c) 2012-2016 Kristian Faeldt <faeldt_kristian@cyberagent.co.jp>
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-'Software'), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
---------------------------------------------------------------------------------
-
 ### builder-util-runtime 9.7.0 - MIT
 Author: Vladimir Krivosheev
 Source: git+https://github.com/electron-userland/electron-builder.git
@@ -3559,7 +3529,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-### engine.io 6.6.10 - MIT
+### engine.io 6.6.11 - MIT
 Author: Guillermo Rauch <guillermo@learnboost.com>
 Source: git+https://github.com/socketio/socket.io.git
 
@@ -4122,7 +4092,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-### socket.io 4.8.3 - MIT
+### socket.io 4.8.4 - MIT
 Source: git+https://github.com/socketio/socket.io.git
 
 (The MIT License)
