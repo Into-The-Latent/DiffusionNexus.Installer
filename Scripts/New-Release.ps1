@@ -127,7 +127,7 @@ Write-Host "  SDK assemblies are byte-identical to the pinned packages" -Foregro
 # committed notices were not regenerated: fix that and commit before releasing.
 Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
 pwsh (Join-Path $repoRoot 'Scripts\Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
-if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run Scripts/Generate-ThirdPartyNotices.ps1, commit, and release again." }
+if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm (this publish output is what it rescans), commit, and release again." }
 
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
 

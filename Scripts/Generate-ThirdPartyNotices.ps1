@@ -276,7 +276,7 @@ $npmCommittedJson = if (Test-Path $npmInventoryPath) { Normalize-Text (Get-Conte
 
 if ($Check) {
     if ($npmFreshJson -and ($npmFreshJson.TrimEnd() -cne $npmCommittedJson.TrimEnd())) {
-        Write-Host "::error::$npmInventoryPath is out of date against the packaged app. Run: pwsh Scripts/Generate-ThirdPartyNotices.ps1 and commit the result."
+        Write-Host "::error::$npmInventoryPath is out of date against the packaged app. Run: pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm and commit the result. Without -RefreshNpm the script reuses this stale inventory."
         exit 1
     }
     $npmInventory = @($npmCommittedJson | ConvertFrom-Json)
