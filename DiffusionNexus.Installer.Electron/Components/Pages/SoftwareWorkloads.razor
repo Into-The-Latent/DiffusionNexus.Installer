@@ -68,7 +68,7 @@
                 @* Off whenever the screen opens, like the 1.x classic list's checkbox it replaces:
                    superseded packs stay installable without crowding the current ones. Only where
                    there is something to reveal -- a switch that changes nothing is a dead control. *@
-                @if (_entry.Workloads.Any(e => e.Workload.IsLegacy))
+                @if (_entry.HasLegacyWorkloads)
                 {
                     <label class="switch filters-switch">
                         <input type="checkbox" role="switch" data-role="show-legacy"
@@ -161,7 +161,11 @@
         }
     }
 
-    /// <summary>What the switch lets on screen, before the type filter narrows it.</summary>
+    /// <summary>
+    /// What the switch lets on screen, before the type filter narrows it. Switched on, the legacy
+    /// packs follow the current ones: GalleryBuilder sorts them last, so the current packs keep
+    /// their places.
+    /// </summary>
     private IReadOnlyList<GalleryEntry> Visible() => _showLegacy ? _entry!.Workloads : _entry!.CurrentWorkloads;
 
     private IEnumerable<GalleryEntry> Filtered() => Visible()

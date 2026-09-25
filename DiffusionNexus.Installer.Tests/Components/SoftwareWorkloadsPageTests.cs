@@ -5,6 +5,7 @@ using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.Tests.Support;
@@ -232,6 +233,26 @@ public class SoftwareWorkloadsPageTests : BunitContext
 
         cut.Find("input[data-role='show-legacy']").Change(false);
         CardNames(cut).Should().Equal("Krea-2-Turbo");
+    }
+
+    [Fact]
+    public void Legacy_workloads_join_after_every_current_one_blocked_or_not()
+    {
+        // Sorting installable-first put an installable legacy pack AHEAD of a blocked current one,
+        // so switching on reshuffled the current packs and parked the legacy group mid-grid.
+        var blocked = Workload(RepositoryType.ComfyUI, "Krea-2-Turbo", WorkflowType.Image);
+        blocked.ModelDownloads.Add(new ModelDownload());
+        Arrange(
+            blocked,
+            Workload(RepositoryType.ComfyUI, "Wan 2.2 - GGUF", WorkflowType.Video),
+            Workload(RepositoryType.ComfyUI, "LTX-2-3-GGUF", WorkflowType.Video, legacy: true));
+
+        var cut = RenderFor("ComfyUI");
+        cut.WaitForAssertion(() => CardNames(cut).Should().Equal("Wan 2.2 - GGUF", "Krea-2-Turbo"));
+
+        cut.Find("input[data-role='show-legacy']").Change(true);
+
+        CardNames(cut).Should().Equal("Wan 2.2 - GGUF", "Krea-2-Turbo", "LTX-2-3-GGUF");
     }
 
     [Fact]

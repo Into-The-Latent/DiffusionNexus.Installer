@@ -1,6 +1,7 @@
 @page "/install/{WorkloadId:guid}"
 @implements IDisposable
 @using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Modules
@@ -11,6 +12,7 @@
 @using DiffusionNexus.Installer.SDK.Models.Enums
 @using DiffusionNexus.Installer.SDK.Services
 @inject IWorkloadSource Workloads
+@inject GalleryBuilder Gallery
 @inject WizardModuleRegistry Registry
 @inject IInstallSession Session
 @inject IUserPrompt Prompt
@@ -145,8 +147,9 @@
     private string? _busyWith;
 
     /// <summary>
-    /// True when this workload is the only one its software offers, so the user reached the wizard
-    /// straight from the welcome tile and never saw a workload screen.
+    /// True when this workload is the only current one its software offers
+    /// (<see cref="SoftwareEntry.SingleWorkload"/>), so the user reached the wizard straight from
+    /// the welcome tile and never saw a workload screen.
     /// </summary>
     private bool _onlyWorkloadOfItsSoftware;
     private EventCallback _moduleChanged;
@@ -216,12 +219,14 @@
             return;
         }
 
-        // Counted the way the welcome screen counts its software cards -- current workloads only,
-        // legacy ones sit behind the workload screen's switch (SoftwareEntry.CurrentWorkloads) -- so
-        // this asks exactly the question that screen answered: did picking the tile open a
-        // workload screen, or come straight here?
-        _onlyWorkloadOfItsSoftware = workloads.Count(w =>
-            w.Repository.Type == workload.Repository.Type && !w.IsLegacy) == 1;
+        // Asked of the welcome screen's own model, not re-counted here: a second copy of "which
+        // workloads count" is how a legacy pack once left itself out of the count and passed for
+        // the tile's lone workload. Built from the workloads already read, so the catalog is read
+        // once; a software with no card (every pack legacy) has no entry and no tile to come from.
+        var software = SoftwareGalleryBuilder
+            .Group(Gallery.Build(workloads.Where(w => w.Repository.Type == workload.Repository.Type)))
+            .SingleOrDefault();
+        _onlyWorkloadOfItsSoftware = software?.SingleWorkload?.Workload.Id == workload.Id;
 
         var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload });
 

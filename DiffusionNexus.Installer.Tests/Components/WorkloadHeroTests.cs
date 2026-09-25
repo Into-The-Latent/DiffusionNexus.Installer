@@ -59,6 +59,28 @@ public class WorkloadHeroTests : BunitContext
     }
 
     [Fact]
+    public void A_legacy_pack_keeps_its_legacy_tag_in_the_hero()
+    {
+        // The card said LEGACY one click ago. Without the chip here nothing from this point to
+        // Confirm says the pack has been superseded -- "LTX-2-3-GGUF" does not say so by its name.
+        var pack = Krea(thumbnailPath: null, vramProfiles: "12,16,24,32");
+        pack.IsLegacy = true;
+
+        var cut = RenderFromWorkloadScreen(pack);
+
+        cut.FindAll(".hero-tags span").Select(s => s.ClassName).Should().Equal("vram-chip", "legacy-chip");
+        cut.Find(".hero-tags .legacy-chip").TextContent.Should().Be("Legacy");
+    }
+
+    [Fact]
+    public void A_current_pack_has_no_legacy_tag_in_the_hero()
+    {
+        var cut = RenderFromWorkloadScreen(Krea(thumbnailPath: null, vramProfiles: "8,12"));
+
+        cut.FindAll(".legacy-chip").Should().BeEmpty();
+    }
+
+    [Fact]
     public void A_software_reached_from_its_tile_shows_no_version()
     {
         // One workload, one tile: there is no "which revision of which pack" to answer.

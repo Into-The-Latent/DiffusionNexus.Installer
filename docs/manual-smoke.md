@@ -207,8 +207,10 @@ public 3.x release. Slice 1 is run from a dev build.
    released legacy packs join the end of the grid, each with an amber LEGACY tag — against the
    current stable catalog LTX-2-3-GGUF, LTX2 - GGUF - Legacy and Qwen-Image-Edit-2511 - 2512 -
    Layered (the embedded seed has only the first two). Turn it off. **Expect:** back to the 10.
-   Turn it on again and Install a legacy pack. **Expect:** its wizard opens like any other ComfyUI
-   pack's, its own artwork and version in the hero. Go back to `/` and pick ComfyUI again.
+   The ten current cards keep their order; the legacy ones only follow them. Turn it on again and
+   Install a legacy pack. **Expect:** its wizard opens like any other ComfyUI pack's, its own
+   artwork and version in the hero, and the amber LEGACY chip beside its VRAM chip. The chip is
+   still there on Confirm, where the hero shrinks. Go back to `/` and pick ComfyUI again.
    **Expect:** the switch is off again — it is never remembered. The legacy packs that are also
    drafts (Blanck-ComfyUI, Config535, Qwen-Image-Edit-2511 - Deprecated) never appear in a Release
    build, switch or not.

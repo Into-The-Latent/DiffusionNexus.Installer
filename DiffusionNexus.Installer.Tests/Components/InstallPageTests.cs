@@ -1,6 +1,7 @@
 using Bunit;
 using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Content;
+using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
@@ -68,6 +69,8 @@ public class InstallPageTests : BunitContext
         session.SetupGet(s => s.ReportRows).Returns([]);
 
         Services.AddSingleton(source.Object);
+        // The page asks the software's SoftwareEntry whether its tile came straight here.
+        Services.AddSingleton<GalleryBuilder>();
         Services.AddSingleton(session.Object);
 
         var preflight = new Mock<IModelPreflight>();
@@ -166,6 +169,24 @@ public class InstallPageTests : BunitContext
 
         page.FindAll(".hero").Should().HaveCount(1);
         page.FindAll(".hero .workload-version").Should().BeEmpty("the software tile came straight here");
+    }
+
+    [Fact]
+    public void A_legacy_pack_beside_one_current_pack_still_looks_picked_from_the_workload_screen()
+    {
+        // The other half of the test above. Counting current workloads left the legacy pack out of
+        // its own software's count, so a single current sibling made the legacy pack read as the
+        // tile's lone workload: software logo, no version. No tile leads to a legacy pack; only the
+        // workload screen's switch does.
+        var legacy = Workload("Fooocus 1.x");
+        legacy.IsLegacy = true;
+        var current = new InstallationConfiguration { Id = Guid.NewGuid(), Name = "Fooocus" };
+        current.Repository.Type = RepositoryType.Fooocus;
+        Register(legacy, current);
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.FindAll(".hero .workload-version").Should().HaveCount(1, "the switch on the workload screen came here");
     }
 
     [Fact]
@@ -418,6 +439,8 @@ public class InstallPageTests : BunitContext
             .ReturnsAsync(new DiskSpaceEstimate(1, 2, true, []));
 
         Services.AddSingleton(source.Object);
+        // The page asks the software's SoftwareEntry whether its tile came straight here.
+        Services.AddSingleton<GalleryBuilder>();
         Services.AddSingleton(session.Object);
         Services.AddSingleton(preflight.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());

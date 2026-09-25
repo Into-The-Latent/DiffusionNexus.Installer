@@ -45,9 +45,22 @@
         @* One line and a no-break space: the version wraps with the name's last word. *@
         <h1 class="hero-name">@(Workload.Name)@if (FromWorkloadScreen) {<text>&nbsp;</text><span class="workload-version">@WorkloadVersion.Display(Workload)</span>}</h1>
 
-        @if (FromWorkloadScreen && VramTiers.RangeText(Workload.Vram.VramProfiles) is { } vram)
+        @* The legacy chip too: it is the card's warning that a newer pack replaced this one, and
+           nothing else from here to Confirm says so -- a legacy pack's name need not. *@
+        @{ var vram = FromWorkloadScreen ? VramTiers.RangeText(Workload.Vram.VramProfiles) : null; }
+        @{ var legacy = FromWorkloadScreen && Workload.IsLegacy; }
+        @if (vram is not null || legacy)
         {
-            <p class="hero-tags"><span class="vram-chip">@vram</span></p>
+            <p class="hero-tags">
+                @if (vram is not null)
+                {
+                    <span class="vram-chip">@vram</span>
+                }
+                @if (legacy)
+                {
+                    <span class="legacy-chip">Legacy</span>
+                }
+            </p>
         }
 
         @* Compact (the Confirm stage): the picture and the name still say WHAT is about to be

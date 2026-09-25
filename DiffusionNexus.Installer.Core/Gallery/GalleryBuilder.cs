@@ -1,5 +1,6 @@
 using DiffusionNexus.Installer.Core.Catalog;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Models.Configuration;
 
 namespace DiffusionNexus.Installer.Core.Gallery;
 
@@ -9,11 +10,15 @@ namespace DiffusionNexus.Installer.Core.Gallery;
 /// </summary>
 public sealed class GalleryBuilder(IWorkloadSource source, WizardModuleRegistry registry)
 {
-    public async Task<IReadOnlyList<GalleryEntry>> BuildAsync(CancellationToken ct = default)
-    {
-        var workloads = await source.GetInstallerWorkloadsAsync(ct).ConfigureAwait(false);
+    public async Task<IReadOnlyList<GalleryEntry>> BuildAsync(CancellationToken ct = default) =>
+        Build(await source.GetInstallerWorkloadsAsync(ct).ConfigureAwait(false));
 
-        return workloads
+    /// <summary>
+    /// The same cards from workloads the caller has already read, so a page that needs both the
+    /// workloads and the cards made from them reads the catalog once.
+    /// </summary>
+    public IReadOnlyList<GalleryEntry> Build(IEnumerable<InstallationConfiguration> workloads) =>
+        workloads
             .Select(w =>
             {
                 var needed = WorkloadCapabilities.DetectBlocking(w);
@@ -27,10 +32,12 @@ public sealed class GalleryBuilder(IWorkloadSource source, WizardModuleRegistry 
                 // registry.IsInstallable is the single answer; the two values above only explain it.
                 return new GalleryEntry(w, registry.IsInstallable(w), missing, incompatibility);
             })
-            .OrderByDescending(e => e.IsInstallable)
-            .ThenBy(e => e.Workload.IsLegacy)
+            // Legacy before installability: the workload screen's switch appends the legacy packs
+            // to the current ones, so it must not reorder the current packs when it does -- which
+            // it would if an installable legacy pack outranked a blocked current one.
+            .OrderBy(e => e.Workload.IsLegacy)
+            .ThenByDescending(e => e.IsInstallable)
             .ThenByDescending(e => e.Workload.IsReleaseConfig)
             .ThenBy(e => e.Workload.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
-    }
 }
