@@ -76,7 +76,7 @@ public sealed class RealCatalogVisibilityTests : IAsyncLifetime
         Offered(WorkloadVisibility.ReleaseOnly)
             .Where(w => w.IsLegacy)
             .Select(w => w.Name)
-            .Should().BeEquivalentTo("LTX-2-3-GGUF", "LTX2 - GGUF - Legacy");
+            .Should().BeEquivalentTo("LTX-2-3-GGUF", "LTX2 - GGUF - Legacy", "Qwen-Image-Edit-2511 - 2512 - Layered");
     }
 
     [Fact]

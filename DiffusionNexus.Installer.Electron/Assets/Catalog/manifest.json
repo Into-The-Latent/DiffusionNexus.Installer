@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "catalogVersion": 4,
+  "catalogVersion": 5,
   "channel": "Stable",
-  "commit": "443deafd39a0f7c79cce0648523e2663f524549a",
-  "generatedAt": "2026-09-18T14:54:15.9944593+00:00",
+  "commit": "51e1684cfa48d22344e82e7037e8e97018be72bd",
+  "generatedAt": "2026-09-25T14:15:43.8266732+00:00",
   "archive": {
     "name": "catalog.zip",
-    "sha256": "ae635f719d54463a0e341fa1343d326b110a3a5192f427e7cbaa4bc629ce17b7",
-    "bytes": 1771761
+    "sha256": "e7d3ee7a4d63d9b7d96ad562444ac265f968d71089aa0136afd055ce67711e18",
+    "bytes": 1846573
   },
   "workloads": [
     {
@@ -110,9 +110,9 @@
       "id": "725ffdfb-22b6-436f-905a-ce678bda287d",
       "name": "Qwen-Image-Edit-2511 - 2512 - Layered",
       "version": 2,
-      "subVersion": 1,
+      "subVersion": 2,
       "isReleaseConfig": true,
-      "hash": "3ee5ee7c6db44ee90738dac3e43b752e6888c854e21a404f68e16d30597dd2c1"
+      "hash": "011e633fe18dcb9abdf5927954934e3cd87e9756850fc540ff91aca2acc211ee"
     },
     {
       "id": "737be0cb-5349-4d18-a058-82ea3ef61aae",
@@ -177,6 +177,14 @@
       "subVersion": 0,
       "isReleaseConfig": true,
       "hash": "14d51b5a2366308f8b7c0171e5937a7c9533e8e5e412fb0ffb12edd99a5402cd"
+    },
+    {
+      "id": "c56c7ff7-3ca0-4420-bc72-a1ac6f537824",
+      "name": "Qwen-Image-2.1",
+      "version": 1,
+      "subVersion": 2,
+      "isReleaseConfig": true,
+      "hash": "d6250005b9478b3bf8dde0dc5da4029e8d3821b9f4d0b1b5a4c8619075625a4a"
     },
     {
       "id": "e358f5aa-5204-4c5f-a1ed-266265c1f413",
@@ -274,6 +282,16 @@
       "hash": "34e0b05dff7f34d904722445915e6fe97e0741390651a92cbcb7350af9ed6c9f"
     },
     {
+      "id": "589b0ba3-00a4-4073-807b-1d30d556e9b3",
+      "name": "Qwen2-1- 3. Text 2 Image \u002B OpenPose by IntoTheLatent",
+      "version": 1,
+      "subVersion": 2,
+      "workloads": [
+        "c56c7ff7-3ca0-4420-bc72-a1ac6f537824"
+      ],
+      "hash": "ca59ae3e8fdaf2987e946aedae6f0f954e6ed59eaf80b10dbfe7d45f097b58cb"
+    },
+    {
       "id": "63436b9f-8cb9-4c24-adbf-d7c8f3109eff",
       "name": "Qwen_image_edit_2511-By AIKnowledge2Go",
       "version": 1,
@@ -283,6 +301,16 @@
         "725ffdfb-22b6-436f-905a-ce678bda287d"
       ],
       "hash": "c47c91221c3dd6a7fb364002644d6f53d917c800884474c190f43e0a379c5fc7"
+    },
+    {
+      "id": "67333b63-66d4-49a3-8256-b243d4668183",
+      "name": "Qwen2-1- 1. Text 2 Image by IntoTheLatent",
+      "version": 1,
+      "subVersion": 1,
+      "workloads": [
+        "c56c7ff7-3ca0-4420-bc72-a1ac6f537824"
+      ],
+      "hash": "44ec2d26b5a91bc3fc895c9ca0f70b24aa09f0c45523b16b48dfae039a2f505d"
     },
     {
       "id": "67ed1c80-9af6-44dd-ba65-916cc1204398",
@@ -354,6 +382,16 @@
         "725ffdfb-22b6-436f-905a-ce678bda287d"
       ],
       "hash": "4c71cc76c489f763e9a15b005787a84bd4c6c1e56f124a4972ab8dc5af568bbe"
+    },
+    {
+      "id": "858c0909-c1b9-4a27-8268-e9e32392f1aa",
+      "name": "Qwen2-1- 2. Image-edit by IntoTheLatent",
+      "version": 1,
+      "subVersion": 1,
+      "workloads": [
+        "c56c7ff7-3ca0-4420-bc72-a1ac6f537824"
+      ],
+      "hash": "43d93bcb28b14f9c6ef5ef8cfecceccb0e8eb5266a80c236fedfbca9d95e8590"
     },
     {
       "id": "86627cff-f0be-421a-bd67-f514470d4f80",

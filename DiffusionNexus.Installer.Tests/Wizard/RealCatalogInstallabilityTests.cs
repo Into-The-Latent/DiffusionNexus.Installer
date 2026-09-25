@@ -48,6 +48,7 @@ public sealed class RealCatalogInstallabilityTests : IAsyncLifetime
         "LTX-2-3-V1.1-Director-GGUF",
         "LTX2 - GGUF - Legacy",
         "MiniMax H3",
+        "Qwen-Image-2.1",
         "Qwen-Image-Edit-2511 - 2512 - Layered",
         "Qwen-Image-Edit-2511 - Deprecated",
         "Wan 2.2 - GGUF",
@@ -121,7 +122,7 @@ public sealed class RealCatalogInstallabilityTests : IAsyncLifetime
     ]);
 
     [Fact]
-    public async Task Exactly_twenty_of_the_twenty_one_installer_workloads_are_installable()
+    public async Task Exactly_twenty_one_of_the_twenty_two_installer_workloads_are_installable()
     {
         var workloads = (await ReadCatalogWorkloadsAsync())
             .Where(w => w.WorkloadTarget == WorkloadTargetType.Installer)
@@ -134,7 +135,7 @@ public sealed class RealCatalogInstallabilityTests : IAsyncLifetime
         var blocked = workloads.Where(w => !registry.IsInstallable(w)).Select(w => w.Name).ToList();
 
         installable.Should().BeEquivalentTo(ExpectedInstallableNames,
-            "these are the twenty Installer-targeted workloads slice 2's modules cover");
+            "these are the twenty-one Installer-targeted workloads slice 2's modules cover");
         blocked.Should().BeEquivalentTo(workloads.Select(w => w.Name).Except(ExpectedInstallableNames),
             "Config535 must be blocked, not silently allowed");
         blocked.Should().Equal("Config535");
