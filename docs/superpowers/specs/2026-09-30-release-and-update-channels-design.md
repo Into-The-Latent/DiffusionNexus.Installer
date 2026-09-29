@@ -1,6 +1,6 @@
 # Release and update channels — design
 
-Date: 2026-09-30. Status: agreed in conversation, awaiting owner review of this document.
+Date: 2026-09-30. Status: approved by the owner 2026-09-30. Issues filed: installer #37, #38, #30 (rewritten), #39, #36; SDK #71; catalog #3. #29 closed (its PR was #33). SDK `v2.0.0` tagged.
 
 Supersedes the "Preview" handling in installer issues #29 and #30 (their validated plans are
 reused where this document says so). Follow-up, deliberately not part of this: #36 (apply
@@ -277,13 +277,13 @@ document's section 5 as its body.
 
 | # | Repo | Scope | Depends on |
 |---|---|---|---|
-| 1 | Installer | Release gates, SDK half: `Test-SdkPin.ps1`, `ReleaseAccount.ps1`, every precondition before the version write, `--build-info` + `build-info.json` with `app`/`sdk`/`catalogSchema`, tests in CI, README | SDK tag `v2.0.0` |
-| 2 | Installer | Release gates, catalog half: `Test-CatalogSeed.ps1`, `Update-CatalogSeed.ps1`, `catalogSeed` in `build-info.json`, notes lines, tests | 1 |
-| 3 | Installer (#30) | `Promote-Release.ps1` reading the asset and rerunning both gates | 2 |
-| 4 | Installer | Channel switch applies the channel's catalog with the warning (7.1) + install names its catalog (7.2) | SDK 2.1.0 |
+| 1 (#37) | Installer | Release gates, SDK half: `Test-SdkPin.ps1`, `ReleaseAccount.ps1`, every precondition before the version write, `--build-info` + `build-info.json` with `app`/`sdk`/`catalogSchema`, tests in CI, README | SDK tag `v2.0.0` |
+| 2 (#38) | Installer | Release gates, catalog half: `Test-CatalogSeed.ps1`, `Update-CatalogSeed.ps1`, `catalogSeed` in `build-info.json`, notes lines, tests | 1 |
+| 3 (#30) | Installer | `Promote-Release.ps1` reading the asset and rerunning both gates | 2 |
+| 4 (#39) | Installer | Channel switch applies the channel's catalog with the warning (7.1) + install names its catalog (7.2) | SDK 2.1.0 |
 | — | SDK | Tag `v2.0.0` (no code) | — |
-| S1 | SDK | `CheckAsync(CatalogChannel, ct)` overload + CLAUDE.md note "no channels, plain semver"; tag `v2.1.0` | — |
-| C1 | Catalog | Ordering gate in both workflows; tracked by an issue there, delivered as a direct commit on `main` | one release from 2 |
+| S1 (SDK #71) | SDK | `CheckAsync(CatalogChannel, ct)` overload + CLAUDE.md note "no channels, plain semver"; tag `v2.1.0` | — |
+| C1 (Catalog #3) | Catalog | Ordering gate in both workflows; tracked by an issue there, delivered as a direct commit on `main` | one release from 2 |
 | #36 | Installer | Automatic apply setting, off by default | later |
 
 Branches: `feature/release-gates-sdk`, `feature/release-gates-catalog`,
