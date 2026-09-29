@@ -64,8 +64,8 @@ called "preview".
   `2.0.0` exists. It would keep working either way.
 - The installer's release script already compares packaged DLLs by hash, not version string,
   precisely because a local SDK build stamps `2.0.0+<sha>`. Nothing to add.
-- The SDK repo's `CLAUDE.md` gets a note ("no channels, plain semver, see this spec") in the next
-  SDK PR that happens anyway.
+- The SDK repo's `CLAUDE.md` gets a note ("no channels, plain semver, see this spec") in the
+  SDK PR for section 7.1's overload (issue S1 in section 8).
 
 ## 4. Release-time gates in the installer
 
@@ -224,8 +224,11 @@ Today the radio saves the preference and runs a check; the page then says "Catal
 available on Stable" with an Apply button, and the other channel's content stays until clicked.
 New flow in `CatalogUpdateCoordinator`, surfaced on `/updates`:
 
-1. **Preview the switch.** Run a check against the *target* channel without saving anything
-   (`CatalogOptions.Channel` is set for the check and restored). The diff the SDK already
+1. **Preview the switch.** Run a check against the *target* channel without saving anything.
+   The SDK gets `ICatalogUpdateService.CheckAsync(CatalogChannel channel, ct)`; the existing
+   overload keeps reading `CatalogOptions.Channel`. The coordinator never flips the shared option
+   for a preview. `ApplyAsync` already takes the channel from the check it is given, so applying
+   a target-channel check downloads from and stamps that channel. The diff the SDK already
    computes says what the switch would change.
 2. **Warn before, not after** (standing rule: content warnings come before the action). When the
    diff removes or changes anything, show it before the switch:
@@ -277,9 +280,10 @@ document's section 5 as its body.
 | 1 | Installer | Release gates, SDK half: `Test-SdkPin.ps1`, `ReleaseAccount.ps1`, every precondition before the version write, `--build-info` + `build-info.json` with `app`/`sdk`/`catalogSchema`, tests in CI, README | SDK tag `v2.0.0` |
 | 2 | Installer | Release gates, catalog half: `Test-CatalogSeed.ps1`, `Update-CatalogSeed.ps1`, `catalogSeed` in `build-info.json`, notes lines, tests | 1 |
 | 3 | Installer (#30) | `Promote-Release.ps1` reading the asset and rerunning both gates | 2 |
-| 4 | Installer | Channel switch applies the channel's catalog with the warning (7.1) + install names its catalog (7.2) | — |
-| — | SDK | Tag `v2.0.0`; CLAUDE.md note rides in the next SDK PR | — |
-| — | Catalog | Ordering gate in both workflows, direct commit on `main` | one release from 2 |
+| 4 | Installer | Channel switch applies the channel's catalog with the warning (7.1) + install names its catalog (7.2) | SDK 2.1.0 |
+| — | SDK | Tag `v2.0.0` (no code) | — |
+| S1 | SDK | `CheckAsync(CatalogChannel, ct)` overload + CLAUDE.md note "no channels, plain semver"; tag `v2.1.0` | — |
+| C1 | Catalog | Ordering gate in both workflows; tracked by an issue there, delivered as a direct commit on `main` | one release from 2 |
 | #36 | Installer | Automatic apply setting, off by default | later |
 
 Branches: `feature/release-gates-sdk`, `feature/release-gates-catalog`,
