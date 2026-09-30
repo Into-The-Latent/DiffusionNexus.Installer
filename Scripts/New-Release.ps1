@@ -41,8 +41,16 @@
     a suffixed version (3.1.0-beta.1) flips electron-updater into matching releases by that
     suffix and makes the installed app accept pre-releases whatever its channel setting says.
 
-    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries:
+    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries. Today that is
+    the gh command below; Promote-Release.ps1 (issue #30) will check the SDK pin and the catalog
+    seed against what is current first.
         gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
+
+.PARAMETER AllowOlderSdk
+    Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
+    version does not contain - a deliberate hold-back, such as a Stable hotfix while newer SDK work
+    is meant for Preview only. The commits left out are still listed. It does not override a check
+    that could not run (no SDK checkout, a failed fetch, pins that disagree).
 
 .EXAMPLE
     .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "Fixes the shortcut launch."
@@ -55,7 +63,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$Notes = "",
     [switch]$SkipUpload,
-    [switch]$Prerelease
+    [switch]$Prerelease,
+    [switch]$AllowOlderSdk
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,21 +77,52 @@ $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
 # directly below and does not read that property.
 $electronVersion = '42.4.1'
 
+# ---------------------------------------------------------------------------------------- Step 0
+# Everything here runs BEFORE this script changes anything on disk. A refusal leaves the working
+# tree exactly as it was: no version write, no cleared publish folder.
+
+# Step 0a. A release must be built from the PUBLISHED SDK packages, never from a local checkout.
+# Directory.Build.targets auto-enables UseLocalSDK whenever E:\Repos\DiffusionNexus.Installer.SDK
+# exists - and it exists on every dev machine here - so without this pin a release silently embeds
+# whatever branch the SDK repo happens to have checked out, and cannot be reproduced from a clean
+# clone. Pinned explicitly rather than left to the environment, because a User-scope
+# UseLocalSDK=true survives shells and would otherwise win. The token is what that restore needs.
+Write-Host "Step 0a: the packages token is present" -ForegroundColor Cyan
+if (-not $env:GITHUB_PACKAGES_TOKEN) {
+    throw "GITHUB_PACKAGES_TOKEN is not set. The release build restores the SDK from GitHub Packages (see nuget.config) and would fail the restore. Nothing was built or changed."
+}
+
+# Step 0b. The upload at the very end needs write access to the repo, and the everyday gh account
+# may only have read access - v3.0.10's first upload failed that way, after the whole build. Find a
+# signed-in account that can publish now; only the upload gets its token, the active account stays.
+. (Join-Path $PSScriptRoot 'ReleaseAccount.ps1')
+if (-not $SkipUpload) {
+    Write-Host "Step 0b: a signed-in gh account can publish to $ghRepo" -ForegroundColor Cyan
+    $releaseToken = Resolve-ReleaseToken $ghRepo
+    if (-not $releaseToken) { throw "$(Get-NoReleaseAccountMessage $ghRepo) Nothing was built or changed." }
+}
+
+# Step 0c. A release must not leave out SDK work that is already on the SDK's develop branch:
+# v3.0.9 shipped SDK 2.0.0-preview.8 the day after preview.9 (the Manager-aware Update-ComfyUI.bat)
+# was published, because nothing compared the pin with the SDK.
+Write-Host "Step 0c: the SDK pin includes everything on SDK develop" -ForegroundColor Cyan
+pwsh -NoProfile -File (Join-Path $repoRoot 'Scripts\Test-SdkPin.ps1')
+switch ($LASTEXITCODE) {
+    0 { }
+    3 {
+        if (-not $AllowOlderSdk) {
+            throw "The SDK pin is behind SDK develop (listed above). Bump it, or re-run with -AllowOlderSdk to release without those commits on purpose. Nothing was built or changed."
+        }
+        Write-Warning "Releasing WITHOUT the SDK commits listed above (-AllowOlderSdk)."
+    }
+    default { throw "The SDK pin could not be checked (see above). Nothing was built or changed." }
+}
+
 Write-Host "Setting version to $Version" -ForegroundColor Cyan
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
 $props = Get-Content $propsPath -Raw
 $props = $props -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$Version</Version>"
 Set-Content $propsPath $props -NoNewline
-
-# A release must be built from the PUBLISHED SDK packages, never from a local checkout.
-# Directory.Build.targets auto-enables UseLocalSDK whenever E:\Repos\DiffusionNexus.Installer.SDK
-# exists - and it exists on every dev machine here - so without this pin a release silently embeds
-# whatever branch the SDK repo happens to have checked out, and cannot be reproduced from a clean
-# clone. Pinned explicitly rather than left to the environment, because a User-scope
-# UseLocalSDK=true survives shells and would otherwise win.
-if (-not $env:GITHUB_PACKAGES_TOKEN) {
-    throw "GITHUB_PACKAGES_TOKEN is not set. The release build restores the SDK from GitHub Packages (see nuget.config) and would fail the restore."
-}
 
 # Publish copies a file only when the source is NEWER than the copy already in the publish folder.
 # A package DLL keeps its older packed timestamp, so SDK DLLs left over from an earlier local-SDK
@@ -107,6 +147,9 @@ if (-not (Test-Path $globalPackages)) { throw "Could not resolve the NuGet globa
 $csproj = [xml](Get-Content (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
 $sdkRefs = @($csproj.Project.ItemGroup.PackageReference | Where-Object { $_.Include -like 'DiffusionNexus.Installer.SDK.*' })
 if ($sdkRefs.Count -eq 0) { throw "No SDK PackageReferences found in the Electron csproj." }
+$sdkPin = @($sdkRefs | Select-Object -ExpandProperty Version -Unique)
+if ($sdkPin.Count -ne 1) { throw "The Electron csproj pins more than one SDK version: $($sdkPin -join ', ')" }
+$sdkPin = $sdkPin[0]
 foreach ($ref in $sdkRefs) {
     $dll = Join-Path $publish "bin\$($ref.Include).dll"
     if (-not (Test-Path $dll)) { throw "Packaged SDK assembly missing: $dll" }
@@ -128,6 +171,23 @@ Write-Host "  SDK assemblies are byte-identical to the pinned packages" -Foregro
 Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
 pwsh (Join-Path $repoRoot 'Scripts\Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
 if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm (this publish output is what it rescans), commit, and release again." }
+
+# Step 1c: build-info.json. The PACKAGED app is asked what it contains, so the asset is what the
+# binary says, not what this script assumed - and the answer has to agree with what Step 0
+# checked, or this is a build that does not contain what was checked. Promote-Release.ps1 and the
+# catalog repo's schema gate read this asset; nothing reads the release notes back.
+Write-Host "Step 1c: build-info.json from the packaged app" -ForegroundColor Cyan
+$entryPoint = Join-Path $publish 'bin\DiffusionNexus.Installer.Electron.exe'
+if (-not (Test-Path $entryPoint)) { throw "Packaged entry point missing: $entryPoint" }
+$buildInfoText = (& $entryPoint --build-info | ForEach-Object { "$_" }) -join "`n"
+if ($LASTEXITCODE -ne 0) { throw "The packaged app did not answer --build-info (exit $LASTEXITCODE):`n$buildInfoText" }
+try { $buildInfo = $buildInfoText | ConvertFrom-Json }
+catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
+if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
+if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
+$buildInfoPath = Join-Path $publish 'build-info.json'
+Set-Content $buildInfoPath $buildInfoText -Encoding utf8 -NoNewline
+Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog schema $($buildInfo.catalogSchema)" -ForegroundColor Green
 
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
 
@@ -172,19 +232,24 @@ if ($SkipUpload) { Write-Host "SkipUpload set - done." -ForegroundColor Yellow; 
 $channelName = if ($Prerelease) { 'Preview (GitHub pre-release)' } else { 'Stable (full release)' }
 Write-Host "Step 3/3: publishing v$Version to $ghRepo on $channelName" -ForegroundColor Cyan
 $setup = Join-Path $publish "EasyWorkloadInstaller-ITL-Setup-$Version.exe"
-foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'))) {
+foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'), $buildInfoPath)) {
     if (-not (Test-Path $f)) { throw "Expected artifact missing: $f" }
 }
+# The notes end with what the build contains, generated from the same data as build-info.json.
+# Human lines only; nothing reads them back.
+$sdkLine = "Built with Installer SDK $($buildInfo.sdk)"
+$notesWithBuild = if ($Notes.Trim()) { "$($Notes.TrimEnd())`n`n$sdkLine" } else { $sdkLine }
 # latest.yml for both channels: electron-updater reads it for any tag without a suffix, even
 # with allowPrerelease set, so a Preview build needs no separately named channel file and a
 # promoted one is already complete.
-$ghArgs = @('release', 'create', "v$Version", $setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'),
-            '--repo', $ghRepo, '--title', $Version, '--notes', $Notes)
+$ghArgs = @('release', 'create', "v$Version", $setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'), $buildInfoPath,
+            '--repo', $ghRepo, '--title', $Version, '--notes', $notesWithBuild)
 if ($Prerelease) { $ghArgs += '--prerelease' }
-gh @ghArgs
-if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+# Under the token Step 0b resolved: the active gh account may be read-only here.
+Invoke-WithGhToken $releaseToken { gh @ghArgs }
+if ($LASTEXITCODE -ne 0) { throw "gh release create failed (see gh's output above). The release was not created." }
 
 Write-Host "Released v$Version on $channelName" -ForegroundColor Green
 if ($Prerelease) {
-    Write-Host "Promote it to Stable with: gh release edit v$Version --repo $ghRepo --prerelease=false --latest" -ForegroundColor Yellow
+    Write-Host "Promote it to Stable, once the pin and the seed are still current: gh release edit v$Version --repo $ghRepo --prerelease=false --latest (Promote-Release.ps1 will do these checks; issue #30)" -ForegroundColor Yellow
 }

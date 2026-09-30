@@ -12,6 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The release scripts' own tests (Scripts/Tests). They build throwaway git repos and fake gh,
+      # so they need neither the private SDK repo nor the packages token - nor .NET, so they run first.
+      - name: Release script tests
+        shell: pwsh
+        run: |
+          $failed = 0
+          foreach ($test in Get-ChildItem Scripts/Tests -Filter *.Tests.ps1) {
+            pwsh -NoProfile -File $test.FullName
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          exit $failed
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
