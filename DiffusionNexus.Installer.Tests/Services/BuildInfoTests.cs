@@ -37,6 +37,16 @@ public class BuildInfoTests
     }
 
     [Fact]
+    public void Without_an_assembly_file_builtAt_is_null_not_now()
+    {
+        // A single-file publish or an assembly loaded from bytes has no Location. The stamp is then absent,
+        // not the moment --build-info happened to run: promotion reads this asset as fact.
+        BuildInfo.Create(assemblyLocation: "").BuiltAt.Should().BeNull();
+        BuildInfo.Create(Path.Combine(Path.GetTempPath(), "does-not-exist.dll")).BuiltAt.Should().BeNull();
+        BuildInfo.Create(typeof(BuildInfo).Assembly.Location).BuiltAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public void The_json_is_one_object_with_the_release_scripts_property_names()
     {
         // New-Release.ps1 reads .app, .sdk and .catalogSchema from this text with ConvertFrom-Json,

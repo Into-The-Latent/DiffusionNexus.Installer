@@ -38,13 +38,51 @@ Test-Case 'behind, mixed: counts what a tag ships and what is unreleased' {
                   'Released in v2.0.0-preview.2: 1. In no tagged SDK release yet: 1.'
 }
 
-Test-Case 'changes that do not ship never count: tests, the dn-catalog tool, docs, root props' {
+Test-Case 'changes that do not ship never count: tests, the dn-catalog tool, docs, a version-only props bump' {
     $f = New-SdkFixture
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Tests/ServiceTests.cs' 'test: more tests'
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Catalog.Tool/Program.cs' 'feat: dn-catalog change'
-    Add-SdkCommit $f 'Directory.Build.props' 'build: version bump'
+    Add-SdkCommit $f 'Directory.Build.props' 'build: version bump' -Content (New-SdkProps '2.0.0-preview.2')
     Add-SdkCommit $f 'docs/notes.md' 'docs: note'
     Assert-Result (Invoke-SdkPinCheck $f) 0
+}
+
+Test-Case 'a root build file change that is not a version bump counts: MSBuild imports it into every package' {
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'Directory.Build.props' 'build: language version' -Content (New-SdkProps '2.0.0-preview.1' -Extra '<LangVersion>latest</LangVersion>')
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'build: language version'
+    $g = New-SdkFixture
+    Add-SdkCommit $g 'Directory.Packages.props' 'build: central pin' -Content '<Project><ItemGroup><PackageVersion Include="X" Version="1" /></ItemGroup></Project>'
+    Assert-Result (Invoke-SdkPinCheck $g) 3 -Contains 'build: central pin'
+}
+
+Test-Case 'a tag the SDK moved (re-published after a failed publish) is taken from the remote, not refused' {
+    # git 2.20+ refuses a plain --tags fetch that would move a local tag ("would clobber existing tag"),
+    # and a refused fetch is exit 2, which nothing overrides. Only the remote's tags matter here.
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: republished'
+    Invoke-FixtureGit $f.Author @('tag', '--force', '--annotate', 'v2.0.0-preview.1', '-m', 'moved')
+    Invoke-FixtureGit $f.Author @('push', '--quiet', '--force', 'origin', 'v2.0.0-preview.1')
+    Assert-Result (Invoke-SdkPinCheck $f) 0 -Lacks 'would clobber'
+}
+
+Test-Case 'a newer SDK major that ships the commits is named: tags are not limited to the pin''s major' {
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'feat!: breaking change'
+    Add-SdkTag $f '3.0.0'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'All of them ship in v3.0.0 -> bump the SDK references to 3.0.0.'
+}
+
+Test-Case 'a candidate folder that exists but is not a git checkout is skipped, not fatal' {
+    $f = New-SdkFixture
+    $notGit = Join-Path $f.Root 'notgit'
+    New-Item -ItemType Directory -Path $notGit | Out-Null
+    # The second candidate, <RepoRoot>\..\DiffusionNexus.Installer.SDK, is a real clone here.
+    Invoke-FixtureGit $f.Root @('clone', '--quiet', $f.Remote, (Join-Path $f.Root 'DiffusionNexus.Installer.SDK'))
+    $saved = $env:LocalSDKPath
+    $env:LocalSDKPath = $notGit
+    try { Assert-Result (Invoke-SdkPinCheck $f -NoSdkPath) 0 -Contains 'includes everything' }
+    finally { $env:LocalSDKPath = $saved }
 }
 
 Test-Case 'a commit that touches a package and its tests is listed once' {

@@ -46,6 +46,10 @@
     seed against what is current first.
         gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
 
+.PARAMETER RepoRoot
+    The installer repo to release from. Defaults to the folder above this script;
+    Scripts/Tests/New-Release.Tests.ps1 points it at a fixture to test the gates.
+
 .PARAMETER AllowOlderSdk
     Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
     version does not contain - a deliberate hold-back, such as a Stable hotfix while newer SDK work
@@ -64,11 +68,17 @@ param(
     [string]$Notes = "",
     [switch]$SkipUpload,
     [switch]$Prerelease,
-    [switch]$AllowOlderSdk
+    [switch]$AllowOlderSdk,
+    [string]$RepoRoot
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path $PSScriptRoot -Parent
+# The gates below answer with exit codes (3 = behind, 2 = not checked) that this script reads. A
+# profile that turns native exit codes into errors would throw on the first "no" before the
+# -AllowOlderSdk decision is even reached; dotnet and gh are checked through $LASTEXITCODE anyway.
+$PSNativeCommandUseErrorActionPreference = $false
+if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
+$repoRoot = $RepoRoot
 $project  = Join-Path $repoRoot 'DiffusionNexus.Installer.Electron'
 $publish  = Join-Path $project  'bin\Release\net10.0\win-x64\publish'
 $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
@@ -106,7 +116,7 @@ if (-not $SkipUpload) {
 # v3.0.9 shipped SDK 2.0.0-preview.8 the day after preview.9 (the Manager-aware Update-ComfyUI.bat)
 # was published, because nothing compared the pin with the SDK.
 Write-Host "Step 0c: the SDK pin includes everything on SDK develop" -ForegroundColor Cyan
-pwsh -NoProfile -File (Join-Path $repoRoot 'Scripts\Test-SdkPin.ps1')
+pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-SdkPin.ps1') -RepoRoot $repoRoot
 switch ($LASTEXITCODE) {
     0 { }
     3 {
@@ -147,9 +157,8 @@ if (-not (Test-Path $globalPackages)) { throw "Could not resolve the NuGet globa
 $csproj = [xml](Get-Content (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
 $sdkRefs = @($csproj.Project.ItemGroup.PackageReference | Where-Object { $_.Include -like 'DiffusionNexus.Installer.SDK.*' })
 if ($sdkRefs.Count -eq 0) { throw "No SDK PackageReferences found in the Electron csproj." }
-$sdkPin = @($sdkRefs | Select-Object -ExpandProperty Version -Unique)
-if ($sdkPin.Count -ne 1) { throw "The Electron csproj pins more than one SDK version: $($sdkPin -join ', ')" }
-$sdkPin = $sdkPin[0]
+# One version: Step 0c already refused pins that disagree, and that refusal cannot be overridden.
+$sdkPin = $sdkRefs[0].Version
 foreach ($ref in $sdkRefs) {
     $dll = Join-Path $publish "bin\$($ref.Include).dll"
     if (-not (Test-Path $dll)) { throw "Packaged SDK assembly missing: $dll" }
@@ -169,7 +178,7 @@ Write-Host "  SDK assemblies are byte-identical to the pinned packages" -Foregro
 # notices can be checked against what actually ships. Drift means a dependency changed and the
 # committed notices were not regenerated: fix that and commit before releasing.
 Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
-pwsh (Join-Path $repoRoot 'Scripts\Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
+pwsh (Join-Path $PSScriptRoot 'Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
 if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm (this publish output is what it rescans), commit, and release again." }
 
 # Step 1c: build-info.json. The PACKAGED app is asked what it contains, so the asset is what the

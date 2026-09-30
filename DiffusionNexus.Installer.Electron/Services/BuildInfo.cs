@@ -12,7 +12,7 @@ public sealed record BuildInfoDocument(
     [property: JsonPropertyName("app")] string App,
     [property: JsonPropertyName("sdk")] string Sdk,
     [property: JsonPropertyName("catalogSchema")] int CatalogSchema,
-    [property: JsonPropertyName("builtAt")] DateTimeOffset BuiltAt);
+    [property: JsonPropertyName("builtAt")] DateTimeOffset? BuiltAt);
 
 public static class BuildInfo
 {
@@ -24,17 +24,23 @@ public static class BuildInfo
     /// the .NET side, and none of them may ever turn a normal launch into a print-and-exit.</summary>
     public static bool Handles(string[] args) => args.Contains(Flag, StringComparer.Ordinal);
 
-    public static BuildInfoDocument Create()
+    public static BuildInfoDocument Create() => Create(typeof(BuildInfo).Assembly.Location);
+
+    /// <param name="assemblyLocation">The file whose write time is the build stamp: this assembly's, normally.
+    /// No MSBuild-generated timestamp, so nothing forces a rebuild on every build, and the packaged file is
+    /// what the release script runs anyway. Not the entry assembly: under a test host that is testhost.dll,
+    /// dated whenever the .NET SDK was installed.</param>
+    public static BuildInfoDocument Create(string? assemblyLocation)
     {
         // The Catalog assembly is the one whose version the release gates judge: the pin check
         // reads the same version from the csproj, and the schema constant lives here.
         var catalogAssembly = typeof(CatalogSchema).Assembly;
         var sdk = AppVersion.Strip(catalogAssembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
-        // This assembly's write time: no MSBuild-generated timestamp, so nothing forces a rebuild on
-        // every build, and the packaged file is what the release script runs anyway. Not the entry
-        // assembly: under a test host that is testhost.dll, dated whenever the .NET SDK was installed.
-        var self = typeof(BuildInfo).Assembly.Location;
-        var builtAt = File.Exists(self) ? new DateTimeOffset(File.GetLastWriteTimeUtc(self), TimeSpan.Zero) : DateTimeOffset.UtcNow;
+        // Absent rather than "now" when there is no file (a single-file publish, an assembly loaded from
+        // bytes): promotion reads this asset as fact, and the moment --build-info ran is not one.
+        DateTimeOffset? builtAt = !string.IsNullOrEmpty(assemblyLocation) && File.Exists(assemblyLocation)
+            ? new DateTimeOffset(File.GetLastWriteTimeUtc(assemblyLocation), TimeSpan.Zero)
+            : null;
         return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, builtAt);
     }
 

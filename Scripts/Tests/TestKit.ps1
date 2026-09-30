@@ -40,22 +40,31 @@ function New-SdkFixture {
         'DiffusionNexus.Installer.SDK.Catalog/Start.cs'
         'docs/start.md'
     ) 'initial'
+    Add-SdkCommit $fixture 'Directory.Build.props' 'build: props' -Content (New-SdkProps '2.0.0-preview.1')
     Add-SdkTag $fixture '2.0.0-preview.1'
     Invoke-FixtureGit $root @('clone', '--quiet', $fixture.Remote, $fixture.Sdk)
     Set-InstallerPins $fixture '2.0.0-preview.1'
     $fixture
 }
 
-# One commit that appends a line to every path given, pushed to the "GitHub" remote.
-function Add-SdkCommit($Fixture, [string[]]$Paths, [string]$Subject) {
+# One commit that appends a line to every path given (or, with -Content, replaces each file with
+# that text), pushed to the "GitHub" remote.
+function Add-SdkCommit($Fixture, [string[]]$Paths, [string]$Subject, [string]$Content) {
     foreach ($path in $Paths) {
         $file = Join-Path $Fixture.Author $path
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
-        Add-Content -Path $file -Value $Subject
+        if ($PSBoundParameters.ContainsKey('Content')) { Set-Content -Path $file -Value $Content }
+        else { Add-Content -Path $file -Value $Subject }
     }
     Invoke-FixtureGit $Fixture.Author @('add', '--all')
     Invoke-FixtureGit $Fixture.Author @('commit', '--quiet', '-m', $Subject)
     Invoke-FixtureGit $Fixture.Author @('push', '--quiet', 'origin', 'develop')
+}
+
+# The SDK's root Directory.Build.props: the version line every release bumps, plus whatever else.
+function New-SdkProps([string]$Version, [string[]]$Extra = @()) {
+    (@('<Project>', '  <PropertyGroup>', "    <Version>$Version</Version>", '    <Nullable>enable</Nullable>') +
+     @($Extra | ForEach-Object { "    $_" }) + @('  </PropertyGroup>', '</Project>')) -join "`n"
 }
 
 function Add-SdkTag($Fixture, [string]$Version) {
@@ -81,9 +90,10 @@ function Write-FixtureProject($Fixture, [string]$Name, [string[]]$Packages, [str
 }
 
 # Runs Test-SdkPin.ps1 in a child pwsh, exactly as New-Release.ps1 does.
-function Invoke-SdkPinCheck($Fixture, [string]$SdkPath = $Fixture.Sdk, [string[]]$ExtraArgs = @()) {
+function Invoke-SdkPinCheck($Fixture, [string]$SdkPath = $Fixture.Sdk, [string[]]$ExtraArgs = @(), [switch]$NoSdkPath) {
     $check = Join-Path $PSScriptRoot '..' 'Test-SdkPin.ps1'
-    $output = & pwsh -NoProfile -File $check -RepoRoot $Fixture.Installer -SdkPath $SdkPath @ExtraArgs 2>&1
+    $sdkArgs = if ($NoSdkPath) { @() } else { @('-SdkPath', $SdkPath) }
+    $output = & pwsh -NoProfile -File $check -RepoRoot $Fixture.Installer @sdkArgs @ExtraArgs 2>&1
     [pscustomobject]@{ ExitCode = $LASTEXITCODE; Text = ($output | ForEach-Object { "$_" }) -join "`n" }
 }
 

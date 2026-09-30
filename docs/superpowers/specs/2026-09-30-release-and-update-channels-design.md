@@ -91,13 +91,16 @@ Everything under "Step 0" runs before `Directory.Build.props` is touched.
 | 2 | Repackage with the publish config, `app-update.yml` present (exists) | — |
 | 3 | Upload with the resolved token; notes end with the two lines from section 4.6 | — |
 
-### 4.2 `Test-SdkPin.ps1` — issue #29's design, unchanged
+### 4.2 `Test-SdkPin.ps1` — issue #29's design, amended in review
 
 Reads the SDK pins from every `*.csproj` one folder deep and requires them to agree. `git fetch`
 in the local SDK checkout (the folder `Directory.Build.targets` redirects to; the check never
-touches its working tree or branch). Lists `git log --no-merges v<pin>..origin/develop -- <pinned
-package folders>`; only the shipped packages' own folders count. `git describe --match "v*"` on
-`origin/develop` decides the advice: "bump to vX" or "tag and publish the SDK first".
+touches its working tree or branch; tags are fetched forced, so a tag the SDK re-pointed after a
+failed publish does not refuse the check). Lists `git log --no-merges v<pin>..origin/develop --
+<pinned package folders> Directory.Build.props Directory.Build.targets Directory.Packages.props`:
+the packages' own folders, plus the root build files MSBuild imports into every package, except a
+root commit that only moves `<Version>` lines. The newest tag on `origin/develop` at or above the
+pin (semver, any major) decides the advice: "bump to vX" or "tag and publish the SDK first".
 `-Pin <version>` checks a given version instead of the project pins (for promotion). Exit 2 for:
 no SDK checkout, failed fetch, pins that disagree, a pin with no tag, a project file that is not
 valid XML. Runs in a child `pwsh` so a profile's `$PSNativeCommandUseErrorActionPreference` cannot

@@ -57,8 +57,9 @@ token is set. **0b** a signed-in `gh` account can write to this repo: the active
 can, otherwise the signed-in Into-The-Latent account; if neither can, it stops here, and no `gh
 auth switch` is ever needed (only the script's own upload uses that token). **0c**
 `Scripts/Test-SdkPin.ps1` fetches your SDK checkout and stops the release when SDK `develop` has
-commits in the pinned packages that the pinned version does not contain, listing them and saying
-whether to bump the pin or to tag and publish the SDK first. Add `-AllowOlderSdk` to leave them
+commits the pinned version does not contain that change what the packages ship: their own folders,
+or the SDK's root `Directory.*.props` / `.targets` files beyond a version bump. It lists them and
+says whether to bump the pin or to tag and publish the SDK first. Add `-AllowOlderSdk` to leave them
 out on purpose. A refusal leaves the working tree untouched. Run the pin check on its own at any
 time with `pwsh Scripts/Test-SdkPin.ps1`.
 
