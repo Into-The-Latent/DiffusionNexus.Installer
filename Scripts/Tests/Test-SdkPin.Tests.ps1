@@ -145,4 +145,14 @@ Test-Case 'a plain version pin works like a preview one (the SDK has no channel 
     Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'All of them ship in v2.1.0 -> bump the SDK references to 2.1.0.'
 }
 
+Test-Case 'a clone whose fetch refspec no longer covers develop still sees new develop commits' {
+    # `git remote set-branches` (or a --single-branch clone) narrows remote.origin.fetch. A plain
+    # `git fetch origin` then leaves origin/develop where it was, and a stale ref reads as "current":
+    # a false pass, the one answer this gate must never give.
+    $f = New-SdkFixture
+    Invoke-FixtureGit $f.Sdk @('remote', 'set-branches', 'origin', 'some-other-branch')
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unseen by a narrowed fetch'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'fix: unseen by a narrowed fetch'
+}
+
 Complete-Tests

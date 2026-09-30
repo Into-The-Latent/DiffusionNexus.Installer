@@ -247,7 +247,7 @@ $ghArgs = @('release', 'create', "v$Version", $setup, "$setup.blockmap", (Join-P
 if ($Prerelease) { $ghArgs += '--prerelease' }
 # Under the token Step 0b resolved: the active gh account may be read-only here.
 Invoke-WithGhToken $releaseToken { gh @ghArgs }
-if ($LASTEXITCODE -ne 0) { throw "gh release create failed (see gh's output above). The release was not created." }
+if ($LASTEXITCODE -ne 0) { throw "gh release create failed (see gh's output above). Check whether v$Version exists on $ghRepo before retrying: gh may have created it and then failed on an asset." }
 
 Write-Host "Released v$Version on $channelName" -ForegroundColor Green
 if ($Prerelease) {

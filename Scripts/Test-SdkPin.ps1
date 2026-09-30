@@ -100,7 +100,10 @@ if (-not $SdkPath -or -not (Test-Path (Join-Path $SdkPath '.git'))) {
     Stop-Unchecked "no SDK git checkout found$(if ($SdkPath) { " at $SdkPath" }). Pass -SdkPath or set LocalSDKPath."
 }
 
-$fetch = Invoke-SdkGit @('fetch', '--quiet', '--tags', 'origin')
+# The branch by explicit refspec, not by the clone's own remote.origin.fetch: a narrowed clone
+# (`git remote set-branches`, `--single-branch`) would otherwise leave origin/develop stale, and a
+# stale ref reads as "current" - the one answer this gate must never give.
+$fetch = Invoke-SdkGit @('fetch', '--quiet', '--tags', 'origin', "+refs/heads/${SdkBranch}:refs/remotes/origin/${SdkBranch}")
 if ($fetch.ExitCode -ne 0) {
     Stop-Unchecked "git fetch in $SdkPath failed, so the newest SDK work is unknown:`n$($fetch.Lines -join "`n")"
 }
