@@ -12,6 +12,15 @@ using ElectronNET.API.Entities;
 // component collides with ElectronNET.API.App. The Blazor root is fully qualified below instead.
 using BlazorApp = DiffusionNexus.Installer.Electron.Components.App;
 
+// The release script asks the PACKAGED app what it contains and ships the answer as
+// build-info.json. Before any host, logger or window exists: this must print one JSON object and
+// nothing else, and exit 0.
+if (BuildInfo.Handles(args))
+{
+    Console.Out.Write(BuildInfo.ToJson());
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Static web assets -- app.css, the scoped-CSS bundle, and blazor.web.js itself -- live in the
