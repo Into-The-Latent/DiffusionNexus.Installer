@@ -2,8 +2,16 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DiffusionNexus.Installer.SDK.Catalog;
+using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 
 namespace DiffusionNexus.Installer.Electron.Services;
+
+/// <summary>The catalog this build embeds as its seed: the three values Test-CatalogSeed.ps1
+/// judges, read from the embedded manifest.json.</summary>
+public sealed record BuildInfoCatalogSeed(
+    [property: JsonPropertyName("version")] int Version,
+    [property: JsonPropertyName("commit")] string Commit,
+    [property: JsonPropertyName("sha256")] string Sha256);
 
 /// <summary>What this build says about itself: the `--build-info` answer, uploaded by
 /// New-Release.ps1 as the `build-info.json` release asset. The property names are read by the
@@ -12,6 +20,7 @@ public sealed record BuildInfoDocument(
     [property: JsonPropertyName("app")] string App,
     [property: JsonPropertyName("sdk")] string Sdk,
     [property: JsonPropertyName("catalogSchema")] int CatalogSchema,
+    [property: JsonPropertyName("catalogSeed")] BuildInfoCatalogSeed CatalogSeed,
     [property: JsonPropertyName("builtAt")] DateTimeOffset? BuiltAt);
 
 public static class BuildInfo
@@ -30,7 +39,16 @@ public static class BuildInfo
     /// No MSBuild-generated timestamp, so nothing forces a rebuild on every build, and the packaged file is
     /// what the release script runs anyway. Not the entry assembly: under a test host that is testhost.dll,
     /// dated whenever the .NET SDK was installed.</param>
-    public static BuildInfoDocument Create(string? assemblyLocation)
+    public static BuildInfoDocument Create(string? assemblyLocation) =>
+        // The same resource Program.cs hands the SDK as CatalogOptions.EmbeddedManifest.
+        Create(assemblyLocation, () => typeof(BuildInfo).Assembly.GetManifestResourceStream("manifest.json"));
+
+    /// <param name="assemblyLocation">See <see cref="Create(string?)"/>.</param>
+    /// <param name="embeddedManifest">The embedded seed manifest, or null when the build has none. A build
+    /// with no seed, or a seed manifest without a commit or an archive hash, gets no document: the exception
+    /// ends the process with a non-zero exit and the release script refuses the build, instead of an asset
+    /// that promotion would trust.</param>
+    public static BuildInfoDocument Create(string? assemblyLocation, Func<Stream?> embeddedManifest)
     {
         // The Catalog assembly is the one whose version the release gates judge: the pin check
         // reads the same version from the csproj, and the schema constant lives here.
@@ -41,7 +59,21 @@ public static class BuildInfo
         DateTimeOffset? builtAt = !string.IsNullOrEmpty(assemblyLocation) && File.Exists(assemblyLocation)
             ? new DateTimeOffset(File.GetLastWriteTimeUtc(assemblyLocation), TimeSpan.Zero)
             : null;
-        return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, builtAt);
+        return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, ReadSeed(embeddedManifest), builtAt);
+    }
+
+    private static BuildInfoCatalogSeed ReadSeed(Func<Stream?> embeddedManifest)
+    {
+        using var stream = embeddedManifest()
+            ?? throw new InvalidOperationException("The embedded catalog manifest 'manifest.json' is missing: this build carries no catalog seed and must not be released.");
+        using var reader = new StreamReader(stream);
+        // The SDK's own reader of this file, so the seed reported is the seed the app will use.
+        var manifest = CatalogManifest.Parse(reader.ReadToEnd());
+        if (string.IsNullOrWhiteSpace(manifest.Commit))
+            throw new InvalidOperationException("The embedded catalog manifest names no commit: this seed cannot be checked against a release and must not be released.");
+        if (string.IsNullOrWhiteSpace(manifest.Archive?.Sha256))
+            throw new InvalidOperationException("The embedded catalog manifest has no archive sha256: this seed cannot be checked against a release and must not be released.");
+        return new BuildInfoCatalogSeed(manifest.CatalogVersion, manifest.Commit, manifest.Archive.Sha256);
     }
 
     public static string ToJson() => JsonSerializer.Serialize(Create(), Json);

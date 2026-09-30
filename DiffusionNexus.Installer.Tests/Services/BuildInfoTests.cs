@@ -47,6 +47,38 @@ public class BuildInfoTests
     }
 
     [Fact]
+    public void The_document_names_the_embedded_catalog_seed()
+    {
+        // Step 1c compares this with the seed Step 0d judged, and Promote-Release passes it to
+        // Test-CatalogSeed -Expect. It is the embedded manifest.json, read the way the app reads it.
+        using var stream = typeof(BuildInfo).Assembly.GetManifestResourceStream("manifest.json")!;
+        using var doc = JsonDocument.Parse(stream);
+        var embedded = doc.RootElement;
+
+        var seed = BuildInfo.Create().CatalogSeed;
+
+        seed.Version.Should().Be(embedded.GetProperty("catalogVersion").GetInt32());
+        seed.Commit.Should().Be(embedded.GetProperty("commit").GetString()).And.MatchRegex("^[0-9a-f]{40}$");
+        seed.Sha256.Should().Be(embedded.GetProperty("archive").GetProperty("sha256").GetString()).And.MatchRegex("^[0-9a-f]{64}$");
+    }
+
+    [Fact]
+    public void Without_a_complete_embedded_manifest_there_is_no_answer()
+    {
+        // A build with no seed, or a seed manifest without commit or archive, must not print a
+        // document that promotion would trust: the exception ends the process with a non-zero exit,
+        // and Step 1c refuses the build.
+        var location = typeof(BuildInfo).Assembly.Location;
+        var noSeed = () => BuildInfo.Create(location, () => null);
+        var noCommit = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"archive\":{\"name\":\"catalog.zip\",\"sha256\":\"ab\",\"bytes\":1}}"u8.ToArray()));
+        var noArchive = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"commit\":\"abc\"}"u8.ToArray()));
+
+        noSeed.Should().Throw<InvalidOperationException>().WithMessage("*manifest.json*missing*");
+        noCommit.Should().Throw<InvalidOperationException>().WithMessage("*commit*");
+        noArchive.Should().Throw<InvalidOperationException>().WithMessage("*archive*");
+    }
+
+    [Fact]
     public void The_json_is_one_object_with_the_release_scripts_property_names()
     {
         // New-Release.ps1 reads .app, .sdk and .catalogSchema from this text with ConvertFrom-Json,
@@ -59,6 +91,10 @@ public class BuildInfoTests
         root.GetProperty("app").GetString().Should().Be(AppVersion.Display);
         root.GetProperty("sdk").GetString().Should().NotContain("+");
         root.GetProperty("catalogSchema").GetInt32().Should().Be(CatalogSchema.Supported);
+        var seed = root.GetProperty("catalogSeed");
+        seed.GetProperty("version").GetInt32().Should().Be(BuildInfo.Create().CatalogSeed.Version);
+        seed.GetProperty("commit").GetString().Should().Be(BuildInfo.Create().CatalogSeed.Commit);
+        seed.GetProperty("sha256").GetString().Should().Be(BuildInfo.Create().CatalogSeed.Sha256);
         root.GetProperty("builtAt").GetDateTimeOffset().Should().Be(BuildInfo.Create().BuiltAt);
         text.Should().NotContain("\"App\"", "property names are camelCase");
     }
