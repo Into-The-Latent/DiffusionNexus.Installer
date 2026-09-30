@@ -122,9 +122,14 @@ installer build embeds stable too, because promotion never rebuilds and a promot
 not carry a preview seed to Stable users.
 
 - Downloads `manifest.json` from `https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases/latest/download/manifest.json`
-  (public, no token). Cannot download → exit 2.
-- `-Expect <version> <commit> <sha256>` compares a given seed instead of the working tree's (for
-  promotion).
+  (public, no token). Cannot download → exit 2. The releases page is `-ReleaseBase`, else
+  `$env:DIFFUSIONNEXUS_CATALOG_RELEASES`, else that URL (the script tests serve a fixture there);
+  the URL read is printed with the answer. `Update-CatalogSeed.ps1` takes the same parameter.
+  `Scripts/CatalogRelease.ps1` (dot-sourced by both scripts and by `New-Release.ps1`) holds the
+  seed folder, the download and the manifest reader.
+- `-Expect "<version> <commit> <sha256>"` (one string, because `pwsh -File` hands a script literal
+  strings and cannot fill an array parameter) compares a given seed instead of the working tree's
+  (for promotion); nothing on disk is read.
 - Exit 3 when the seed differs, with the exact command to fix it:
   `pwsh Scripts/Update-CatalogSeed.ps1` then commit. Exit 2 when the seed or the release cannot be
   read, when `git status --porcelain -- Assets/Catalog` is not empty (uncommitted seed files must
@@ -310,7 +315,10 @@ Branches: `feature/release-gates-sdk`, `feature/release-gates-catalog`,
   `gh` function stands in for the CLI). #29's 15 cases, #30's 13 + 2 account cases and the 9 `ReleaseAccount` cases are
   reused as posted; `Test-CatalogSeed` and `Update-CatalogSeed` get their own cases (match, wrong
   version, wrong commit, wrong hash, zip disagrees with its manifest, uncommitted seed, download
-  fails → 2, `-Expect`). CI runs every `Scripts/Tests/*.Tests.ps1` and fails on any failed case.
+  fails → 2, `-Expect`). The seed cases serve a fixture "GitHub Releases" folder over a local
+  `HttpListener` in its own runspace (a 302 for `releases/latest`, as GitHub answers; a 404 for a
+  missing asset), so the download path under test is the real one and no case touches the network.
+  CI runs every `Scripts/Tests/*.Tests.ps1` and fails on any failed case.
 - `--build-info`: one unit test runs the entry point's build-info path in-process and parses the
   JSON; `New-Release.ps1 -SkipUpload` is the packaged proof.
 - Runtime: coordinator tests for preview-then-switch, warning only when the diff is non-empty,

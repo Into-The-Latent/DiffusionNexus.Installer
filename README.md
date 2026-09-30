@@ -52,7 +52,7 @@ It does **not** upload anything — publishing is opt-in, see below.
 gh release edit v3.0.6 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest  # Promote-Release.ps1 (issue #30) will replace this
 ```
 
-Before it changes or builds anything, `New-Release.ps1` runs three gates. **0a** the packages
+Before it changes or builds anything, `New-Release.ps1` runs four gates. **0a** the packages
 token is set. **0b** a signed-in `gh` account can write to this repo: the active account if it
 can, otherwise the signed-in Into-The-Latent account; if neither can, it stops here, and no `gh
 auth switch` is ever needed (only the script's own upload uses that token). **0c**
@@ -60,13 +60,22 @@ auth switch` is ever needed (only the script's own upload uses that token). **0c
 commits the pinned version does not contain that change what the packages ship: their own folders,
 or the SDK's root `Directory.*.props` / `.targets` files beyond a version bump. It lists them and
 says whether to bump the pin or to tag and publish the SDK first. Add `-AllowOlderSdk` to leave them
-out on purpose. A refusal leaves the working tree untouched. Run the pin check on its own at any
-time with `pwsh Scripts/Test-SdkPin.ps1`.
+out on purpose. **0d** `Scripts/Test-CatalogSeed.ps1` downloads the latest stable catalog
+release's `manifest.json` (public, no token) and stops the release when the embedded seed under
+`DiffusionNexus.Installer.Electron/Assets/Catalog` is not that release: same version, commit and
+archive hash, and a zip that matches its manifest. The fix is `pwsh Scripts/Update-CatalogSeed.ps1`
+(it downloads and verifies both files; `-Version N` embeds an older stable tag on purpose) and a
+commit; the gate refuses an uncommitted seed. Add `-AllowOlderCatalog` to ship a different seed on
+purpose. A Preview build embeds the stable seed too, because promotion never rebuilds. A refusal
+leaves the working tree untouched. Run either check on its own at any time with
+`pwsh Scripts/Test-SdkPin.ps1` or `pwsh Scripts/Test-CatalogSeed.ps1`.
 
 After packaging, the script runs the packaged app with `--build-info` and uploads its answer as
-`build-info.json` next to the installer: the app version, the SDK version it was built with and
-the catalog schema it reads. That asset, not the release notes, is what promotion and the catalog
-repo's gate read.
+`build-info.json` next to the installer: the app version, the SDK version it was built with, the
+catalog schema it reads and the catalog seed it embeds (version, commit, sha256); the script refuses
+a build whose answer differs from what the gates checked. That asset, not the release notes, is what
+promotion and the catalog repo's gate read. The notes end with two generated lines,
+`Built with Installer SDK X` and `Bundled catalog vN (stable)`, for people; nothing reads them back.
 
 Do not hand-roll this. Packaging takes two steps, and skipping the second produces an installer
 that runs fine and then fails permanently at its first update check:
