@@ -1,0 +1,250 @@
+<#
+.SYNOPSIS
+    Fails when the installer's SDK pin leaves out SDK work that is already on the SDK's develop branch.
+
+.DESCRIPTION
+    The installer pins the DiffusionNexus.Installer.SDK.* packages to one version. v3.0.9 shipped
+    2.0.0-preview.8 although preview.9 - the Manager-aware Update-ComfyUI.bat - had been published
+    the evening before, because nothing compared the pin with the SDK. This script does, and
+    New-Release.ps1 runs it before it builds anything.
+
+    It fetches the SDK checkout (the folder Directory.Build.targets redirects to), then lists every
+    commit on origin/<SdkBranch> that is not in the pin's tag v<pin> and changes what the pinned
+    packages ship: their own folders, or the SDK's root Directory.*.props / .targets files, which
+    MSBuild imports into every package. Tests, docs and the dn-catalog tool never ship. Neither does
+    a root build file commit that only touches the project version or package metadata
+    (<Version>, <Authors>, <RepositoryUrl>, ...) or comments: every release bumps the version, the
+    publish workflow takes it from the tag anyway, and none of it changes what the DLLs do.
+
+    Only the remote's tags count, read into a private ref namespace: a tag that exists only in the
+    local clone is not a release, and the clone's own tags are never written - it is the
+    maintainer's everyday SDK repo. Refs are named in full (refs/remotes/origin/<branch>), because a
+    stray local branch or tag called origin/<branch> would shadow the short name.
+
+    Exit codes - New-Release.ps1 and Promote-Release.ps1 rely on them:
+      0  the pin contains everything on the SDK branch
+      3  the pin is behind. The commits are listed, with what to do: bump to the tag that ships
+         them, or tag and publish the SDK first.
+      2  the pin could not be checked. Any unexpected error lands here too, never on 3, so it can
+         never be waved through with -AllowOlderSdk. (1 is left to pwsh, which uses it for a script
+         that does not even parse.)
+
+.PARAMETER RepoRoot
+    The installer repo whose project files hold the pins - every *.csproj one folder deep, which
+    is where this solution keeps its projects. Defaults to the folder above this script.
+
+.PARAMETER SdkPath
+    The SDK git checkout. Defaults to the first git checkout among $env:LocalSDKPath,
+    <RepoRoot>\..\DiffusionNexus.Installer.SDK and E:\Repos\DiffusionNexus.Installer.SDK - the
+    same candidates as Directory.Build.targets.
+
+.PARAMETER SdkBranch
+    The SDK branch the installer ships from. Default: develop.
+
+.PARAMETER Pin
+    Check this SDK version instead of the one the project files pin. Promote-Release.ps1 passes
+    the version a shipped build reports in its build-info.json. The project files still say which
+    packages count; their versions are ignored.
+
+.EXAMPLE
+    pwsh Scripts/Test-SdkPin.ps1
+
+.EXAMPLE
+    pwsh Scripts/Test-SdkPin.ps1 -Pin 2.0.0
+#>
+[CmdletBinding()]
+param(
+    [string]$RepoRoot,
+    [string]$SdkPath,
+    [string]$SdkBranch = 'develop',
+    [string]$Pin
+)
+
+$ErrorActionPreference = 'Stop'
+# git answers some questions with a non-zero exit (show says "no such path" with 128). Here that is
+# data, so a session that turns native exit codes into errors must not apply.
+$PSNativeCommandUseErrorActionPreference = $false
+
+trap {
+    Write-Host "SDK pin NOT checked: $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
+}
+
+function Stop-Unchecked([string]$Reason) {
+    Write-Host "SDK pin NOT checked: $Reason" -ForegroundColor Red
+    exit 2
+}
+
+# core.quotePath off: a path with a non-ASCII character comes back verbatim, not C-quoted and escaped
+# ("...\303\234bersetzung.json"), which no package prefix would match.
+function Invoke-SdkGit([string[]]$GitArgs) {
+    $output = & git -C $SdkPath -c core.quotePath=false @GitArgs 2>&1
+    [pscustomobject]@{ ExitCode = $LASTEXITCODE; Lines = @($output | ForEach-Object { "$_" }) }
+}
+
+# Where the remote's tags are read into. Never refs/tags: those are the clone's own.
+$tagNamespace = 'refs/sdkpin/tags'
+
+# MSBuild imports these into every package, so a change there ships too - unless it only touches
+# what never reaches the DLLs' behaviour.
+$rootBuildFiles = @('Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props')
+$packOnlyProperties = @(
+    'Version', 'VersionPrefix', 'VersionSuffix', 'PackageVersion', 'AssemblyVersion', 'FileVersion', 'InformationalVersion',
+    'Authors', 'Company', 'Copyright', 'Description', 'Product', 'Title',
+    'PackageProjectUrl', 'RepositoryUrl', 'RepositoryType', 'RepositoryBranch', 'RepositoryCommit', 'PublishRepositoryUrl',
+    'PackageLicenseExpression', 'PackageLicenseFile', 'PackageTags', 'PackageReadmeFile', 'PackageIcon',
+    'PackageReleaseNotes', 'PackageRequireLicenseAcceptance', 'PackageOutputPath'
+)
+
+# The part of a root build file that can change what ships: parsed, comments and the pack-only
+# properties directly under a PropertyGroup removed, re-serialized (so formatting does not count).
+# Text that is not XML is compared as it is - a broken props file is a change worth listing.
+function Get-ShippingBuildXml([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    try {
+        $doc = [xml]::new()
+        $doc.PreserveWhitespace = $false
+        $doc.LoadXml($Text)
+    } catch { return $Text }
+    foreach ($node in @($doc.SelectNodes('//comment()'))) { [void]$node.ParentNode.RemoveChild($node) }
+    foreach ($node in @($doc.SelectNodes('/*[local-name()="Project"]/*[local-name()="PropertyGroup"]/*'))) {
+        if ($node.LocalName -in $packOnlyProperties) { [void]$node.ParentNode.RemoveChild($node) }
+    }
+    $doc.OuterXml
+}
+
+function Get-SdkFileAt([string]$Revision, [string]$Path) {
+    $show = Invoke-SdkGit @('show', "${Revision}:${Path}")
+    if ($show.ExitCode -ne 0) { return '' }   # the file does not exist at that revision
+    $show.Lines -join "`n"
+}
+
+# Does a commit change anything that ships in the root build files it touched?
+function Test-ShipsRootBuildChange([string]$Hash, [string[]]$Files) {
+    foreach ($file in $Files) {
+        $before = Get-ShippingBuildXml (Get-SdkFileAt "$Hash^" $file)
+        $after  = Get-ShippingBuildXml (Get-SdkFileAt $Hash $file)
+        if ($before -ne $after) { return $true }
+    }
+    return $false
+}
+
+if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
+
+# ------------------------------------------------------------------------------------ the pin
+# -LiteralPath throughout: -Path reads [ ] in the repo path as a wildcard, and a checkout under such a
+# folder would find no project at all - exit 2, which nothing overrides.
+$projects = @(Get-ChildItem -LiteralPath $RepoRoot -Directory | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Filter '*.csproj' -File })
+$refs = @(foreach ($project in $projects) {
+    Select-Xml -LiteralPath $project.FullName -XPath '//PackageReference[starts-with(@Include, "DiffusionNexus.Installer.SDK.")]' |
+        ForEach-Object { [pscustomobject]@{ Project = $project.Name; Package = $_.Node.Include; Version = $_.Node.Version } }
+})
+if ($refs.Count -eq 0) { Stop-Unchecked "no DiffusionNexus.Installer.SDK.* PackageReference in any project under $RepoRoot." }
+if (-not $Pin) {   # -Pin: an explicit version makes the project versions irrelevant
+    $versions = @($refs | Select-Object -ExpandProperty Version -Unique)
+    if ($versions.Count -ne 1) {
+        $list = ($refs | ForEach-Object { "  $($_.Project): $($_.Package) $($_.Version)" }) -join "`n"
+        Stop-Unchecked "the SDK references do not all pin the same version:`n$list"
+    }
+    $Pin = $versions[0]
+}
+$pinTag     = "v$Pin"
+$pinRef     = "$tagNamespace/$pinTag"
+$pinVersion = [semver]$Pin
+$packages   = @($refs | Select-Object -ExpandProperty Package -Unique)
+
+# ------------------------------------------------------------------------- the SDK checkout
+if (-not $SdkPath) {
+    # A folder that exists but is not a checkout (an exported copy under LocalSDKPath, say) must not
+    # shadow a real clone further down the list: that would be exit 2, which nothing overrides.
+    $SdkPath = @($env:LocalSDKPath, (Join-Path $RepoRoot '..' 'DiffusionNexus.Installer.SDK'), 'E:\Repos\DiffusionNexus.Installer.SDK') |
+        Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ '.git')) } | Select-Object -First 1
+}
+if (-not $SdkPath -or -not (Test-Path -LiteralPath (Join-Path $SdkPath '.git'))) {
+    Stop-Unchecked "no SDK git checkout found$(if ($SdkPath) { " at $SdkPath" }). Pass -SdkPath or set LocalSDKPath."
+}
+
+# The branch by explicit refspec, not by the clone's own remote.origin.fetch: a narrowed clone
+# (`git remote set-branches`, `--single-branch`) would otherwise leave origin/develop stale, and a
+# stale ref reads as "current" - the one answer this gate must never give. The remote's tags go into
+# a private namespace, forced and pruned: a tag the SDK re-pointed after a failed publish is taken
+# as it is on GitHub, a tag deleted there disappears, and refs/tags (the clone's own, possibly
+# re-pointed to republish) is neither read nor written. --no-tags keeps auto-following out of it, and
+# --refmap= keeps the clone's configured remote.origin.fetch out of it: git otherwise applies those
+# lines to every ref it fetched even when the command names its own refspecs, so a clone configured
+# with +refs/tags/*:refs/tags/* would have its own tags re-pointed after all, and one with the
+# non-forced form would have the fetch refused.
+$fetch = Invoke-SdkGit @('fetch', '--quiet', '--prune', '--no-tags', '--refmap=', 'origin', "+refs/heads/${SdkBranch}:refs/remotes/origin/${SdkBranch}", "+refs/tags/*:${tagNamespace}/*")
+if ($fetch.ExitCode -ne 0) {
+    Stop-Unchecked "git fetch in $SdkPath failed, so the newest SDK work is unknown:`n$($fetch.Lines -join "`n")"
+}
+# The full name: git resolves a short name against refs/tags and refs/heads before refs/remotes, so a
+# stray local branch or tag named origin/develop (`git checkout -b origin/develop`) would be walked
+# instead of what was just fetched, and read as "current".
+$branchName = "origin/$SdkBranch"
+$branchRef  = "refs/remotes/$branchName"
+if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$branchRef^{commit}")).ExitCode -ne 0) {
+    Stop-Unchecked "$branchName does not exist in $SdkPath."
+}
+if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$pinRef^{commit}")).ExitCode -ne 0) {
+    Stop-Unchecked "the pinned version $Pin has no tag $pinTag in the SDK repo."
+}
+foreach ($package in $packages) {
+    if ((Invoke-SdkGit @('cat-file', '-e', "${branchRef}:$package")).ExitCode -ne 0) {
+        Stop-Unchecked "package folder $package does not exist on $branchName. A moved or renamed project would be invisible to this check."
+    }
+}
+
+# ------------------------------------------------------------------- what the pin leaves out
+# One walk: each record is a TAB-led header line (no path starts with a tab) followed by the paths
+# the commit touched among the ones asked for.
+$log = Invoke-SdkGit (@('log', '--no-merges', '--reverse', '--name-only', '--format=%x09%H%x09%h%x09%s', "$pinRef..$branchRef", '--') + $packages + $rootBuildFiles)
+if ($log.ExitCode -ne 0) { Stop-Unchecked "git log failed:`n$($log.Lines -join "`n")" }
+$records = [System.Collections.Generic.List[object]]::new()
+foreach ($line in $log.Lines) {
+    if ($line -match '^\t([0-9a-f]{40})\t(\S+)\t(.*)$') {
+        $records.Add([pscustomobject]@{ Hash = $Matches[1]; Short = $Matches[2]; Subject = $Matches[3]; Paths = [System.Collections.Generic.List[string]]::new() })
+    } elseif ($line -and $records.Count -gt 0) {
+        $records[$records.Count - 1].Paths.Add($line)
+    }
+}
+$missing = @(foreach ($record in $records) {
+    $inPackage = @($record.Paths | Where-Object { $path = $_; $packages | Where-Object { $path -eq $_ -or $path.StartsWith("$_/") } }).Count -gt 0
+    $rootFiles = @($record.Paths | Where-Object { $_ -in $rootBuildFiles })
+    if ($inPackage -or ($rootFiles.Count -gt 0 -and (Test-ShipsRootBuildChange $record.Hash $rootFiles))) { $record }
+})
+if ($missing.Count -eq 0) {
+    Write-Host "SDK pin $Pin includes everything on SDK $SdkBranch." -ForegroundColor Green
+    exit 0
+}
+
+# Whether a released SDK version already ships them decides the advice: bump, or tag first. Every
+# remote tag on the branch at or above the pin counts, whatever its major: after v3.0.0 the answer is
+# "bump to 3.0.0", not "tag first". The old v1.x tags are reachable from develop too; "at or above
+# the pin" is what keeps them out. A tag [semver] cannot parse is skipped, never fatal: one odd name
+# in the history must not turn "behind" into exit 2.
+$tags = Invoke-SdkGit @('for-each-ref', '--format=%(refname:strip=3)', '--merged', $branchRef, "$tagNamespace/v*")
+if ($tags.ExitCode -ne 0) { Stop-Unchecked "git for-each-ref failed:`n$($tags.Lines -join "`n")" }
+$newestTag = $tags.Lines |
+    ForEach-Object { $parsed = $null; if ($_ -match '^v(.+)$' -and [semver]::TryParse($Matches[1], [ref]$parsed)) { [pscustomobject]@{ Tag = $_; Version = $parsed } } } |
+    Where-Object { $_.Version -ge $pinVersion } | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty Tag
+$released = [System.Collections.Generic.HashSet[string]]::new()
+if ($newestTag) {
+    $shipped = Invoke-SdkGit @('rev-list', '--no-merges', "$pinRef..$tagNamespace/$newestTag")
+    if ($shipped.ExitCode -ne 0) { Stop-Unchecked "git rev-list $pinTag..$newestTag failed:`n$($shipped.Lines -join "`n")" }
+    foreach ($hash in $shipped.Lines) { [void]$released.Add($hash) }
+}
+$releasedCount   = @($missing | Where-Object { $released.Contains($_.Hash) }).Count
+$unreleasedCount = $missing.Count - $releasedCount
+
+$noun = if ($missing.Count -eq 1) { 'commit' } else { 'commits' }
+Write-Host "SDK pin $Pin is missing $($missing.Count) $noun from SDK ${SdkBranch}:" -ForegroundColor Yellow
+$missing | ForEach-Object { Write-Host "  $($_.Short) $($_.Subject)" }
+if ($unreleasedCount -eq 0) {
+    Write-Host "All of them ship in $newestTag -> bump the SDK references to $($newestTag.Substring(1))." -ForegroundColor Yellow
+} elseif ($releasedCount -eq 0) {
+    Write-Host "None of them is in a tagged SDK release yet -> tag and publish the SDK first, then bump the SDK references to the new version." -ForegroundColor Yellow
+} else {
+    Write-Host "Released in ${newestTag}: $releasedCount. In no tagged SDK release yet: $unreleasedCount. -> tag and publish the SDK first, then bump the SDK references to the new version." -ForegroundColor Yellow
+}
+exit 3

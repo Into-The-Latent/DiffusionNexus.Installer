@@ -16,6 +16,20 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # The release scripts' own tests (Scripts/Tests). They build throwaway git repos and fake gh,
+      # so they need neither the private SDK repo nor the packages token. They do need dotnet on
+      # PATH: New-Release.Tests.ps1 proves a run got past the gates by watching it reach and fail
+      # `dotnet publish` on a fixture with no project.
+      - name: Release script tests
+        shell: pwsh
+        run: |
+          $failed = 0
+          foreach ($test in Get-ChildItem Scripts/Tests -Filter *.Tests.ps1) {
+            pwsh -NoProfile -File $test.FullName
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          exit $failed
+
       # The SDK packages live under a different GitHub account, so the default GITHUB_TOKEN
       # cannot read them. UseLocalSDK=false is the point: this job is the gate that proves the
       # package references are complete, which a local build with the SDK checkout cannot.

@@ -41,8 +41,16 @@
     a suffixed version (3.1.0-beta.1) flips electron-updater into matching releases by that
     suffix and makes the installed app accept pre-releases whatever its channel setting says.
 
-    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries:
+    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries. Today that is
+    the gh command below; Promote-Release.ps1 (issue #30) will check the SDK pin and the catalog
+    seed against what is current first.
         gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
+
+.PARAMETER AllowOlderSdk
+    Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
+    version does not contain - a deliberate hold-back, such as a Stable hotfix while newer SDK work
+    is meant for Preview only. The commits left out are still listed. It does not override a check
+    that could not run (no SDK checkout, a failed fetch, pins that disagree).
 
 .EXAMPLE
     .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "Fixes the shortcut launch."
@@ -55,10 +63,18 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$Notes = "",
     [switch]$SkipUpload,
-    [switch]$Prerelease
+    [switch]$Prerelease,
+    [switch]$AllowOlderSdk
 )
 
 $ErrorActionPreference = 'Stop'
+# The gates below answer with exit codes (3 = behind, 2 = not checked) that this script reads. A
+# profile that turns native exit codes into errors would throw on the first "no" before the
+# -AllowOlderSdk decision is even reached; dotnet and gh are checked through $LASTEXITCODE anyway.
+$PSNativeCommandUseErrorActionPreference = $false
+# A release is cut from the checkout this script lives in, and from nowhere else: the notices check
+# reads this checkout's files, and a parameter for another root would let Step 1 modify a tree that
+# Step 0 never checked. (Scripts/Tests/New-Release.Tests.ps1 copies the scripts into its fixture.)
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $project  = Join-Path $repoRoot 'DiffusionNexus.Installer.Electron'
 $publish  = Join-Path $project  'bin\Release\net10.0\win-x64\publish'
@@ -68,28 +84,59 @@ $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
 # directly below and does not read that property.
 $electronVersion = '42.4.1'
 
-Write-Host "Setting version to $Version" -ForegroundColor Cyan
-$propsPath = Join-Path $repoRoot 'Directory.Build.props'
-$props = Get-Content $propsPath -Raw
-$props = $props -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$Version</Version>"
-Set-Content $propsPath $props -NoNewline
+# ---------------------------------------------------------------------------------------- Step 0
+# Everything here runs BEFORE this script changes anything on disk. A refusal leaves the working
+# tree exactly as it was: no version write, no cleared publish folder.
 
-# A release must be built from the PUBLISHED SDK packages, never from a local checkout.
+# Step 0a. A release must be built from the PUBLISHED SDK packages, never from a local checkout.
 # Directory.Build.targets auto-enables UseLocalSDK whenever E:\Repos\DiffusionNexus.Installer.SDK
 # exists - and it exists on every dev machine here - so without this pin a release silently embeds
 # whatever branch the SDK repo happens to have checked out, and cannot be reproduced from a clean
 # clone. Pinned explicitly rather than left to the environment, because a User-scope
-# UseLocalSDK=true survives shells and would otherwise win.
+# UseLocalSDK=true survives shells and would otherwise win. The token is what that restore needs.
+Write-Host "Step 0a: the packages token is present" -ForegroundColor Cyan
 if (-not $env:GITHUB_PACKAGES_TOKEN) {
-    throw "GITHUB_PACKAGES_TOKEN is not set. The release build restores the SDK from GitHub Packages (see nuget.config) and would fail the restore."
+    throw "GITHUB_PACKAGES_TOKEN is not set. The release build restores the SDK from GitHub Packages (see nuget.config) and would fail the restore. Nothing was built or changed."
 }
+
+# Step 0b. The upload at the very end needs write access to the repo, and the everyday gh account
+# may only have read access - v3.0.10's first upload failed that way, after the whole build. Find a
+# signed-in account that can publish now; only the upload gets its token, the active account stays.
+. (Join-Path $PSScriptRoot 'ReleaseAccount.ps1')
+if (-not $SkipUpload) {
+    Write-Host "Step 0b: a signed-in gh account can publish to $ghRepo" -ForegroundColor Cyan
+    $releaseToken = Resolve-ReleaseToken $ghRepo
+    if (-not $releaseToken) { throw "$(Get-NoReleaseAccountMessage $ghRepo) Nothing was built or changed." }
+}
+
+# Step 0c. A release must not leave out SDK work that is already on the SDK's develop branch:
+# v3.0.9 shipped SDK 2.0.0-preview.8 the day after preview.9 (the Manager-aware Update-ComfyUI.bat)
+# was published, because nothing compared the pin with the SDK.
+Write-Host "Step 0c: the SDK pin includes everything on SDK develop" -ForegroundColor Cyan
+pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-SdkPin.ps1') -RepoRoot $repoRoot
+switch ($LASTEXITCODE) {
+    0 { }
+    3 {
+        if (-not $AllowOlderSdk) {
+            throw "The SDK pin is behind SDK develop (listed above). Bump it, or re-run with -AllowOlderSdk to release without those commits on purpose. Nothing was built or changed."
+        }
+        Write-Warning "Releasing WITHOUT the SDK commits listed above (-AllowOlderSdk)."
+    }
+    default { throw "The SDK pin could not be checked (see above). Nothing was built or changed." }
+}
+
+Write-Host "Setting version to $Version" -ForegroundColor Cyan
+$propsPath = Join-Path $repoRoot 'Directory.Build.props'
+$props = Get-Content -LiteralPath $propsPath -Raw
+$props = $props -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$Version</Version>"
+Set-Content -LiteralPath $propsPath -Value $props -NoNewline
 
 # Publish copies a file only when the source is NEWER than the copy already in the publish folder.
 # A package DLL keeps its older packed timestamp, so SDK DLLs left over from an earlier local-SDK
 # publish look newer and survive into the installer. v3.0.8 shipped that way. Start from an empty folder.
-if (Test-Path $publish) {
+if (Test-Path -LiteralPath $publish) {
     Write-Host "Clearing the previous publish output" -ForegroundColor Cyan
-    Remove-Item $publish -Recurse -Force
+    Remove-Item -LiteralPath $publish -Recurse -Force
 }
 
 Write-Host "Step 1/3: dotnet publish (SDK from NuGet, not the local checkout)" -ForegroundColor Cyan
@@ -103,20 +150,22 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 # the moment the pin and that props value agree (2.0.0 vs 2.0.0-preview.N today; identical on the
 # next stable pin) a leaked local DLL and the package DLL look the same by version.
 $globalPackages = ((dotnet nuget locals global-packages -l) -replace '^global-packages:\s*', '').Trim()
-if (-not (Test-Path $globalPackages)) { throw "Could not resolve the NuGet global packages folder (got '$globalPackages')." }
-$csproj = [xml](Get-Content (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
+if (-not (Test-Path -LiteralPath $globalPackages)) { throw "Could not resolve the NuGet global packages folder (got '$globalPackages')." }
+$csproj = [xml](Get-Content -LiteralPath (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
 $sdkRefs = @($csproj.Project.ItemGroup.PackageReference | Where-Object { $_.Include -like 'DiffusionNexus.Installer.SDK.*' })
 if ($sdkRefs.Count -eq 0) { throw "No SDK PackageReferences found in the Electron csproj." }
+# One version: Step 0c already refused pins that disagree, and that refusal cannot be overridden.
+$sdkPin = $sdkRefs[0].Version
 foreach ($ref in $sdkRefs) {
     $dll = Join-Path $publish "bin\$($ref.Include).dll"
-    if (-not (Test-Path $dll)) { throw "Packaged SDK assembly missing: $dll" }
+    if (-not (Test-Path -LiteralPath $dll)) { throw "Packaged SDK assembly missing: $dll" }
     $packaged = Join-Path $globalPackages "$($ref.Include.ToLowerInvariant())\$($ref.Version)\lib\net10.0\$($ref.Include).dll"
-    if (-not (Test-Path $packaged)) { throw "Restored package assembly missing: $packaged. The restore did not come from the pinned package $($ref.Include) $($ref.Version)." }
-    $actualHash   = (Get-FileHash $dll -Algorithm SHA256).Hash
-    $expectedHash = (Get-FileHash $packaged -Algorithm SHA256).Hash
+    if (-not (Test-Path -LiteralPath $packaged)) { throw "Restored package assembly missing: $packaged. The restore did not come from the pinned package $($ref.Include) $($ref.Version)." }
+    $actualHash   = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
+    $expectedHash = (Get-FileHash -LiteralPath $packaged -Algorithm SHA256).Hash
     if ($actualHash -ne $expectedHash) {
-        $actualVersion   = (Get-Item $dll).VersionInfo.ProductVersion
-        $expectedVersion = (Get-Item $packaged).VersionInfo.ProductVersion
+        $actualVersion   = (Get-Item -LiteralPath $dll).VersionInfo.ProductVersion
+        $expectedVersion = (Get-Item -LiteralPath $packaged).VersionInfo.ProductVersion
         throw "$($ref.Include) in the publish output ('$actualVersion') is not the DLL from package $($ref.Version) ('$expectedVersion'). The local SDK leaked into the release."
     }
 }
@@ -126,8 +175,28 @@ Write-Host "  SDK assemblies are byte-identical to the pinned packages" -Foregro
 # notices can be checked against what actually ships. Drift means a dependency changed and the
 # committed notices were not regenerated: fix that and commit before releasing.
 Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
-pwsh (Join-Path $repoRoot 'Scripts\Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
+pwsh (Join-Path $PSScriptRoot 'Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
 if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm (this publish output is what it rescans), commit, and release again." }
+
+# Step 1c: build-info.json. The PACKAGED app is asked what it contains, so the asset is what the
+# binary says, not what this script assumed - and the answer has to agree with what Step 0
+# checked, or this is a build that does not contain what was checked. Promote-Release.ps1 and the
+# catalog repo's schema gate read this asset; nothing reads the release notes back.
+Write-Host "Step 1c: build-info.json from the packaged app" -ForegroundColor Cyan
+$entryPoint = Join-Path $publish 'bin\DiffusionNexus.Installer.Electron.exe'
+if (-not (Test-Path -LiteralPath $entryPoint)) { throw "Packaged entry point missing: $entryPoint" }
+$buildInfoText = (& $entryPoint --build-info | ForEach-Object { "$_" }) -join "`n"
+if ($LASTEXITCODE -ne 0) { throw "The packaged app did not answer --build-info (exit $LASTEXITCODE):`n$buildInfoText" }
+try { $buildInfo = $buildInfoText | ConvertFrom-Json }
+catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
+if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
+if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
+# builtAt is null only when the app cannot date its own assembly file (a single-file publish). The
+# shipped app is never that, and promotion reads this asset as fact, so a null here is a broken build.
+if (-not $buildInfo.builtAt) { throw "The packaged app reports no builtAt: it could not find its own assembly file to date. This build is not what the release script expects." }
+$buildInfoPath = Join-Path $publish 'build-info.json'
+Set-Content -LiteralPath $buildInfoPath -Value $buildInfoText -Encoding utf8 -NoNewline
+Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog schema $($buildInfo.catalogSchema)" -ForegroundColor Green
 
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
 
@@ -141,7 +210,7 @@ Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)
 # --config) and silently replaces the config path, so the build dies looking for a file called
 # `.directories.app=app`. A generated config has no such ambiguity and behaves the same in
 # every shell.
-$builderConfig = Get-Content (Join-Path $project 'Properties\electron-builder.json') -Raw |
+$builderConfig = Get-Content -LiteralPath (Join-Path $project 'Properties\electron-builder.json') -Raw |
     ConvertFrom-Json -AsHashtable
 $builderConfig.electronVersion = $electronVersion
 $builderConfig.appId           = 'diffusion-nexus-installer'
@@ -152,9 +221,9 @@ $builderConfig.extraResources  = 'bin/**/*'
 $builderConfig.directories     = @{ app = 'app'; output = $publish }
 
 $generatedConfig = Join-Path $publish 'electron-builder.publish.json'
-$builderConfig | ConvertTo-Json -Depth 10 | Set-Content $generatedConfig -Encoding utf8
+$builderConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $generatedConfig -Encoding utf8
 
-Push-Location $publish
+Push-Location -LiteralPath $publish
 try {
     npx electron-builder --config=./electron-builder.publish.json --publish never
     if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
@@ -162,7 +231,7 @@ try {
 
 # Fail loudly rather than shipping an installer that cannot ever update itself.
 $appUpdate = Join-Path $publish 'win-unpacked\resources\app-update.yml'
-if (-not (Test-Path $appUpdate)) {
+if (-not (Test-Path -LiteralPath $appUpdate)) {
     throw "app-update.yml was not generated - the packaged app would not be able to update. Aborting."
 }
 Write-Host "  app-update.yml present" -ForegroundColor Green
@@ -172,19 +241,24 @@ if ($SkipUpload) { Write-Host "SkipUpload set - done." -ForegroundColor Yellow; 
 $channelName = if ($Prerelease) { 'Preview (GitHub pre-release)' } else { 'Stable (full release)' }
 Write-Host "Step 3/3: publishing v$Version to $ghRepo on $channelName" -ForegroundColor Cyan
 $setup = Join-Path $publish "EasyWorkloadInstaller-ITL-Setup-$Version.exe"
-foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'))) {
-    if (-not (Test-Path $f)) { throw "Expected artifact missing: $f" }
+foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'), $buildInfoPath)) {
+    if (-not (Test-Path -LiteralPath $f)) { throw "Expected artifact missing: $f" }
 }
+# The notes end with what the build contains, generated from the same data as build-info.json.
+# Human lines only; nothing reads them back.
+$sdkLine = "Built with Installer SDK $($buildInfo.sdk)"
+$notesWithBuild = if ($Notes.Trim()) { "$($Notes.TrimEnd())`n`n$sdkLine" } else { $sdkLine }
 # latest.yml for both channels: electron-updater reads it for any tag without a suffix, even
 # with allowPrerelease set, so a Preview build needs no separately named channel file and a
 # promoted one is already complete.
-$ghArgs = @('release', 'create', "v$Version", $setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'),
-            '--repo', $ghRepo, '--title', $Version, '--notes', $Notes)
+$ghArgs = @('release', 'create', "v$Version", $setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'), $buildInfoPath,
+            '--repo', $ghRepo, '--title', $Version, '--notes', $notesWithBuild)
 if ($Prerelease) { $ghArgs += '--prerelease' }
-gh @ghArgs
-if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+# Under the token Step 0b resolved: the active gh account may be read-only here.
+Invoke-WithGhToken $releaseToken { gh @ghArgs }
+if ($LASTEXITCODE -ne 0) { throw "gh release create failed (see gh's output above). Check whether v$Version exists on $ghRepo before retrying: gh may have created it and then failed on an asset." }
 
 Write-Host "Released v$Version on $channelName" -ForegroundColor Green
 if ($Prerelease) {
-    Write-Host "Promote it to Stable with: gh release edit v$Version --repo $ghRepo --prerelease=false --latest" -ForegroundColor Yellow
+    Write-Host "Promote it to Stable, once the pin and the seed are still current: gh release edit v$Version --repo $ghRepo --prerelease=false --latest (Promote-Release.ps1 will do these checks; issue #30)" -ForegroundColor Yellow
 }
