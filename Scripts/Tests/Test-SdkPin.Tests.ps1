@@ -132,10 +132,10 @@ Test-Case 'a commit that touches a package and its tests is listed once' {
 Test-Case 'the SDK checkout''s own branch, commits and edits are ignored - only origin/develop counts' {
     $f = New-SdkFixture
     Invoke-FixtureGit $f.Sdk @('switch', '--quiet', '--create', 'feature/local-work')
-    Add-Content -Path (Join-Path $f.Sdk 'DiffusionNexus.Installer.SDK.Services' 'Local.cs') -Value 'local'
+    Add-Content -LiteralPath (Join-Path $f.Sdk 'DiffusionNexus.Installer.SDK.Services' 'Local.cs') -Value 'local'
     Invoke-FixtureGit $f.Sdk @('add', '--all')
     Invoke-FixtureGit $f.Sdk @('commit', '--quiet', '-m', 'wip: local only')
-    Add-Content -Path (Join-Path $f.Sdk 'DiffusionNexus.Installer.SDK.Models' 'Dirty.cs') -Value 'uncommitted'
+    Add-Content -LiteralPath (Join-Path $f.Sdk 'DiffusionNexus.Installer.SDK.Models' 'Dirty.cs') -Value 'uncommitted'
     Assert-Result (Invoke-SdkPinCheck $f) 0 -Lacks 'wip: local only'
 }
 
@@ -196,7 +196,7 @@ Test-Case 'no SDK references at all is "not checked"' {
 
 Test-Case 'a project file that is not valid XML is "not checked", never "behind"' {
     $f = New-SdkFixture
-    Add-Content -Path (Join-Path $f.Installer 'Installer.Core' 'Installer.Core.csproj') -Value '<<<<<<< HEAD'
+    Add-Content -LiteralPath (Join-Path $f.Installer 'Installer.Core' 'Installer.Core.csproj') -Value '<<<<<<< HEAD'
     Assert-Result (Invoke-SdkPinCheck $f) 2 -Contains 'SDK pin NOT checked'
 }
 
@@ -233,6 +233,65 @@ Test-Case 'a clone whose fetch refspec no longer covers develop still sees new d
     Invoke-FixtureGit $f.Sdk @('remote', 'set-branches', 'origin', 'some-other-branch')
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unseen by a narrowed fetch'
     Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'fix: unseen by a narrowed fetch'
+}
+
+Test-Case 'a local branch or tag named origin/<branch> does not shadow the remote branch' {
+    # git resolves a short name against refs/tags and refs/heads before refs/remotes, so the classic slip
+    # `git checkout -b origin/develop` (or `git tag origin/develop`) left at an old commit read as "current":
+    # the fetch updated refs/remotes/origin/develop, the log walked the stray local ref.
+    $f = New-SdkFixture
+    Invoke-FixtureGit $f.Sdk @('branch', 'origin/develop', 'HEAD')
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unseen behind a local branch named origin/develop'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'fix: unseen behind a local branch named origin/develop'
+    $g = New-SdkFixture
+    Invoke-FixtureGit $g.Sdk @('tag', 'origin/develop', 'HEAD')
+    Add-SdkCommit $g 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unseen behind a tag named origin/develop'
+    Assert-Result (Invoke-SdkPinCheck $g) 3 -Contains 'fix: unseen behind a tag named origin/develop'
+}
+
+Test-Case 'a commit that touches only a file with a non-ASCII name counts' {
+    # core.quotePath prints such a path C-quoted and escaped ("...\303\234bersetzung.json"), which matched no
+    # package prefix, so the commit was dropped: a false "current".
+    $f = New-SdkFixture
+    Add-SdkCommit $f "DiffusionNexus.Installer.SDK.Services/Resources/$([char]0x00DC)bersetzung.json" 'feat: German strings'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'feat: German strings'
+}
+
+Test-Case 'a clone whose fetch refspec maps tags: its own tags stay untouched and the check still runs' {
+    # git applies the configured remote.origin.fetch lines to every ref it fetched even when the command names
+    # its own refspecs. `+refs/tags/*:refs/tags/*` (the "always update tags" recipe) then re-pointed the clone's
+    # own re-pointed tag; the non-forced form refused the fetch, which is exit 2. --refmap= turns the configured
+    # mapping off for this fetch.
+    foreach ($refspec in @('+refs/tags/*:refs/tags/*', 'refs/tags/*:refs/tags/*')) {
+        $f = New-SdkFixture
+        Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: to republish'
+        Invoke-FixtureGit $f.Sdk @('fetch', '--quiet', 'origin')
+        Invoke-FixtureGit $f.Sdk @('tag', '--force', 'v2.0.0-preview.1', 'origin/develop')
+        Invoke-FixtureGit $f.Sdk @('config', '--add', 'remote.origin.fetch', $refspec)
+        $before = (& git -C $f.Sdk rev-parse 'refs/tags/v2.0.0-preview.1').Trim()
+        Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'fix: to republish' -Lacks 'would clobber'
+        Assert-Equal (& git -C $f.Sdk rev-parse 'refs/tags/v2.0.0-preview.1').Trim() $before "local tag after the check ($refspec)"
+    }
+}
+
+Test-Case 'a tag deleted on GitHub after an earlier check is gone from the next one: the namespace is pruned' {
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: services change'
+    Add-SdkTag $f '2.0.0-preview.2'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'All of them ship in v2.0.0-preview.2'
+    Invoke-FixtureGit $f.Author @('push', '--quiet', '--delete', 'origin', 'v2.0.0-preview.2')
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'None of them is in a tagged SDK release yet' -Lacks 'v2.0.0-preview.2'
+}
+
+Test-Case 'a tag moved backwards on GitHub after an earlier check is taken as it is now: the namespace is forced' {
+    # A forward move fast-forwards even without the force; only a backward move proves it is needed.
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: services change'
+    Add-SdkTag $f '2.0.0-preview.2'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'All of them ship in v2.0.0-preview.2'
+    Invoke-FixtureGit $f.Author @('tag', '--force', '--annotate', 'v2.0.0-preview.2', '-m', 'moved back', 'v2.0.0-preview.1^{commit}')
+    Invoke-FixtureGit $f.Author @('push', '--quiet', '--force', 'origin', 'v2.0.0-preview.2')
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'None of them is in a tagged SDK release yet' -Lacks 'All of them ship'
 }
 
 Complete-Tests

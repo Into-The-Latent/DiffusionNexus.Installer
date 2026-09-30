@@ -2,8 +2,9 @@
 # and these scripts need nothing Pester adds.
 #
 # Every fixture is a set of throwaway git repos under the temp folder, in a directory whose name
-# contains a SPACE and an APOSTROPHE (so every test also proves paths are quoted and never pasted
-# into source text - the Windows user folder of a real machine may hold either, C:\Users\O'Neil):
+# contains a SPACE, an APOSTROPHE and SQUARE BRACKETS (so every test also proves paths are quoted,
+# never pasted into source text, and never handed to a -Path parameter, which reads [x] as a
+# wildcard - the Windows user folder of a real machine may hold any of them, C:\Users\O'Neil [2]):
 #   remote.git  bare repo  = the SDK on GitHub
 #   author      work repo  = whoever merges SDK PRs: commits, tags, pushes to remote.git
 #   sdk         clone      = the local SDK checkout Test-SdkPin.ps1 reads. Cloned right after the
@@ -21,7 +22,7 @@ function Invoke-FixtureGit([string]$Dir, [string[]]$GitArgs) {
 }
 
 function New-SdkFixture {
-    $root = Join-Path ([IO.Path]::GetTempPath()) ("sdkpin o'test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("sdkpin o'test [x]-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
     $script:FixtureRoots.Add($root)
     $fixture = [pscustomobject]@{
         Root      = $root
@@ -53,8 +54,8 @@ function Add-SdkCommit($Fixture, [string[]]$Paths, [string]$Subject, [string]$Co
     foreach ($path in $Paths) {
         $file = Join-Path $Fixture.Author $path
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
-        if ($PSBoundParameters.ContainsKey('Content')) { Set-Content -Path $file -Value $Content }
-        else { Add-Content -Path $file -Value $Subject }
+        if ($PSBoundParameters.ContainsKey('Content')) { Set-Content -LiteralPath $file -Value $Content }
+        else { Add-Content -LiteralPath $file -Value $Subject }
     }
     Invoke-FixtureGit $Fixture.Author @('add', '--all')
     Invoke-FixtureGit $Fixture.Author @('commit', '--quiet', '-m', $Subject)
@@ -88,7 +89,7 @@ function Write-FixtureProject($Fixture, [string]$Name, [string[]]$Packages, [str
     $lines = @('<Project Sdk="Microsoft.NET.Sdk">', '  <ItemGroup>', '    <PackageReference Include="Some.Other.Package" Version="9.9.9" />') +
              @($Packages | ForEach-Object { "    <PackageReference Include=`"$_`" Version=`"$Version`" />" }) +
              @('  </ItemGroup>', '</Project>')
-    Set-Content -Path (Join-Path $dir "$Name.csproj") -Value $lines
+    Set-Content -LiteralPath (Join-Path $dir "$Name.csproj") -Value $lines
 }
 
 # Runs Test-SdkPin.ps1 in a child pwsh, exactly as New-Release.ps1 does.

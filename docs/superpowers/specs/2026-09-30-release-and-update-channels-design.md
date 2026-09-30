@@ -113,10 +113,13 @@ turn git's "no" answers into errors.
 The embedded seed (`DiffusionNexus.Installer.Electron/Assets/Catalog/catalog.zip` +
 `manifest.json`) must **equal** the latest stable catalog release: same `catalogVersion`, same
 `commit`, same `archive.sha256`, and the zip's actual sha256 must match its own manifest. Not
-"not older": a seed ahead of the tag rolls back on the first check, and a seed behind it reseeds
-over a newer installed copy on the next launch (`docs/manual-smoke.md` §1.4–1.6 records the
-ping-pong). A Preview installer build embeds stable too, because promotion never rebuilds and a
-promoted binary must not carry a preview seed to Stable users.
+"not older": a seed ahead of the tag ships content the channel does not serve (under SDK 2.0.0 it
+rolled back on the first check, and a seed behind the tag reseeded over a newer installed copy on
+the next launch; `docs/manual-smoke.md` §1.4–1.6 records the ping-pong. SDK 2.1.0 ignores an
+older publication of the section's own channel and never reseeds over a remote apply, so the
+ping-pong is gone, but a wrong seed is still wrong content on a fresh machine). A Preview
+installer build embeds stable too, because promotion never rebuilds and a promoted binary must
+not carry a preview seed to Stable users.
 
 - Downloads `manifest.json` from `https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases/latest/download/manifest.json`
   (public, no token). Cannot download → exit 2.
@@ -302,8 +305,9 @@ Branches: `feature/release-gates-sdk`, `feature/release-gates-catalog`,
 ## 9. Testing
 
 - Scripts: plain pwsh tests under `Scripts/Tests/`, one file per script, shared `TestKit.ps1`
-  (fixtures = throwaway git repos in a path with a space; a fake global `gh` function stands in
-  for the CLI). #29's 15 cases, #30's 13 + 2 account cases and the 9 `ReleaseAccount` cases are
+  (fixtures = throwaway git repos in a path with a space, an apostrophe and square brackets, so
+  quoting, source-text pasting and `-Path` wildcard handling are all under test; a fake global
+  `gh` function stands in for the CLI). #29's 15 cases, #30's 13 + 2 account cases and the 9 `ReleaseAccount` cases are
   reused as posted; `Test-CatalogSeed` and `Update-CatalogSeed` get their own cases (match, wrong
   version, wrong commit, wrong hash, zip disagrees with its manifest, uncommitted seed, download
   fails → 2, `-Expect`). CI runs every `Scripts/Tests/*.Tests.ps1` and fails on any failed case.

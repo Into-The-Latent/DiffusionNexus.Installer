@@ -46,11 +46,6 @@
     seed against what is current first.
         gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
 
-.PARAMETER RepoRoot
-    A test hook: Scripts/Tests/New-Release.Tests.ps1 points the Step 0 gates at a fixture repo. A
-    release is always cut from this script's own checkout, and Step 1b refuses to go on with any
-    other root, because the notices check reads this checkout's files.
-
 .PARAMETER AllowOlderSdk
     Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
     version does not contain - a deliberate hold-back, such as a Stable hotfix while newer SDK work
@@ -69,8 +64,7 @@ param(
     [string]$Notes = "",
     [switch]$SkipUpload,
     [switch]$Prerelease,
-    [switch]$AllowOlderSdk,
-    [string]$RepoRoot
+    [switch]$AllowOlderSdk
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,8 +72,10 @@ $ErrorActionPreference = 'Stop'
 # profile that turns native exit codes into errors would throw on the first "no" before the
 # -AllowOlderSdk decision is even reached; dotnet and gh are checked through $LASTEXITCODE anyway.
 $PSNativeCommandUseErrorActionPreference = $false
-if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
-$repoRoot = $RepoRoot
+# A release is cut from the checkout this script lives in, and from nowhere else: the notices check
+# reads this checkout's files, and a parameter for another root would let Step 1 modify a tree that
+# Step 0 never checked. (Scripts/Tests/New-Release.Tests.ps1 copies the scripts into its fixture.)
+$repoRoot = Split-Path $PSScriptRoot -Parent
 $project  = Join-Path $repoRoot 'DiffusionNexus.Installer.Electron'
 $publish  = Join-Path $project  'bin\Release\net10.0\win-x64\publish'
 $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
@@ -131,16 +127,16 @@ switch ($LASTEXITCODE) {
 
 Write-Host "Setting version to $Version" -ForegroundColor Cyan
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
-$props = Get-Content $propsPath -Raw
+$props = Get-Content -LiteralPath $propsPath -Raw
 $props = $props -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$Version</Version>"
-Set-Content $propsPath $props -NoNewline
+Set-Content -LiteralPath $propsPath -Value $props -NoNewline
 
 # Publish copies a file only when the source is NEWER than the copy already in the publish folder.
 # A package DLL keeps its older packed timestamp, so SDK DLLs left over from an earlier local-SDK
 # publish look newer and survive into the installer. v3.0.8 shipped that way. Start from an empty folder.
-if (Test-Path $publish) {
+if (Test-Path -LiteralPath $publish) {
     Write-Host "Clearing the previous publish output" -ForegroundColor Cyan
-    Remove-Item $publish -Recurse -Force
+    Remove-Item -LiteralPath $publish -Recurse -Force
 }
 
 Write-Host "Step 1/3: dotnet publish (SDK from NuGet, not the local checkout)" -ForegroundColor Cyan
@@ -154,22 +150,22 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 # the moment the pin and that props value agree (2.0.0 vs 2.0.0-preview.N today; identical on the
 # next stable pin) a leaked local DLL and the package DLL look the same by version.
 $globalPackages = ((dotnet nuget locals global-packages -l) -replace '^global-packages:\s*', '').Trim()
-if (-not (Test-Path $globalPackages)) { throw "Could not resolve the NuGet global packages folder (got '$globalPackages')." }
-$csproj = [xml](Get-Content (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
+if (-not (Test-Path -LiteralPath $globalPackages)) { throw "Could not resolve the NuGet global packages folder (got '$globalPackages')." }
+$csproj = [xml](Get-Content -LiteralPath (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -Raw)
 $sdkRefs = @($csproj.Project.ItemGroup.PackageReference | Where-Object { $_.Include -like 'DiffusionNexus.Installer.SDK.*' })
 if ($sdkRefs.Count -eq 0) { throw "No SDK PackageReferences found in the Electron csproj." }
 # One version: Step 0c already refused pins that disagree, and that refusal cannot be overridden.
 $sdkPin = $sdkRefs[0].Version
 foreach ($ref in $sdkRefs) {
     $dll = Join-Path $publish "bin\$($ref.Include).dll"
-    if (-not (Test-Path $dll)) { throw "Packaged SDK assembly missing: $dll" }
+    if (-not (Test-Path -LiteralPath $dll)) { throw "Packaged SDK assembly missing: $dll" }
     $packaged = Join-Path $globalPackages "$($ref.Include.ToLowerInvariant())\$($ref.Version)\lib\net10.0\$($ref.Include).dll"
-    if (-not (Test-Path $packaged)) { throw "Restored package assembly missing: $packaged. The restore did not come from the pinned package $($ref.Include) $($ref.Version)." }
-    $actualHash   = (Get-FileHash $dll -Algorithm SHA256).Hash
-    $expectedHash = (Get-FileHash $packaged -Algorithm SHA256).Hash
+    if (-not (Test-Path -LiteralPath $packaged)) { throw "Restored package assembly missing: $packaged. The restore did not come from the pinned package $($ref.Include) $($ref.Version)." }
+    $actualHash   = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
+    $expectedHash = (Get-FileHash -LiteralPath $packaged -Algorithm SHA256).Hash
     if ($actualHash -ne $expectedHash) {
-        $actualVersion   = (Get-Item $dll).VersionInfo.ProductVersion
-        $expectedVersion = (Get-Item $packaged).VersionInfo.ProductVersion
+        $actualVersion   = (Get-Item -LiteralPath $dll).VersionInfo.ProductVersion
+        $expectedVersion = (Get-Item -LiteralPath $packaged).VersionInfo.ProductVersion
         throw "$($ref.Include) in the publish output ('$actualVersion') is not the DLL from package $($ref.Version) ('$expectedVersion'). The local SDK leaked into the release."
     }
 }
@@ -179,10 +175,6 @@ Write-Host "  SDK assemblies are byte-identical to the pinned packages" -Foregro
 # notices can be checked against what actually ships. Drift means a dependency changed and the
 # committed notices were not regenerated: fix that and commit before releasing.
 Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
-$ownRoot = Split-Path $PSScriptRoot -Parent
-if ((Resolve-Path $repoRoot).Path -ne (Resolve-Path $ownRoot).Path) {
-    throw "-RepoRoot is a test hook for the Step 0 gates. Generate-ThirdPartyNotices.ps1 checks this checkout ($ownRoot), so a release must be cut from it."
-}
 pwsh (Join-Path $PSScriptRoot 'Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
 if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm (this publish output is what it rescans), commit, and release again." }
 
@@ -192,7 +184,7 @@ if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scr
 # catalog repo's schema gate read this asset; nothing reads the release notes back.
 Write-Host "Step 1c: build-info.json from the packaged app" -ForegroundColor Cyan
 $entryPoint = Join-Path $publish 'bin\DiffusionNexus.Installer.Electron.exe'
-if (-not (Test-Path $entryPoint)) { throw "Packaged entry point missing: $entryPoint" }
+if (-not (Test-Path -LiteralPath $entryPoint)) { throw "Packaged entry point missing: $entryPoint" }
 $buildInfoText = (& $entryPoint --build-info | ForEach-Object { "$_" }) -join "`n"
 if ($LASTEXITCODE -ne 0) { throw "The packaged app did not answer --build-info (exit $LASTEXITCODE):`n$buildInfoText" }
 try { $buildInfo = $buildInfoText | ConvertFrom-Json }
@@ -203,7 +195,7 @@ if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with
 # shipped app is never that, and promotion reads this asset as fact, so a null here is a broken build.
 if (-not $buildInfo.builtAt) { throw "The packaged app reports no builtAt: it could not find its own assembly file to date. This build is not what the release script expects." }
 $buildInfoPath = Join-Path $publish 'build-info.json'
-Set-Content $buildInfoPath $buildInfoText -Encoding utf8 -NoNewline
+Set-Content -LiteralPath $buildInfoPath -Value $buildInfoText -Encoding utf8 -NoNewline
 Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog schema $($buildInfo.catalogSchema)" -ForegroundColor Green
 
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
@@ -218,7 +210,7 @@ Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)
 # --config) and silently replaces the config path, so the build dies looking for a file called
 # `.directories.app=app`. A generated config has no such ambiguity and behaves the same in
 # every shell.
-$builderConfig = Get-Content (Join-Path $project 'Properties\electron-builder.json') -Raw |
+$builderConfig = Get-Content -LiteralPath (Join-Path $project 'Properties\electron-builder.json') -Raw |
     ConvertFrom-Json -AsHashtable
 $builderConfig.electronVersion = $electronVersion
 $builderConfig.appId           = 'diffusion-nexus-installer'
@@ -229,9 +221,9 @@ $builderConfig.extraResources  = 'bin/**/*'
 $builderConfig.directories     = @{ app = 'app'; output = $publish }
 
 $generatedConfig = Join-Path $publish 'electron-builder.publish.json'
-$builderConfig | ConvertTo-Json -Depth 10 | Set-Content $generatedConfig -Encoding utf8
+$builderConfig | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $generatedConfig -Encoding utf8
 
-Push-Location $publish
+Push-Location -LiteralPath $publish
 try {
     npx electron-builder --config=./electron-builder.publish.json --publish never
     if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
@@ -239,7 +231,7 @@ try {
 
 # Fail loudly rather than shipping an installer that cannot ever update itself.
 $appUpdate = Join-Path $publish 'win-unpacked\resources\app-update.yml'
-if (-not (Test-Path $appUpdate)) {
+if (-not (Test-Path -LiteralPath $appUpdate)) {
     throw "app-update.yml was not generated - the packaged app would not be able to update. Aborting."
 }
 Write-Host "  app-update.yml present" -ForegroundColor Green
@@ -250,7 +242,7 @@ $channelName = if ($Prerelease) { 'Preview (GitHub pre-release)' } else { 'Stabl
 Write-Host "Step 3/3: publishing v$Version to $ghRepo on $channelName" -ForegroundColor Cyan
 $setup = Join-Path $publish "EasyWorkloadInstaller-ITL-Setup-$Version.exe"
 foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'), $buildInfoPath)) {
-    if (-not (Test-Path $f)) { throw "Expected artifact missing: $f" }
+    if (-not (Test-Path -LiteralPath $f)) { throw "Expected artifact missing: $f" }
 }
 # The notes end with what the build contains, generated from the same data as build-info.json.
 # Human lines only; nothing reads them back.

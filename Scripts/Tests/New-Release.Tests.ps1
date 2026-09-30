@@ -2,42 +2,46 @@
 # Tests for the Step 0 gates of Scripts/New-Release.ps1. Run: pwsh -NoProfile -File Scripts/Tests/New-Release.Tests.ps1
 # Exit code = number of failed cases. CI runs every Scripts/Tests/*.Tests.ps1.
 #
-# Only the gates are under test. -RepoRoot points the script at a fixture repo, the SDK pin check
-# finds a fixture SDK through LocalSDKPath, and -SkipUpload keeps gh out of it. A run that gets past
-# the gates fails at dotnet publish, because the fixture has no project. That failure is the proof
-# it got there: the version was written and "dotnet publish failed" is on the output. (So these
-# tests need dotnet on PATH; CI runs them after setup-dotnet.) Paths reach the child pwsh through
-# the environment, never pasted into the -Command text: a fixture path holds an apostrophe.
+# Only the gates are under test. Scripts/*.ps1 are copied into the fixture repo's own Scripts folder
+# and run from there, so the script under test takes the fixture for its checkout exactly as a
+# release takes the real one (there is no parameter for another root: a release is cut from the
+# checkout the script lives in). The SDK pin check finds a fixture SDK through LocalSDKPath, and
+# -SkipUpload keeps gh out of it. A run that gets past the gates fails at dotnet publish, because the
+# fixture has no project. That failure is the proof it got there: the version was written and
+# "dotnet publish failed" is on the output. (So these tests need dotnet on PATH; CI runs them after
+# setup-dotnet.) Paths reach the child pwsh through the environment, never pasted into the -Command
+# text: a fixture path holds an apostrophe.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestKit.ps1')
 
 function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$NativeErrors) {
-    $script = Join-Path $PSScriptRoot '..' 'New-Release.ps1'
+    $scripts = Join-Path $Fixture.Installer 'Scripts'
+    New-Item -ItemType Directory -Force -Path $scripts | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..') -Filter '*.ps1' -File | Copy-Item -Destination $scripts
+    $script = Join-Path $scripts 'New-Release.ps1'
     $props = Join-Path $Fixture.Installer 'Directory.Build.props'
-    Set-Content -Path $props -Value '<Project><PropertyGroup><Version>0.0.1</Version></PropertyGroup></Project>'
+    Set-Content -LiteralPath $props -Value '<Project><PropertyGroup><Version>0.0.1</Version></PropertyGroup></Project>'
     $savedSdkPath = $env:LocalSDKPath
     $savedToken = $env:GITHUB_PACKAGES_TOKEN
     $env:LocalSDKPath = $Fixture.Sdk
     $env:GITHUB_PACKAGES_TOKEN = 'fixture-token'
     $env:NEWRELEASE_TEST_SCRIPT = $script
-    $env:NEWRELEASE_TEST_REPOROOT = $Fixture.Installer
     $env:NEWRELEASE_TEST_ALLOWOLDER = if ('-AllowOlderSdk' -in $ExtraArgs) { '1' } else { '' }
     try {
         # A profile may set $PSNativeCommandUseErrorActionPreference; the gate must work either way.
         $preference = if ($NativeErrors) { '$true' } else { '$false' }
-        $command = '$PSNativeCommandUseErrorActionPreference = ' + $preference + '; $extra = @{ AllowOlderSdk = [bool]$env:NEWRELEASE_TEST_ALLOWOLDER }; & $env:NEWRELEASE_TEST_SCRIPT -RepoRoot $env:NEWRELEASE_TEST_REPOROOT -Version 9.9.9 -SkipUpload @extra'
+        $command = '$PSNativeCommandUseErrorActionPreference = ' + $preference + '; $extra = @{ AllowOlderSdk = [bool]$env:NEWRELEASE_TEST_ALLOWOLDER }; & $env:NEWRELEASE_TEST_SCRIPT -Version 9.9.9 -SkipUpload @extra'
         $output = & pwsh -NoProfile -Command $command 2>&1
         $exit = $LASTEXITCODE
         [pscustomobject]@{
             ExitCode       = $exit
             Text           = ($output | ForEach-Object { "$_" }) -join "`n"
-            VersionWritten = (Get-Content $props -Raw).Contains('<Version>9.9.9</Version>')
+            VersionWritten = (Get-Content -LiteralPath $props -Raw).Contains('<Version>9.9.9</Version>')
         }
     } finally {
         $env:LocalSDKPath = $savedSdkPath
         $env:GITHUB_PACKAGES_TOKEN = $savedToken
         $env:NEWRELEASE_TEST_SCRIPT = $null
-        $env:NEWRELEASE_TEST_REPOROOT = $null
         $env:NEWRELEASE_TEST_ALLOWOLDER = $null
     }
 }

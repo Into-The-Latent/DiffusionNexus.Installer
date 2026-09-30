@@ -18,7 +18,8 @@
 
     Only the remote's tags count, read into a private ref namespace: a tag that exists only in the
     local clone is not a release, and the clone's own tags are never written - it is the
-    maintainer's everyday SDK repo.
+    maintainer's everyday SDK repo. Refs are named in full (refs/remotes/origin/<branch>), because a
+    stray local branch or tag called origin/<branch> would shadow the short name.
 
     Exit codes - New-Release.ps1 and Promote-Release.ps1 rely on them:
       0  the pin contains everything on the SDK branch
@@ -74,8 +75,10 @@ function Stop-Unchecked([string]$Reason) {
     exit 2
 }
 
+# core.quotePath off: a path with a non-ASCII character comes back verbatim, not C-quoted and escaped
+# ("...\303\234bersetzung.json"), which no package prefix would match.
 function Invoke-SdkGit([string[]]$GitArgs) {
-    $output = & git -C $SdkPath @GitArgs 2>&1
+    $output = & git -C $SdkPath -c core.quotePath=false @GitArgs 2>&1
     [pscustomobject]@{ ExitCode = $LASTEXITCODE; Lines = @($output | ForEach-Object { "$_" }) }
 }
 
@@ -129,8 +132,11 @@ function Test-ShipsRootBuildChange([string]$Hash, [string[]]$Files) {
 if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
 
 # ------------------------------------------------------------------------------------ the pin
-$refs = @(foreach ($project in Get-ChildItem -Path (Join-Path $RepoRoot '*' '*.csproj') -File) {
-    Select-Xml -Path $project.FullName -XPath '//PackageReference[starts-with(@Include, "DiffusionNexus.Installer.SDK.")]' |
+# -LiteralPath throughout: -Path reads [ ] in the repo path as a wildcard, and a checkout under such a
+# folder would find no project at all - exit 2, which nothing overrides.
+$projects = @(Get-ChildItem -LiteralPath $RepoRoot -Directory | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Filter '*.csproj' -File })
+$refs = @(foreach ($project in $projects) {
+    Select-Xml -LiteralPath $project.FullName -XPath '//PackageReference[starts-with(@Include, "DiffusionNexus.Installer.SDK.")]' |
         ForEach-Object { [pscustomobject]@{ Project = $project.Name; Package = $_.Node.Include; Version = $_.Node.Version } }
 })
 if ($refs.Count -eq 0) { Stop-Unchecked "no DiffusionNexus.Installer.SDK.* PackageReference in any project under $RepoRoot." }
@@ -152,9 +158,9 @@ if (-not $SdkPath) {
     # A folder that exists but is not a checkout (an exported copy under LocalSDKPath, say) must not
     # shadow a real clone further down the list: that would be exit 2, which nothing overrides.
     $SdkPath = @($env:LocalSDKPath, (Join-Path $RepoRoot '..' 'DiffusionNexus.Installer.SDK'), 'E:\Repos\DiffusionNexus.Installer.SDK') |
-        Where-Object { $_ -and (Test-Path (Join-Path $_ '.git')) } | Select-Object -First 1
+        Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ '.git')) } | Select-Object -First 1
 }
-if (-not $SdkPath -or -not (Test-Path (Join-Path $SdkPath '.git'))) {
+if (-not $SdkPath -or -not (Test-Path -LiteralPath (Join-Path $SdkPath '.git'))) {
     Stop-Unchecked "no SDK git checkout found$(if ($SdkPath) { " at $SdkPath" }). Pass -SdkPath or set LocalSDKPath."
 }
 
@@ -163,21 +169,29 @@ if (-not $SdkPath -or -not (Test-Path (Join-Path $SdkPath '.git'))) {
 # stale ref reads as "current" - the one answer this gate must never give. The remote's tags go into
 # a private namespace, forced and pruned: a tag the SDK re-pointed after a failed publish is taken
 # as it is on GitHub, a tag deleted there disappears, and refs/tags (the clone's own, possibly
-# re-pointed to republish) is neither read nor written. --no-tags keeps auto-following out of it.
-$fetch = Invoke-SdkGit @('fetch', '--quiet', '--prune', '--no-tags', 'origin', "+refs/heads/${SdkBranch}:refs/remotes/origin/${SdkBranch}", "+refs/tags/*:${tagNamespace}/*")
+# re-pointed to republish) is neither read nor written. --no-tags keeps auto-following out of it, and
+# --refmap= keeps the clone's configured remote.origin.fetch out of it: git otherwise applies those
+# lines to every ref it fetched even when the command names its own refspecs, so a clone configured
+# with +refs/tags/*:refs/tags/* would have its own tags re-pointed after all, and one with the
+# non-forced form would have the fetch refused.
+$fetch = Invoke-SdkGit @('fetch', '--quiet', '--prune', '--no-tags', '--refmap=', 'origin', "+refs/heads/${SdkBranch}:refs/remotes/origin/${SdkBranch}", "+refs/tags/*:${tagNamespace}/*")
 if ($fetch.ExitCode -ne 0) {
     Stop-Unchecked "git fetch in $SdkPath failed, so the newest SDK work is unknown:`n$($fetch.Lines -join "`n")"
 }
-$branchRef = "origin/$SdkBranch"
+# The full name: git resolves a short name against refs/tags and refs/heads before refs/remotes, so a
+# stray local branch or tag named origin/develop (`git checkout -b origin/develop`) would be walked
+# instead of what was just fetched, and read as "current".
+$branchName = "origin/$SdkBranch"
+$branchRef  = "refs/remotes/$branchName"
 if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$branchRef^{commit}")).ExitCode -ne 0) {
-    Stop-Unchecked "$branchRef does not exist in $SdkPath."
+    Stop-Unchecked "$branchName does not exist in $SdkPath."
 }
 if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$pinRef^{commit}")).ExitCode -ne 0) {
     Stop-Unchecked "the pinned version $Pin has no tag $pinTag in the SDK repo."
 }
 foreach ($package in $packages) {
     if ((Invoke-SdkGit @('cat-file', '-e', "${branchRef}:$package")).ExitCode -ne 0) {
-        Stop-Unchecked "package folder $package does not exist on $branchRef. A moved or renamed project would be invisible to this check."
+        Stop-Unchecked "package folder $package does not exist on $branchName. A moved or renamed project would be invisible to this check."
     }
 }
 
