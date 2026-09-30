@@ -38,22 +38,60 @@ Test-Case 'behind, mixed: counts what a tag ships and what is unreleased' {
                   'Released in v2.0.0-preview.2: 1. In no tagged SDK release yet: 1.'
 }
 
-Test-Case 'changes that do not ship never count: tests, the dn-catalog tool, docs, a version-only props bump' {
+Test-Case 'changes that do not ship never count: tests, the dn-catalog tool, docs, a version bump, package metadata, a comment' {
     $f = New-SdkFixture
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Tests/ServiceTests.cs' 'test: more tests'
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Catalog.Tool/Program.cs' 'feat: dn-catalog change'
     Add-SdkCommit $f 'Directory.Build.props' 'build: version bump' -Content (New-SdkProps '2.0.0-preview.2')
+    Add-SdkCommit $f 'Directory.Build.props' 'build: repo moved' -Content (New-SdkProps '2.0.0-preview.2' -RepositoryUrl 'https://github.com/y/sdk')
+    Add-SdkCommit $f 'Directory.Build.props' 'build: comment' -Content (New-SdkProps '2.0.0-preview.2' -RepositoryUrl 'https://github.com/y/sdk' -Extra '<!-- why -->')
     Add-SdkCommit $f 'docs/notes.md' 'docs: note'
     Assert-Result (Invoke-SdkPinCheck $f) 0
 }
 
-Test-Case 'a root build file change that is not a version bump counts: MSBuild imports it into every package' {
+Test-Case 'a root build file change that affects the build counts: MSBuild imports it into every package' {
     $f = New-SdkFixture
     Add-SdkCommit $f 'Directory.Build.props' 'build: language version' -Content (New-SdkProps '2.0.0-preview.1' -Extra '<LangVersion>latest</LangVersion>')
     Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'build: language version'
     $g = New-SdkFixture
     Add-SdkCommit $g 'Directory.Packages.props' 'build: central pin' -Content '<Project><ItemGroup><PackageVersion Include="X" Version="1" /></ItemGroup></Project>'
     Assert-Result (Invoke-SdkPinCheck $g) 3 -Contains 'build: central pin'
+    # A dependency pin in child-element form is a <Version> too - the 1.2.35 SQLitePCLRaw security pin looked like this.
+    $h = New-SdkFixture
+    Add-SdkCommit $h 'Directory.Build.props' 'build: pin sqlite' -Content (New-SdkProps '2.0.0-preview.1' -SqlitePin '2.1.12')
+    Assert-Result (Invoke-SdkPinCheck $h) 3 -Contains 'build: pin sqlite'
+}
+
+Test-Case 'a tag [semver] cannot parse is skipped, not fatal' {
+    # One oddly named tag anywhere in develop's history must not turn "behind" into exit 2.
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unreleased change'
+    Add-SdkTag $f '2.1.0-rc.01'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'None of them is in a tagged SDK release yet' -Lacks 'NOT checked'
+}
+
+Test-Case 'tags that exist only in the local SDK clone are not releases' {
+    # The SDK publish flow is tag, then push. Between the two, a local-only tag must count neither as
+    # the newest release nor as the pin's own tag.
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unreleased change'
+    Invoke-FixtureGit $f.Sdk @('fetch', '--quiet', 'origin')
+    Invoke-FixtureGit $f.Sdk @('tag', 'v2.1.0', 'origin/develop')
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'None of them is in a tagged SDK release yet' -Lacks 'v2.1.0'
+    Set-InstallerPins $f '2.1.0'
+    Assert-Result (Invoke-SdkPinCheck $f) 2 -Contains 'the pinned version 2.1.0 has no tag v2.1.0'
+}
+
+Test-Case 'the check never touches the local SDK clone''s own tags' {
+    # The clone is the maintainer's everyday working repo. A tag re-pointed locally (to republish after a
+    # failed publish) must survive the check exactly as it was.
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: to republish'
+    Invoke-FixtureGit $f.Sdk @('fetch', '--quiet', 'origin')
+    Invoke-FixtureGit $f.Sdk @('tag', '--force', 'v2.0.0-preview.1', 'origin/develop')
+    $before = (& git -C $f.Sdk rev-parse 'refs/tags/v2.0.0-preview.1').Trim()
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'fix: to republish'
+    Assert-Equal (& git -C $f.Sdk rev-parse 'refs/tags/v2.0.0-preview.1').Trim() $before 'local tag after the check'
 }
 
 Test-Case 'a tag the SDK moved (re-published after a failed publish) is taken from the remote, not refused' {
@@ -106,10 +144,14 @@ Test-Case 'a session that turns native exit codes into errors does not break the
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: released change'
     Add-SdkTag $f '2.0.0-preview.2'
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Models/Model.cs' 'feat: unreleased change'
-    $check = Join-Path $PSScriptRoot '..' 'Test-SdkPin.ps1'
-    $command = "`$PSNativeCommandUseErrorActionPreference = `$true; & '$check' -RepoRoot '$($f.Installer)' -SdkPath '$($f.Sdk)'; exit `$LASTEXITCODE"
-    $output = & pwsh -NoProfile -Command $command 2>&1
-    $result = [pscustomobject]@{ ExitCode = $LASTEXITCODE; Text = ($output | ForEach-Object { "$_" }) -join "`n" }
+    $env:SDKPIN_TEST_SCRIPT = Join-Path $PSScriptRoot '..' 'Test-SdkPin.ps1'
+    $env:SDKPIN_TEST_REPOROOT = $f.Installer
+    $env:SDKPIN_TEST_SDKPATH = $f.Sdk
+    try {
+        $command = '$PSNativeCommandUseErrorActionPreference = $true; & $env:SDKPIN_TEST_SCRIPT -RepoRoot $env:SDKPIN_TEST_REPOROOT -SdkPath $env:SDKPIN_TEST_SDKPATH; exit $LASTEXITCODE'
+        $output = & pwsh -NoProfile -Command $command 2>&1
+        $result = [pscustomobject]@{ ExitCode = $LASTEXITCODE; Text = ($output | ForEach-Object { "$_" }) -join "`n" }
+    } finally { $env:SDKPIN_TEST_SCRIPT = $null; $env:SDKPIN_TEST_REPOROOT = $null; $env:SDKPIN_TEST_SDKPATH = $null }
     Assert-Result $result 3 -Contains 'In no tagged SDK release yet: 1.'
 }
 

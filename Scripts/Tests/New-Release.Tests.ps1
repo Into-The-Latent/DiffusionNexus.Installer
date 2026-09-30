@@ -5,7 +5,9 @@
 # Only the gates are under test. -RepoRoot points the script at a fixture repo, the SDK pin check
 # finds a fixture SDK through LocalSDKPath, and -SkipUpload keeps gh out of it. A run that gets past
 # the gates fails at dotnet publish, because the fixture has no project. That failure is the proof
-# it got there: the version was written and "dotnet publish failed" is on the output.
+# it got there: the version was written and "dotnet publish failed" is on the output. (So these
+# tests need dotnet on PATH; CI runs them after setup-dotnet.) Paths reach the child pwsh through
+# the environment, never pasted into the -Command text: a fixture path holds an apostrophe.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestKit.ps1')
 
@@ -17,10 +19,13 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
     $savedToken = $env:GITHUB_PACKAGES_TOKEN
     $env:LocalSDKPath = $Fixture.Sdk
     $env:GITHUB_PACKAGES_TOKEN = 'fixture-token'
+    $env:NEWRELEASE_TEST_SCRIPT = $script
+    $env:NEWRELEASE_TEST_REPOROOT = $Fixture.Installer
+    $env:NEWRELEASE_TEST_ALLOWOLDER = if ('-AllowOlderSdk' -in $ExtraArgs) { '1' } else { '' }
     try {
         # A profile may set $PSNativeCommandUseErrorActionPreference; the gate must work either way.
         $preference = if ($NativeErrors) { '$true' } else { '$false' }
-        $command = "`$PSNativeCommandUseErrorActionPreference = $preference; & '$script' -RepoRoot '$($Fixture.Installer)' -Version 9.9.9 -SkipUpload $($ExtraArgs -join ' ')"
+        $command = '$PSNativeCommandUseErrorActionPreference = ' + $preference + '; $extra = @{ AllowOlderSdk = [bool]$env:NEWRELEASE_TEST_ALLOWOLDER }; & $env:NEWRELEASE_TEST_SCRIPT -RepoRoot $env:NEWRELEASE_TEST_REPOROOT -Version 9.9.9 -SkipUpload @extra'
         $output = & pwsh -NoProfile -Command $command 2>&1
         $exit = $LASTEXITCODE
         [pscustomobject]@{
@@ -31,6 +36,9 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
     } finally {
         $env:LocalSDKPath = $savedSdkPath
         $env:GITHUB_PACKAGES_TOKEN = $savedToken
+        $env:NEWRELEASE_TEST_SCRIPT = $null
+        $env:NEWRELEASE_TEST_REPOROOT = $null
+        $env:NEWRELEASE_TEST_ALLOWOLDER = $null
     }
 }
 

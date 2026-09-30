@@ -95,12 +95,14 @@ Everything under "Step 0" runs before `Directory.Build.props` is touched.
 
 Reads the SDK pins from every `*.csproj` one folder deep and requires them to agree. `git fetch`
 in the local SDK checkout (the folder `Directory.Build.targets` redirects to; the check never
-touches its working tree or branch; tags are fetched forced, so a tag the SDK re-pointed after a
-failed publish does not refuse the check). Lists `git log --no-merges v<pin>..origin/develop --
+touches its working tree, branch or tags: the remote's tags are read into a private ref namespace,
+forced and pruned, so a tag re-pointed on GitHub is taken as it is there and a tag that exists
+only locally is not a release). Lists `git log --no-merges v<pin>..origin/develop --
 <pinned package folders> Directory.Build.props Directory.Build.targets Directory.Packages.props`:
 the packages' own folders, plus the root build files MSBuild imports into every package, except a
-root commit that only moves `<Version>` lines. The newest tag on `origin/develop` at or above the
-pin (semver, any major) decides the advice: "bump to vX" or "tag and publish the SDK first".
+root commit that only changes the project version, package metadata properties or comments. The
+newest remote tag on `origin/develop` at or above the pin (semver, any major; unparsable tags
+skipped) decides the advice: "bump to vX" or "tag and publish the SDK first".
 `-Pin <version>` checks a given version instead of the project pins (for promotion). Exit 2 for:
 no SDK checkout, failed fetch, pins that disagree, a pin with no tag, a project file that is not
 valid XML. Runs in a child `pwsh` so a profile's `$PSNativeCommandUseErrorActionPreference` cannot
@@ -149,6 +151,10 @@ exits 0 before any host or window is created.
   "builtAt": "2026-09-30T18:00:00Z"
 }
 ```
+
+`builtAt` is the write time of the app's own assembly file. The app reports `null` when it has no
+such file to date (a single-file publish); the shipped app never is one, and Step 1c refuses a
+build that reports `null`, so readers of the uploaded asset may rely on a timestamp.
 
 - `app`: `AppVersion`. `sdk`: the informational version of the packaged
   `DiffusionNexus.Installer.SDK.Catalog` assembly, with any `+sha` stripped. `catalogSchema`:

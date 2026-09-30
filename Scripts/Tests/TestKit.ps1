@@ -2,8 +2,8 @@
 # and these scripts need nothing Pester adds.
 #
 # Every fixture is a set of throwaway git repos under the temp folder, in a directory whose name
-# contains a SPACE (so every test also proves paths are quoted - the Windows user folder of a
-# real machine may have one):
+# contains a SPACE and an APOSTROPHE (so every test also proves paths are quoted and never pasted
+# into source text - the Windows user folder of a real machine may hold either, C:\Users\O'Neil):
 #   remote.git  bare repo  = the SDK on GitHub
 #   author      work repo  = whoever merges SDK PRs: commits, tags, pushes to remote.git
 #   sdk         clone      = the local SDK checkout Test-SdkPin.ps1 reads. Cloned right after the
@@ -21,7 +21,7 @@ function Invoke-FixtureGit([string]$Dir, [string[]]$GitArgs) {
 }
 
 function New-SdkFixture {
-    $root = Join-Path ([IO.Path]::GetTempPath()) ('sdkpin test-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("sdkpin o'test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
     $script:FixtureRoots.Add($root)
     $fixture = [pscustomobject]@{
         Root      = $root
@@ -61,10 +61,12 @@ function Add-SdkCommit($Fixture, [string[]]$Paths, [string]$Subject, [string]$Co
     Invoke-FixtureGit $Fixture.Author @('push', '--quiet', 'origin', 'develop')
 }
 
-# The SDK's root Directory.Build.props: the version line every release bumps, plus whatever else.
-function New-SdkProps([string]$Version, [string[]]$Extra = @()) {
-    (@('<Project>', '  <PropertyGroup>', "    <Version>$Version</Version>", '    <Nullable>enable</Nullable>') +
-     @($Extra | ForEach-Object { "    $_" }) + @('  </PropertyGroup>', '</Project>')) -join "`n"
+# The SDK's root Directory.Build.props: the version line every release bumps, package metadata that
+# never ships, a compile setting that does - plus whatever else the test adds.
+function New-SdkProps([string]$Version, [string[]]$Extra = @(), [string]$RepositoryUrl = 'https://github.com/x/sdk', [string]$SqlitePin = '2.1.11') {
+    (@('<Project>', '  <PropertyGroup>', "    <Version>$Version</Version>", "    <RepositoryUrl>$RepositoryUrl</RepositoryUrl>", '    <Nullable>enable</Nullable>') +
+     @($Extra | ForEach-Object { "    $_" }) +
+     @('  </PropertyGroup>', '  <ItemGroup>', '    <PackageReference Update="SQLitePCLRaw.lib.e_sqlite3">', "      <Version>$SqlitePin</Version>", '    </PackageReference>', '  </ItemGroup>', '</Project>')) -join "`n"
 }
 
 function Add-SdkTag($Fixture, [string]$Version) {

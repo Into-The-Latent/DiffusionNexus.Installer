@@ -47,8 +47,9 @@
         gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
 
 .PARAMETER RepoRoot
-    The installer repo to release from. Defaults to the folder above this script;
-    Scripts/Tests/New-Release.Tests.ps1 points it at a fixture to test the gates.
+    A test hook: Scripts/Tests/New-Release.Tests.ps1 points the Step 0 gates at a fixture repo. A
+    release is always cut from this script's own checkout, and Step 1b refuses to go on with any
+    other root, because the notices check reads this checkout's files.
 
 .PARAMETER AllowOlderSdk
     Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
@@ -178,6 +179,10 @@ Write-Host "  SDK assemblies are byte-identical to the pinned packages" -Foregro
 # notices can be checked against what actually ships. Drift means a dependency changed and the
 # committed notices were not regenerated: fix that and commit before releasing.
 Write-Host "Step 1b: third-party notices match the packaged app" -ForegroundColor Cyan
+$ownRoot = Split-Path $PSScriptRoot -Parent
+if ((Resolve-Path $repoRoot).Path -ne (Resolve-Path $ownRoot).Path) {
+    throw "-RepoRoot is a test hook for the Step 0 gates. Generate-ThirdPartyNotices.ps1 checks this checkout ($ownRoot), so a release must be cut from it."
+}
 pwsh (Join-Path $PSScriptRoot 'Generate-ThirdPartyNotices.ps1') -Check -RefreshNpm
 if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scripts/Generate-ThirdPartyNotices.ps1 -RefreshNpm (this publish output is what it rescans), commit, and release again." }
 
@@ -194,6 +199,9 @@ try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
 if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
+# builtAt is null only when the app cannot date its own assembly file (a single-file publish). The
+# shipped app is never that, and promotion reads this asset as fact, so a null here is a broken build.
+if (-not $buildInfo.builtAt) { throw "The packaged app reports no builtAt: it could not find its own assembly file to date. This build is not what the release script expects." }
 $buildInfoPath = Join-Path $publish 'build-info.json'
 Set-Content $buildInfoPath $buildInfoText -Encoding utf8 -NoNewline
 Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog schema $($buildInfo.catalogSchema)" -ForegroundColor Green
