@@ -84,6 +84,30 @@ Test-Case 'a tag whose manifest says another version replaces nothing' {
     Assert-Equal ((Get-SeedHashes $f) -join ' ') ($before -join ' ') 'seed files'
 }
 
+Test-Case 'a seed file that cannot be replaced leaves both files as they were, never half replaced' {
+    $f = New-CatalogFixture
+    $seed = Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 5)
+    $before = Get-SeedHashes $f
+    Publish-CatalogRelease $f -Version 6 | Out-Null
+    # Readable but not replaceable: what a build holding the embedded resource, or a virus scanner, does.
+    $lock = [IO.File]::Open((Join-Path $seed 'catalog.zip'), 'Open', 'Read', 'Read')
+    try { $r = Invoke-SeedUpdate $f } finally { $lock.Dispose() }
+    Assert-Result $r 2 -Contains 'NOT updated', 'Nothing was replaced'
+    Assert-Equal ((Get-SeedHashes $f) -join ' ') ($before -join ' ') 'seed files'
+}
+
+Test-Case 'the archive comes from the release the manifest names, not from a second latest redirect' {
+    # A stable tag published between the two downloads: latest already serves v6's archive while the
+    # manifest read a moment earlier was v5's.
+    $f = New-CatalogFixture
+    Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 4) | Out-Null
+    $pack5 = Publish-CatalogRelease $f -Version 5
+    $pack6 = Publish-CatalogRelease $f -Version 6
+    Copy-Item -LiteralPath (Join-Path $pack5 'manifest.json') -Destination (Join-Path $pack6 'manifest.json') -Force
+    Assert-Result (Invoke-SeedUpdate $f) 0 -Contains 'Embedded catalog v5'
+    Assert-Equal (Get-SeedHashes $f)[1] (Get-FileHash -LiteralPath (Join-Path $pack5 'catalog.zip') -Algorithm SHA256).Hash 'catalog.zip'
+}
+
 Test-Case 'a folder that is not the installer repo is refused before anything is downloaded' {
     $f = New-CatalogFixture
     Publish-CatalogRelease $f -Version 5 | Out-Null

@@ -56,7 +56,8 @@ if (-not (Test-Path -LiteralPath $seedDir -PathType Container)) { throw "$seedDi
 
 $before = @('manifest.json', 'catalog.zip' | ForEach-Object { Get-Sha256 (Join-Path $seedDir $_) })
 
-# Both assets to a temp folder first, verified there, then moved: the seed is never half replaced.
+# Both assets to a temp folder first, verified there, then moved with the originals kept to put
+# back: the seed is never left half replaced without saying so.
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("catalogseed-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
@@ -66,11 +67,37 @@ try {
     $manifest = Read-CatalogManifest (Get-Content -LiteralPath $manifestPath -Raw) "$assets/manifest.json"
     if ($manifest.Channel -ne 'Stable') { throw "$assets/manifest.json is a $($manifest.Channel) manifest, not a Stable one; the seed is always a stable catalog." }
     if ($Version -and $manifest.Version -ne $Version) { throw "$assets/manifest.json says catalogVersion $($manifest.Version), not $Version." }
-    Save-CatalogAsset "$assets/catalog.zip" $zipPath
+    # The archive from the release the manifest names: a second latest redirect may already serve a
+    # tag published in between.
+    Save-CatalogAsset "$(Get-CatalogReleaseBase $ReleaseBase)/download/v$($manifest.Version)/catalog.zip" $zipPath
     $zipHash = Get-Sha256 $zipPath
     if ($zipHash -ne $manifest.Sha256) { throw "the downloaded catalog.zip does not match its manifest: its sha256 is $zipHash, the manifest says $($manifest.Sha256)." }
-    Move-Item -LiteralPath $manifestPath -Destination (Join-Path $seedDir 'manifest.json') -Force
-    Move-Item -LiteralPath $zipPath -Destination (Join-Path $seedDir 'catalog.zip') -Force
+
+    # The originals are copied aside first, so a move that fails (a file held open by a build or a
+    # scanner) puts them back: the seed is the old one or the new one, never half of each.
+    $names = 'manifest.json', 'catalog.zip'
+    $saved = Join-Path $temp 'previous'
+    New-Item -ItemType Directory -Path $saved | Out-Null
+    foreach ($name in $names) {
+        $file = Join-Path $seedDir $name
+        if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination (Join-Path $saved $name) }
+    }
+    try {
+        foreach ($name in $names) { Move-Item -LiteralPath (Join-Path $temp $name) -Destination (Join-Path $seedDir $name) -Force }
+    } catch {
+        $failure = $_.Exception.Message
+        foreach ($name in $names) {
+            $copy = Join-Path $saved $name
+            if (Test-Path -LiteralPath $copy -PathType Leaf) {
+                try { Copy-Item -LiteralPath $copy -Destination (Join-Path $seedDir $name) -Force } catch { }
+            }
+        }
+        $now = @($names | ForEach-Object { Get-Sha256 (Join-Path $seedDir $_) })
+        if (($now -join ' ') -eq ($before -join ' ')) { throw "could not replace the seed files ($failure); both were put back." }
+        Write-Host "Catalog seed HALF replaced: could not replace the seed files ($failure), and putting the old ones back failed too." -ForegroundColor Red
+        Write-Host "Restore them with: git restore $CatalogSeedFolder - then run this script again once nothing holds the files open." -ForegroundColor Red
+        exit 2
+    }
 } finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 
 $after = @('manifest.json', 'catalog.zip' | ForEach-Object { Get-Sha256 (Join-Path $seedDir $_) })
