@@ -184,11 +184,18 @@ Test-Case 'the fixture release server moves to another port when its port is tak
     try {
         $taken = $holder.LocalEndpoint.Port
         $root = Join-Path ([IO.Path]::GetTempPath()) ("relsrv-" + [guid]::NewGuid().ToString('N'))
+        $script:FixtureRoots.Add($root)
         New-Item -ItemType Directory -Path (Join-Path $root 'releases') -Force | Out-Null
-        # A free port it is given is the port it takes: -Port is the first attempt.
-        $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-        $probe.Start(); $free = $probe.LocalEndpoint.Port; $probe.Stop()
-        Assert-Equal (Start-ReleaseServer $root -Port $free).Url "http://127.0.0.1:$free/releases" 'url on a free port'
+        # A free port it is given is the port it takes: -Port is the first attempt. Probed afresh on each
+        # try, because another process may take it first (and the server then rightly moves on); a server
+        # that ignored -Port would miss on every try.
+        $exact = $false
+        for ($try = 1; $try -le 5 -and -not $exact; $try++) {
+            $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $probe.Start(); $free = $probe.LocalEndpoint.Port; $probe.Stop()
+            $exact = (Start-ReleaseServer $root -Port $free).Url -eq "http://127.0.0.1:$free/releases"
+        }
+        if (-not $exact) { throw 'a free port passed as -Port was not the port taken, in 5 tries' }
         $server = Start-ReleaseServer $root -Port $taken
         Assert-Like $server.Url 'http://127.0.0.1:*/releases' 'url'
         if ($server.Url -like "*:$taken/*") { throw "the server claims the taken port $taken" }

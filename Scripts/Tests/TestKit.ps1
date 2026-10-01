@@ -121,7 +121,7 @@ function Start-ReleaseServer([string]$Root, [int]$Port = 0) {
         }
         $candidate = [System.Net.HttpListener]::new()
         $candidate.Prefixes.Add("http://127.0.0.1:$Port/")
-        try { $candidate.Start(); $listener = $candidate; $port = $Port }
+        try { $candidate.Start(); $listener = $candidate }
         catch [System.Net.HttpListenerException] {
             $candidate.Close()
             if ($attempt -ge 10) { throw "no free port for the fixture release server after $attempt attempts: $($_.Exception.Message)" }
@@ -156,7 +156,7 @@ function Start-ReleaseServer([string]$Root, [int]$Port = 0) {
     $shell = [powershell]::Create()
     [void]$shell.AddScript($serve.ToString()).AddArgument($listener).AddArgument($Root)
     $handle = $shell.BeginInvoke()
-    $server = [pscustomobject]@{ Url = "http://127.0.0.1:$port/releases"; Listener = $listener; Shell = $shell; Handle = $handle }
+    $server = [pscustomobject]@{ Url = "http://127.0.0.1:$Port/releases"; Listener = $listener; Shell = $shell; Handle = $handle }
     $script:ReleaseServers.Add($server)
     $server
 }
