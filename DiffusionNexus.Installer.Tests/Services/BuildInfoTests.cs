@@ -97,6 +97,42 @@ public class BuildInfoTests
     }
 
     [Fact]
+    public void An_embedded_seed_that_cannot_be_read_is_a_refusal_naming_the_file()
+    {
+        // A field of the wrong type, a manifest that is just null, a resource that fails mid-read: each is
+        // the same refusal as a missing seed, so Run prints a reason instead of an unhandled exception.
+        var location = typeof(BuildInfo).Assembly.Location;
+        var wrongType = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"archive\":{\"bytes\":\"x\"}}"u8.ToArray()), EmbeddedArchive);
+        var justNull = () => BuildInfo.Create(location, () => new MemoryStream("null"u8.ToArray()), EmbeddedArchive);
+        var manifestFails = () => BuildInfo.Create(location, () => new FailingStream(), EmbeddedArchive);
+        var archiveFails = () => BuildInfo.Create(location, EmbeddedManifest, () => new FailingStream());
+
+        wrongType.Should().Throw<InvalidOperationException>().WithMessage("*manifest.json*could not be read*must not be released*");
+        justNull.Should().Throw<InvalidOperationException>().WithMessage("*manifest.json*could not be read*");
+        manifestFails.Should().Throw<InvalidOperationException>().WithMessage("*manifest.json*could not be read*disk gone*");
+        archiveFails.Should().Throw<InvalidOperationException>().WithMessage("*catalog.zip*could not be read*disk gone*");
+    }
+
+    [Fact]
+    public void Run_never_lets_an_exception_out_whatever_its_type()
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var exit = BuildInfo.Run(output, error, () => throw new FormatException("unexpected"));
+
+        exit.Should().Be(1);
+        output.ToString().Should().BeEmpty();
+        error.ToString().Should().Contain("unexpected");
+    }
+
+    private sealed class FailingStream : MemoryStream
+    {
+        public override int Read(byte[] buffer, int offset, int count) => throw new IOException("disk gone");
+        public override int Read(Span<byte> buffer) => throw new IOException("disk gone");
+    }
+
+    [Fact]
     public void A_refused_answer_is_a_message_on_stderr_and_exit_1_never_a_crash()
     {
         // An unhandled exception would abort the process with a stack trace, a crash dump and, on some

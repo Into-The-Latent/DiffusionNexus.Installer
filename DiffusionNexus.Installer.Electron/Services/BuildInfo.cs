@@ -74,16 +74,29 @@ public static class BuildInfo
     {
         using var stream = embeddedManifest()
             ?? throw new InvalidOperationException("The embedded catalog manifest 'manifest.json' is missing: this build carries no catalog seed and must not be released.");
-        using var reader = new StreamReader(stream);
-        // The SDK's own reader of this file, so the seed reported is the seed the app will use.
-        var manifest = CatalogManifest.Parse(reader.ReadToEnd());
+        CatalogManifest manifest;
+        try
+        {
+            using var reader = new StreamReader(stream);
+            // The SDK's own reader of this file, so the seed reported is the seed the app will use.
+            manifest = CatalogManifest.Parse(reader.ReadToEnd());
+        }
+        catch (Exception e) when (e is JsonException or CatalogFormatException or IOException)
+        {
+            throw new InvalidOperationException($"The embedded catalog manifest 'manifest.json' could not be read ({e.Message}): this build carries no usable catalog seed and must not be released.", e);
+        }
         if (string.IsNullOrWhiteSpace(manifest.Commit))
             throw new InvalidOperationException("The embedded catalog manifest names no commit: this seed cannot be checked against a release and must not be released.");
         if (string.IsNullOrWhiteSpace(manifest.Archive?.Sha256))
             throw new InvalidOperationException("The embedded catalog manifest has no archive sha256: this seed cannot be checked against a release and must not be released.");
         using var archive = embeddedArchive()
             ?? throw new InvalidOperationException("The embedded catalog archive 'catalog.zip' is missing: this build carries no catalog seed and must not be released.");
-        var actual = Convert.ToHexStringLower(SHA256.HashData(archive));
+        string actual;
+        try { actual = Convert.ToHexStringLower(SHA256.HashData(archive)); }
+        catch (IOException e)
+        {
+            throw new InvalidOperationException($"The embedded catalog archive 'catalog.zip' could not be read ({e.Message}): this build must not be released.", e);
+        }
         if (!string.Equals(actual, manifest.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"The embedded catalog.zip has sha256 {actual}; its manifest says {manifest.Archive.Sha256}. This build does not carry the seed its manifest names and must not be released.");
         // The channel by name: the release scripts compare it as text, and an enum number would read as "0".
@@ -95,7 +108,8 @@ public static class BuildInfo
     /// <summary>The `--build-info` run: the document on <paramref name="output"/> and exit 0, or, for a
     /// build that must not be released, its reason on <paramref name="error"/> and exit 1. Never an
     /// unhandled exception: that aborts with a stack trace, a crash dump and on some machines a
-    /// "stopped working" dialog that leaves the release script waiting.</summary>
+    /// "stopped working" dialog that leaves the release script waiting. A refusal is its message; any
+    /// other exception is a bug, written out in full (still exit 1) so it can be found.</summary>
     public static int Run(TextWriter output, TextWriter error, Func<BuildInfoDocument> create)
     {
         try
@@ -107,6 +121,11 @@ public static class BuildInfo
         catch (InvalidOperationException e)
         {
             error.WriteLine(e.Message);
+            return 1;
+        }
+        catch (Exception e)
+        {
+            error.WriteLine($"--build-info failed: {e}");
             return 1;
         }
     }
