@@ -6,8 +6,8 @@
 # and run from there, so the script under test takes the fixture for its checkout exactly as a
 # release takes the real one (there is no parameter for another root: a release is cut from the
 # checkout the script lives in). The SDK pin check finds a fixture SDK through LocalSDKPath, the
-# seed check finds the fixture releases through DIFFUSIONNEXUS_CATALOG_RELEASES, and -SkipUpload
-# keeps gh out of it. A run that gets past the gates fails at dotnet publish, because the
+# seed check reads the fixture releases through -CatalogReleases (never the environment: a leftover
+# DIFFUSIONNEXUS_CATALOG_RELEASES must not steer a release), and -SkipUpload keeps gh out of it. A run that gets past the gates fails at dotnet publish, because the
 # fixture has no project. That failure is the proof it got there: the version was written and
 # "dotnet publish failed" is on the output. (So these tests need dotnet on PATH; CI runs them after
 # setup-dotnet.) Paths reach the child pwsh through the environment, never pasted into the -Command
@@ -23,7 +23,9 @@ function New-ReleaseFixture {
     $f
 }
 
-function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$NativeErrors) {
+# -LeakedReleases sets DIFFUSIONNEXUS_CATALOG_RELEASES for the run, as a value left in a developer's
+# environment would; it is cleared otherwise.
+function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$NativeErrors, [string]$LeakedReleases) {
     $scripts = Join-Path $Fixture.Installer 'Scripts'
     New-Item -ItemType Directory -Force -Path $scripts | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..') -Filter '*.ps1' -File | Copy-Item -Destination $scripts
@@ -34,7 +36,8 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
     $savedReleases = $env:DIFFUSIONNEXUS_CATALOG_RELEASES
     $savedToken = $env:GITHUB_PACKAGES_TOKEN
     $env:LocalSDKPath = $Fixture.Sdk
-    $env:DIFFUSIONNEXUS_CATALOG_RELEASES = $Fixture.ReleaseUrl
+    $env:DIFFUSIONNEXUS_CATALOG_RELEASES = $LeakedReleases
+    $env:NEWRELEASE_TEST_RELEASES = $Fixture.ReleaseUrl
     $env:GITHUB_PACKAGES_TOKEN = 'fixture-token'
     $env:NEWRELEASE_TEST_SCRIPT = $script
     $env:NEWRELEASE_TEST_ALLOWOLDER = if ('-AllowOlderSdk' -in $ExtraArgs) { '1' } else { '' }
@@ -42,7 +45,7 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
     try {
         # A profile may set $PSNativeCommandUseErrorActionPreference; the gate must work either way.
         $preference = if ($NativeErrors) { '$true' } else { '$false' }
-        $command = '$PSNativeCommandUseErrorActionPreference = ' + $preference + '; $extra = @{ AllowOlderSdk = [bool]$env:NEWRELEASE_TEST_ALLOWOLDER; AllowOlderCatalog = [bool]$env:NEWRELEASE_TEST_ALLOWOLDERCATALOG }; & $env:NEWRELEASE_TEST_SCRIPT -Version 9.9.9 -SkipUpload @extra'
+        $command = '$PSNativeCommandUseErrorActionPreference = ' + $preference + '; $extra = @{ AllowOlderSdk = [bool]$env:NEWRELEASE_TEST_ALLOWOLDER; AllowOlderCatalog = [bool]$env:NEWRELEASE_TEST_ALLOWOLDERCATALOG; CatalogReleases = $env:NEWRELEASE_TEST_RELEASES }; & $env:NEWRELEASE_TEST_SCRIPT -Version 9.9.9 -SkipUpload @extra'
         $output = & pwsh -NoProfile -Command $command 2>&1
         $exit = $LASTEXITCODE
         [pscustomobject]@{
@@ -57,6 +60,7 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
         $env:NEWRELEASE_TEST_SCRIPT = $null
         $env:NEWRELEASE_TEST_ALLOWOLDER = $null
         $env:NEWRELEASE_TEST_ALLOWOLDERCATALOG = $null
+        $env:NEWRELEASE_TEST_RELEASES = $null
     }
 }
 
@@ -112,6 +116,20 @@ Test-Case 'a seed ahead of stable refuses even with -AllowOlderCatalog: the flag
     $r = Invoke-NewRelease $f -ExtraArgs @('-AllowOlderCatalog') -NativeErrors
     if ($r.ExitCode -eq 0) { throw "expected a refusal, got exit 0. Output:`n$($r.Text)" }
     Assert-Like $r.Text '*the seed is ahead*not a stable catalog release -AllowOlderCatalog may ship*Nothing was built or changed*' 'output'
+    Assert-Equal $r.VersionWritten $false 'version written'
+}
+
+Test-Case 'a leftover DIFFUSIONNEXUS_CATALOG_RELEASES does not steer Step 0d: only -CatalogReleases does' {
+    # The environment points at a server on which the seed is the latest; the releases the release
+    # reads have moved on to v6. Step 0d must judge against those.
+    $f = New-ReleaseFixture
+    $leak = New-CatalogFixture
+    Copy-Item -LiteralPath (Join-Path $f.Releases 'download') -Destination $leak.Releases -Recurse
+    Set-Content -LiteralPath (Join-Path $leak.Releases 'latest') -Value 'v5' -NoNewline
+    Publish-CatalogRelease $f -Version 6 | Out-Null
+    $r = Invoke-NewRelease $f -LeakedReleases $leak.ReleaseUrl
+    if ($r.ExitCode -eq 0) { throw "expected a refusal, got exit 0. Output:`n$($r.Text)" }
+    Assert-Like $r.Text "*catalogVersion 5 vs 6*$($f.ReleaseUrl)*Nothing was built or changed*" 'output'
     Assert-Equal $r.VersionWritten $false 'version written'
 }
 

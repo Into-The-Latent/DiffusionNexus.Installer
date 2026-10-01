@@ -61,6 +61,13 @@
     another catalog under stable's number, a Preview manifest; exit 4), nor a check that could not
     run (no download, an uncommitted or corrupt seed; exit 2).
 
+.PARAMETER CatalogReleases
+    The catalog releases page Step 0d judges the seed against. Default: the real one,
+    https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases. For the script tests,
+    which serve a fixture. Only this parameter counts: DIFFUSIONNEXUS_CATALOG_RELEASES, which the
+    standalone seed scripts honour, is ignored here, so a value left in the environment cannot
+    steer a release. Any other value is announced before the check.
+
 .EXAMPLE
     .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "Fixes the shortcut launch."
 
@@ -74,7 +81,8 @@ param(
     [switch]$SkipUpload,
     [switch]$Prerelease,
     [switch]$AllowOlderSdk,
-    [switch]$AllowOlderCatalog
+    [switch]$AllowOlderCatalog,
+    [string]$CatalogReleases
 )
 
 $ErrorActionPreference = 'Stop'
@@ -141,7 +149,14 @@ switch ($LASTEXITCODE) {
 # embeds stable too: promotion never rebuilds. The fix is Scripts/Update-CatalogSeed.ps1 and a
 # commit; this script never writes the seed.
 Write-Host "Step 0d: the embedded catalog seed is the latest stable catalog" -ForegroundColor Cyan
-pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-CatalogSeed.ps1') -RepoRoot $repoRoot
+# The releases page is passed explicitly, so the check never falls back to
+# DIFFUSIONNEXUS_CATALOG_RELEASES: a value left in the environment must not steer a release.
+. (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
+if (-not $CatalogReleases) { $CatalogReleases = $DefaultCatalogReleases }
+if ($CatalogReleases.TrimEnd('/') -ne $DefaultCatalogReleases) {
+    Write-Warning "Step 0d reads $CatalogReleases, not the real catalog releases (-CatalogReleases)."
+}
+pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-CatalogSeed.ps1') -RepoRoot $repoRoot -ReleaseBase $CatalogReleases
 switch ($LASTEXITCODE) {
     0 { }
     3 {
@@ -154,7 +169,6 @@ switch ($LASTEXITCODE) {
     default { throw "The embedded catalog seed could not be checked (see above). Nothing was built or changed." }
 }
 # What Step 0d judged, for Step 1c: the packaged app must report exactly this seed.
-. (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
 $seed = Read-CatalogManifest (Get-Content -LiteralPath (Join-Path $repoRoot $CatalogSeedFolder 'manifest.json') -Raw) 'the embedded seed manifest'
 
 Write-Host "Setting version to $Version" -ForegroundColor Cyan

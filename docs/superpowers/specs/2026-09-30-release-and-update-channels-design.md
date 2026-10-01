@@ -125,6 +125,9 @@ not carry a preview seed to Stable users.
   (public, no token). Cannot download → exit 2. The releases page is `-ReleaseBase`, else
   `$env:DIFFUSIONNEXUS_CATALOG_RELEASES`, else that URL (the script tests serve a fixture there);
   the URL read is printed with the answer. `Update-CatalogSeed.ps1` takes the same parameter.
+  `New-Release.ps1` (and `Promote-Release.ps1`) never rely on the environment variable: they pass
+  `-ReleaseBase` explicitly (their own `-CatalogReleases`, default the real page), so a value left
+  in a developer's environment cannot steer a release.
   `Scripts/CatalogRelease.ps1` (dot-sourced by both scripts and by `New-Release.ps1`) holds the
   seed folder, the download and the manifest reader.
 - `-Expect "<version> <commit> <sha256>"` (one string, because `pwsh -File` hands a script literal
