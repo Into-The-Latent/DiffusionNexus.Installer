@@ -602,7 +602,7 @@ public class UpdatesPageTests : BunitContext
     {
         _catalog.Channel = CatalogChannel.Stable;
         _catalog.ChannelSource = CatalogChannelSource.Setting;
-        _catalog.SwitchIncomplete = true;
+        _catalog.SwitchIncompleteReason = "The installed catalog is still from Preview (v5).";
         _catalog.Installed = new LocalCatalogState
         {
             Channel = CatalogChannel.Preview,
@@ -640,39 +640,17 @@ public class UpdatesPageTests : BunitContext
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
     }
 
-    // PR #43 review: after a partial apply the line named the Workloads channel with the highest
-    // version of both sections, "still from Stable (v5)". It names the section that lagged.
+    // The wording is InstalledCatalogDescription's (its tests cover the sections); the page puts
+    // the channel followed in front of the coordinator's reason, nothing of its own.
     [Fact]
-    public void After_a_partial_apply_the_line_names_the_section_left_behind()
+    public void The_incomplete_line_is_the_coordinators_reason_after_the_channel_followed()
     {
         Register(InstallPhase.Idle);
         IncompleteSwitchToStable(CatalogChecks.Available(4, CatalogChannel.Stable));
-        _catalog.Installed = new LocalCatalogState
-        {
-            Channel = CatalogChannel.Stable,
-            Workloads = new SectionState(4, "aaa", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Stable },
-            Workflows = new SectionState(5, "51e1684", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Preview },
-        };
+        _catalog.SwitchIncompleteReason = "The installed workflows (v5) are not from Stable yet.";
 
         Normalized(Render<UpdatesPage>().Find(".catalog-switch-incomplete")).Should()
-            .StartWith("You follow Stable. The installed workflows are still from Preview (v5).");
-    }
-
-    // A state written before SDK 2.1.0 records no channel: the line claims no source channel.
-    [Fact]
-    public void An_incomplete_switch_over_an_unrecorded_state_names_no_source_channel()
-    {
-        Register(InstallPhase.Idle);
-        IncompleteSwitchToStable(CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline"));
-        _catalog.Installed = new LocalCatalogState
-        {
-            Channel = CatalogChannel.Preview,
-            Workloads = new SectionState(6, "51e1684", DateTimeOffset.UtcNow),
-            Workflows = new SectionState(6, "51e1684", DateTimeOffset.UtcNow),
-        };
-
-        Normalized(Render<UpdatesPage>().Find(".catalog-switch-incomplete")).Should()
-            .StartWith("You follow Stable. The installed catalog (v6) is not from Stable yet.");
+            .StartWith("You follow Stable. The installed workflows (v5) are not from Stable yet.");
     }
 
     [Theory]
@@ -685,6 +663,7 @@ public class UpdatesPageTests : BunitContext
         _catalog.Phase = phase;
 
         Render<UpdatesPage>().FindAll(".catalog-switch-incomplete").Should().BeEmpty();
+        _catalog.IncompleteReads.Should().Be(0, "not computed on every progress re-render either (PR #43 review)");
     }
 
     [Fact]
@@ -692,7 +671,7 @@ public class UpdatesPageTests : BunitContext
     {
         Register(InstallPhase.Idle);
         IncompleteSwitchToStable(CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate));
-        _catalog.SwitchIncomplete = false;
+        _catalog.SwitchIncompleteReason = null;
 
         Render<UpdatesPage>().FindAll(".catalog-switch-incomplete").Should().BeEmpty();
     }

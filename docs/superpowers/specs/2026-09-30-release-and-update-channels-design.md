@@ -319,17 +319,25 @@ describes the channel being left), and the radios show the choice being asked ab
 completes once the choice is saved; its download runs on like a manual apply, so the app check
 does not wait for it. A switch during an install saves the preference and holds the apply behind
 the usual "once <workload> has finished" line. "Retry" runs a check; when that check offers
-Apply, the Apply button is the retry. The "still from" line (`SwitchIncomplete`) is read from
-`catalog-state.json`: a section whose recorded channel differs from the one followed, unless a
-check found the catalog current or an override is active. It survives a restart and names the
-section that lagged; a section that records no channel (SDK 2.0.0) is unknown, never a mismatch
-on its own. For such a state only this run's own switch that did not land is known, and the line
-then claims no source: "The installed catalog (v6) is not from Stable yet."
+Apply, the Apply button is the retry. The "still from" line (`SwitchIncompleteReason`) is
+judged per section, and never under an active override. A section is from the channel
+`catalog-state.json` records for it, or from a channel a check found it current on: an up-to-date
+check applies nothing, so it records nothing in the SDK's state, and the installer keeps those
+confirmations (the sections as they were) in its own `catalog_channel_confirmations.json` next to
+`user_settings.json`. Content two channels share, and a seed stamped with the pack's channel, are
+then not "still from" anything once a check found them current; any apply since outdates the
+confirmation by itself. Both survive a restart, and the line names the section that lagged. A
+section known by neither (a state written by SDK 2.0.0, before any current check) is unknown,
+never a mismatch on its own: only this run's own switch that did not land counts, the line then
+claims no source ("The installed workflows (v5) are not from Stable yet."), and a switch back to
+the channel the content never left ends it.
 Under `DIFFUSIONNEXUS_CATALOG_CHANNEL` a switch saves the preference only: the variable decides
 what this run installs.
 
-7.2 as built: the wizard takes the catalog line when it reads the workload, and the plan carries
-it, because a switch can apply another catalog while the wizard is open. A section that records
+7.2 as built: the wizard takes the catalog line when it reads the workload, from the same
+catalog load (`ICatalog.State`, taken again if the catalog reloaded under the read), and the plan
+carries it, because a switch can apply another catalog while the wizard is open. A capture that
+could not read the state is read again when the install starts. A section that records
 no channel says "channel not recorded" (the top-level stamp is never used for provenance), and a
 state file that cannot be read gives a warning row instead of "none recorded".
 

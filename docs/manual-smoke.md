@@ -313,6 +313,10 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    (the Retry button gives way to it); Apply, and the "still from" line goes.
 6. Right after an editor **Release** (both channels serve the same content), switch channels.
    **Expect:** no warning, no download, "The catalog is up to date.", and the choice saved.
+   `catalog_channel_confirmations.json` next to `user_settings.json` names the new channel.
+   Disconnect the network and relaunch. **Expect:** the startup check fails, and there is no
+   "still from" line: the content was found current on this channel, whatever
+   `catalog-state.json` still records.
 7. Start an install, open `/updates` while it runs and switch channels (answer Switch if asked).
    **Expect:** the choice saved, no download, "It can be applied once <workload> has finished."
    and the "still from" line. Let the install finish. **Expect:** Apply appears without leaving

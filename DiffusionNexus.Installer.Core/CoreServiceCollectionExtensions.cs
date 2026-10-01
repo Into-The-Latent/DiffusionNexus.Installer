@@ -17,6 +17,14 @@ namespace DiffusionNexus.Installer.Core;
 public static class CoreServiceCollectionExtensions
 {
     /// <summary>
+    /// Which catalog content a check found current, per channel: next to user_settings.json, a file
+    /// of this installer's own (catalog-state.json is the SDK's, and its catalog folder is swapped
+    /// whole on an apply).
+    /// </summary>
+    public static string CatalogChannelConfirmationsPath => Path.Combine(
+        Path.GetDirectoryName(UserSettingsPaths.Default)!, CatalogChannelConfirmations.FileName);
+
+    /// <summary>
     /// Registers the wizard. Call after AddInstallationServices, AddDiffusionNexusCatalog and
     /// AddDiffusionNexusUserSettings — the modules depend on services those register.
     /// </summary>
@@ -45,7 +53,8 @@ public static class CoreServiceCollectionExtensions
             sp.GetRequiredService<IUserSettingsRepository>(),
             sp.GetRequiredService<IInstallSession>(),
             () => Environment.GetEnvironmentVariable(CatalogChannelResolver.EnvironmentVariable),
-            sp.GetService<ILogger<CatalogUpdateCoordinator>>()));
+            sp.GetService<ILogger<CatalogUpdateCoordinator>>(),
+            new CatalogChannelConfirmations(CatalogChannelConfirmationsPath, sp.GetService<ILogger<CatalogChannelConfirmations>>())));
 
         // The SDK's own AddInstallationServices does not register this one — both Avalonia apps
         // construct it by hand — but the install-folder pre-flight needs it. TryAdd so a host that

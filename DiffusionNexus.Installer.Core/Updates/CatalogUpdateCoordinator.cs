@@ -34,10 +34,18 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     // takes to answer is never spent holding a flag that a missed release would leave stuck.
     private bool _switching;
 
-    // The channel of a switch in this process whose content did not land. Consulted only for a
-    // state whose sections record no channel (written before SDK 2.1.0): there the state cannot
-    // tell, and this is all that is known. Cleared by a landed apply or a current check.
-    private CatalogChannel? _notLandedTo;
+    // A switch in this process whose content did not land: the channel the content was from when
+    // it began, and the channel switched to. Consulted only for a section known by nothing else (a
+    // state written before SDK 2.1.0 records no channel per section). Cleared by a landed apply, a
+    // current check, or a switch back to the channel the content never left (PR #43 review).
+    private (CatalogChannel From, CatalogChannel To)? _notLanded;
+
+    // Which content a check found current, per channel; kept across restarts (PR #43 review).
+    private readonly CatalogChannelConfirmations _confirmations;
+
+    // Whether the SDK reads an override folder, probed with Installed (each check, apply, switch)
+    // rather than on every read of SwitchIncompleteReason, which a page does on each render.
+    private bool _overrideActive;
 
     public CatalogUpdateCoordinator(
         ICatalogUpdateService updates,
@@ -45,8 +53,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         IUserSettingsRepository settings,
         IInstallSession session,
         Func<string?> readEnvironment,
-        ILogger<CatalogUpdateCoordinator>? logger = null)
+        ILogger<CatalogUpdateCoordinator>? logger = null,
+        CatalogChannelConfirmations? confirmations = null)
     {
+        _confirmations = confirmations ?? new CatalogChannelConfirmations(null, logger);
         _updates = updates;
         _options = options;
         _settings = settings;
@@ -124,14 +134,19 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
             var check = await _updates.CheckAsync(ct).ConfigureAwait(false);
             var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+            var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
 
+            bool current;
             lock (_gate)
             {
                 LastCheck = check;
                 Installed = installed;
+                _overrideActive = overrideActive;
                 Phase = CatalogUpdatePhase.Checked;
-                if (check.Outcome == CatalogUpdateOutcome.UpToDate && check.Channel == Channel) _notLandedTo = null;
+                current = check.Outcome == CatalogUpdateOutcome.UpToDate && check.Channel == Channel;
+                if (current) _notLanded = null;
             }
+            if (current) _confirmations.Confirm(check.Channel, installed);
             _logger.LogInformation("Catalog update check: {Outcome} (remote v{Remote}, installed v{Installed}, {Workloads} workload / {Workflows} workflow changes){Error}",
                 check.Outcome, check.Remote?.CatalogVersion, installed.HighestCatalogVersion, check.Workloads.Count, check.Workflows.Count,
                 check.Error is null ? string.Empty : ": " + check.Error);
@@ -187,15 +202,17 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         {
             var result = await _updates.ApplyAsync(check, CatalogSections.All, new ProgressRelay(this), ct).ConfigureAwait(false);
             var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+            var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
             var succeeded = result.Failed == CatalogSections.None && result.Error is null;
 
             lock (_gate)
             {
                 LastApply = result;
                 Installed = installed;
+                _overrideActive = overrideActive;
                 Progress = null;
                 Phase = succeeded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
-                if (succeeded) _notLandedTo = null;
+                if (succeeded) _notLanded = null;
             }
             _logger.LogInformation("Catalog apply finished: applied={Applied} failed={Failed} installed v{Installed}{Error}",
                 result.Applied, result.Failed, installed.HighestCatalogVersion, result.Error is null ? string.Empty : ": " + result.Error);
@@ -256,7 +273,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
     public CatalogChannelSwitch? PendingSwitch { get; private set; }
 
-    public bool SwitchIncomplete
+    public bool SwitchIncomplete => SwitchIncompleteReason is not null;
+
+    public string? SwitchIncompleteReason
     {
         get
         {
@@ -266,24 +285,18 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             CatalogChannel? notLandedTo;
             lock (_gate)
             {
-                if (PendingSwitch is not null) return false;
-                (installed, check, channel, notLandedTo) = (Installed, LastCheck, Channel, _notLandedTo);
+                if (PendingSwitch is not null || _overrideActive) return null;
+                (installed, check, channel, notLandedTo) = (Installed, LastCheck, Channel, _notLanded?.To);
             }
-            if (installed is null) return false;
 
-            // Read from catalog-state.json (each section's recorded channel), not remembered: a
-            // restart must not forget that the content and the preference still disagree, and a
-            // switch back to the channel already installed is complete whatever its check says.
-            // A state that records no channel cannot say; only this process's own failed switch can.
-            var mismatch = InstalledCatalogDescription.RecordsChannel(installed)
-                ? InstalledCatalogDescription.Lagging(installed, channel) is not null
-                : notLandedTo == channel;
-            if (!mismatch) return false;
+            // An override supersedes both channels.
+            if (installed is null || check is { Outcome: CatalogUpdateOutcome.OverrideActive }) return null;
 
-            // An override supersedes both channels; a check that found the catalog current for the
-            // channel followed means the content is the same, whatever channel stamped it.
-            if (check is { Outcome: CatalogUpdateOutcome.OverrideActive } || InstalledCatalogDescription.OverrideActive(_options)) return false;
-            return check is not { Outcome: CatalogUpdateOutcome.UpToDate } current || current.Channel != channel;
+            // From catalog-state.json (each section's recorded channel) and the confirmations file,
+            // so a restart does not forget that the content and the preference disagree; a section
+            // known by neither falls back to this run's own switch that did not land.
+            return InstalledCatalogDescription.Lagging(installed, channel,
+                new CatalogSourceEvidence { Confirmed = _confirmations.Current, NotLandedTo = notLandedTo });
         }
     }
 
@@ -450,12 +463,16 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         // Saved before the download starts: a stalled or failed apply must not lose the choice
         // (rule 1), and the next check then offers the same diff with Apply.
         var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+        var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
         var applying = false;
+        var current = false;
         lock (_gate)
         {
+            var left = Channel;
             ApplyResolution(_readEnvironment(), saved);
             _channelResolved = true;
             Installed = installed;
+            _overrideActive = overrideActive;
             LastApply = null;
             Progress = null;
             if (Channel != target)
@@ -468,11 +485,18 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             else
             {
                 LastCheck = preview;
-                _notLandedTo = preview.Outcome is CatalogUpdateOutcome.UpToDate or CatalogUpdateOutcome.OverrideActive ? null : target;
+                current = preview.Outcome == CatalogUpdateOutcome.UpToDate;
+                _notLanded = current || preview.Outcome == CatalogUpdateOutcome.OverrideActive ? null
+                    // The content is still from where the first switch that did not land left it;
+                    // switching back there is complete, whatever this preview answered.
+                    : _notLanded is { From: var from } ? (from == target ? null : (from, target))
+                    : (left, target);
                 if (preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable && !InstallRunning)
                 {
+                    // Not under the caller's token: the switch has returned by the time the download
+                    // runs, and a caller that cancels afterwards (a page going away) does not own it.
                     Phase = CatalogUpdatePhase.Applying;
-                    _inFlight = Task.Run(() => ApplyCoreAsync(preview, ct), CancellationToken.None);
+                    _inFlight = Task.Run(() => ApplyCoreAsync(preview, CancellationToken.None), CancellationToken.None);
                     applying = true;
                 }
                 else
@@ -483,6 +507,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 }
             }
         }
+        if (current) _confirmations.Confirm(target, installed);
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
             applying ? "applying v" + preview.Remote?.CatalogVersion
             : preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable ? "the apply waits for the running install"

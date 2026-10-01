@@ -50,7 +50,7 @@ internal sealed class FakeCatalogUpdateService : ICatalogUpdateService
         AppliedSections = sections;
         OnApply?.Invoke();
         Progress = progress;
-        if (HoldApply is not null) await HoldApply.Task;
+        if (HoldApply is not null) await HoldApply.Task.WaitAsync(ct);   // the SDK lets a cancel through
         if (ThrowCancelledOnApply) throw new OperationCanceledException();
         return NextApply();
     }

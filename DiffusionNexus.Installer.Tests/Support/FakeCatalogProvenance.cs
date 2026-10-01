@@ -13,4 +13,10 @@ internal sealed class FakeCatalogProvenance(Func<string> describe) : ICatalogPro
         Reads++;
         return InstalledCatalogReading.Take(Describe);
     }
+
+    public async Task<(T Value, InstalledCatalogReading Catalog)> ReadWithAsync<T>(Func<CancellationToken, Task<T>> read, CancellationToken ct = default)
+    {
+        var value = await read(ct);
+        return (value, Read());
+    }
 }

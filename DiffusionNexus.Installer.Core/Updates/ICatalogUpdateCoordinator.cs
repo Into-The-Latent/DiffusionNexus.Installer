@@ -63,14 +63,19 @@ public interface ICatalogUpdateCoordinator
     /// </summary>
     CatalogChannelSwitch? PendingSwitch { get; }
 
-    /// <summary>
-    /// What is installed is known to come from another channel than <see cref="Channel"/> -- a
-    /// section's recorded channel, SDK 2.1.0; unknown is never a mismatch -- and no check has found
-    /// it current: a switch whose content did not land (the preview or the apply failed, or an
-    /// install held the apply). Read from catalog-state.json, so it survives a restart. False under
-    /// an active override and while a switch waits for an answer.
-    /// </summary>
+    /// <summary><see cref="SwitchIncompleteReason"/> is not null.</summary>
     bool SwitchIncomplete { get; }
+
+    /// <summary>
+    /// What is installed from another channel than <see cref="Channel"/>, as a sentence, or null:
+    /// a switch whose content did not land (the preview or the apply failed, or an install held the
+    /// apply). Per section, a section is from the channel it records (SDK 2.1.0) or the channel a
+    /// check found it current on (kept in a file of the installer's, so both survive a restart). A
+    /// section known by neither -- a state written by SDK 2.0.0 -- counts only after this run's
+    /// switch to <see cref="Channel"/> did not land. Null under an active override and while a
+    /// switch waits for an answer. Wording: <see cref="InstalledCatalogDescription.Lagging"/>.
+    /// </summary>
+    string? SwitchIncompleteReason { get; }
 
     /// <summary>
     /// Previews <paramref name="target"/> without saving anything (spec 7.1). A diff that removes

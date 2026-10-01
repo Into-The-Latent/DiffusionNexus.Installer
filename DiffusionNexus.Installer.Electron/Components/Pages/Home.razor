@@ -92,10 +92,11 @@
 
         @* Rule 1: a switch whose content did not land still saved the choice. Say what is installed,
            and offer the retry -- unless the Apply button below already is the retry. *@
-        @if (Catalog.SwitchIncomplete && !CatalogBusy)
+        @* Busy first: the reason is computed, and a progress tick re-renders this page. *@
+        @if (!CatalogBusy && Catalog.SwitchIncompleteReason is { } incomplete)
         {
             <p class="catalog-switch-incomplete">
-                @IncompleteText
+                You follow @Catalog.Channel. @incomplete
                 @if (!Catalog.UpdateAvailable)
                 {
                     <button @onclick="RetryAsync" disabled="@_busy">Retry</button>
@@ -127,7 +128,7 @@
             </p>
         }
 
-        @if (!SwitchPending && Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
+        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
         {
             @ChangeList(available)
 
@@ -340,12 +341,6 @@
         if (warning.ChangesText is not null) yield return (warning.ChangesText, false);
         yield return (". Software you have already installed is not affected.", false);
     }
-
-    // Shown only while SwitchIncomplete. The wording is InstalledCatalogDescription's: the section
-    // that lagged, or -- for a state that records no channel -- only that the switch did not land.
-    private string IncompleteText => Catalog.Installed is { } installed
-        ? $"You follow {Catalog.Channel}. {InstalledCatalogDescription.Lagging(installed, Catalog.Channel) ?? InstalledCatalogDescription.NotYetFrom(installed, Catalog.Channel)}"
-        : $"You follow {Catalog.Channel}.";
 
     /// <summary>The Added / Updated / Removed list, for an update and for a switch's warning alike.</summary>
     private static RenderFragment ChangeList(CatalogUpdateCheck check) => __builder =>

@@ -212,13 +212,12 @@
             return;
         }
 
-        var workloads = await Workloads.GetInstallerWorkloadsAsync();
+        // The catalog line is taken with the workloads, from the same catalog load, for the install
+        // report (spec 7.2): a channel switch from the top bar can apply another catalog while this
+        // wizard is open, and the plan installs what was read here, not what is installed when
+        // Install is pressed -- nor what an apply wrote between this read and the catalog's reload.
+        var (workloads, catalog) = await CatalogProvenance.ReadWithAsync(ct => Workloads.GetInstallerWorkloadsAsync(ct));
         var workload = workloads.FirstOrDefault(w => w.Id == WorkloadId);
-
-        // Taken with the workload, for the install report (spec 7.2): a channel switch from the top
-        // bar can apply another catalog while this wizard is open, and the plan installs what was
-        // read here, not what is installed when Install is pressed.
-        var catalog = CatalogProvenance.Read();
 
         if (workload is null)
         {

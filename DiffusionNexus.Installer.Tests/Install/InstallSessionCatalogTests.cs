@@ -121,6 +121,22 @@ public class InstallSessionCatalogTests
         session.LogLines.Count(l => l.Message.StartsWith("Catalog", StringComparison.Ordinal)).Should().Be(1, "each run starts its own log");
     }
 
+    // PR #43 review round 2: a reading that failed when the wizard opened (the switch's apply was
+    // writing the state, an AV scan held it) was final, although the file reads fine at Install.
+    [Fact]
+    public async Task A_reading_that_failed_when_the_wizard_opened_is_taken_again_at_install()
+    {
+        var orchestrator = Orchestrator(_ => InstallationResult.Success("done"));
+        var provenance = new FakeCatalogProvenance(() => Catalog);
+        var session = new InstallSession(orchestrator.Object, catalog: provenance);
+
+        await session.StartAsync(await PlanAsync(new InstalledCatalogReading("Catalog: could not be read: locked", true)));
+
+        provenance.Reads.Should().Be(1);
+        session.ReportRows[0].PlannedOperation.Should().Be(Catalog);
+        session.ReportRows[0].IsWarning.Should().BeFalse();
+    }
+
     [Fact]
     public async Task A_catalog_that_cannot_be_read_is_a_warning_row_never_a_stop()
     {

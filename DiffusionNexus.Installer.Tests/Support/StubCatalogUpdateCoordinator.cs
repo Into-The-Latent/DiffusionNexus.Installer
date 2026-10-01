@@ -32,7 +32,16 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public Task ApplyAsync(CancellationToken ct = default) { Applies++; return Task.CompletedTask; }
     public Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default) { ChannelResolutions++; return Task.FromResult(Channel); }
     public CatalogChannelSwitch? PendingSwitch { get; set; }
-    public bool SwitchIncomplete { get; set; }
+    public bool SwitchIncomplete => SwitchIncompleteReason is not null;
+
+    /// <summary>Counts reads: the page must not compute the line while it is hidden.</summary>
+    public string? SwitchIncompleteReason
+    {
+        get { IncompleteReads++; return _incompleteReason; }
+        set => _incompleteReason = value;
+    }
+    private string? _incompleteReason;
+    public int IncompleteReads { get; private set; }
 
     /// <summary>When set, a switch waits for an answer with this warning instead of going ahead.</summary>
     public CatalogChannelSwitch? PendingOnSwitch { get; set; }

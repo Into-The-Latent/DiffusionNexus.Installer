@@ -208,12 +208,15 @@ public sealed class InstallSession : IInstallSession, IDisposable
     /// <summary>
     /// Spec 7.2: one log line and one report row naming the catalog this run's workload came from
     /// -- captured by the wizard when it read the workload, else read now -- so a support question
-    /// is answered from the report. A catalog that cannot be read is a warning row, never a reason
-    /// not to install.
+    /// is answered from the report. A capture that could not read the state is read again: what
+    /// held the file then (the switch's apply writing it, an AV scan) has usually let go by now
+    /// (PR #43 review). A catalog that cannot be read is a warning row, never a reason not to install.
     /// </summary>
     private void RecordCatalog(WizardPlan plan)
     {
-        if ((plan.Selection.Catalog ?? _catalog?.Read()) is not { } reading) return;
+        var captured = plan.Selection.Catalog;
+        var reading = captured is { Failed: false } ? captured : _catalog?.Read() ?? captured;
+        if (reading is null) return;
         var (text, warning) = (reading.Text, reading.Failed);
 
         var row = new InstallReportEntry
