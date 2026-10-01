@@ -115,8 +115,11 @@ if ($Expect) {
     }
     # Uncommitted seed files must never ship: a release records a commit, and the seed in that commit
     # would not be the seed built. An untracked file in the folder counts too.
-    $status = @(& git -C $RepoRoot status --porcelain --untracked-files=all -- $CatalogSeedFolder 2>&1 | ForEach-Object { "$_" })
-    if ($LASTEXITCODE -ne 0) { Stop-Unchecked "git status in $RepoRoot failed:`n$($status -join "`n")" }
+    # Only stdout lines are files. git may write to stderr and still exit 0 (a CRLF warning during the
+    # index refresh, a deprecation notice); that text is only for the message when git fails.
+    $output = @(& git -C $RepoRoot status --porcelain --untracked-files=all -- $CatalogSeedFolder 2>&1)
+    $status = @($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    if ($LASTEXITCODE -ne 0) { Stop-Unchecked "git status in $RepoRoot failed:`n$(($output | ForEach-Object { "$_" }) -join "`n")" }
     if ($status.Count -gt 0) {
         Stop-Unchecked "the seed under $CatalogSeedFolder has uncommitted changes:`n$(($status | ForEach-Object { "  $_" }) -join "`n")`nCommit them (or restore the files) and run the check again."
     }

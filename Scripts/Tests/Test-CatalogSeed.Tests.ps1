@@ -100,6 +100,16 @@ Test-Case 'an untracked file next to the seed is uncommitted too' {
     Assert-Result (Invoke-CatalogSeedCheck $f) 2 -Contains 'uncommitted changes', 'manifest.json.bak'
 }
 
+Test-Case 'what git writes to stderr while it exits 0 is not an uncommitted change' {
+    # A CRLF warning during the index refresh, a deprecation notice, or a trace: none of them is a file.
+    $f = New-CatalogFixture
+    Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 5) | Out-Null
+    $saved = $env:GIT_TRACE
+    $env:GIT_TRACE = '1'
+    try { $r = Invoke-CatalogSeedCheck $f } finally { $env:GIT_TRACE = $saved }
+    Assert-Result $r 0 -Contains 'is the latest stable catalog'
+}
+
 Test-Case 'a seed with no files is not checked' {
     $f = New-CatalogFixture
     Publish-CatalogRelease $f -Version 5 | Out-Null
