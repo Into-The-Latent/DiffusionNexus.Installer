@@ -28,7 +28,14 @@ public static class CoreServiceCollectionExtensions
         // and a manual check of what users will actually see needs a way to say so.
         services.TryAddSingleton(WorkloadVisibility.Default);
         services.AddSingleton<IWorkloadSource, CatalogWorkloadSource>();
-        services.AddSingleton<IInstallSession, InstallSession>();
+        // Explicit factory for the catalog line every install records (spec 7.2): read from the
+        // SDK's options when each run starts, never cached.
+        services.AddSingleton<IInstallSession>(sp =>
+        {
+            var catalog = sp.GetRequiredService<CatalogOptions>();
+            return new InstallSession(sp.GetRequiredService<IInstallationOrchestrator>(),
+                describeCatalog: () => InstalledCatalogDescription.Describe(catalog));
+        });
         services.AddSingleton<IModelPreflight, ModelPreflight>();
 
         // The one writer of CatalogOptions.Channel. Explicit factory so the env-var reader is a

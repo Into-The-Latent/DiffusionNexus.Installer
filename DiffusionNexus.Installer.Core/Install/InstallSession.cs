@@ -19,6 +19,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
     private readonly IInstallationOrchestrator _orchestrator;
     private readonly TimeSpan _flushInterval;
+    private readonly Func<string>? _describeCatalog;
     private readonly Lock _gate = new();
     private readonly Queue<InstallLogLine> _log = new();
     private readonly List<InstallReportEntry> _reportRows = [];
@@ -28,10 +29,18 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _skipDownloadCts;
 
-    public InstallSession(IInstallationOrchestrator orchestrator, TimeSpan? flushInterval = null)
+    // The current run's catalog row (spec 7.2), kept so the finished report cannot drop it.
+    private InstallReportEntry? _catalogRow;
+
+    /// <param name="describeCatalog">
+    /// The catalog an install uses, in one line (<c>InstalledCatalogDescription</c>), read when each
+    /// run starts. Null records no catalog line.
+    /// </param>
+    public InstallSession(IInstallationOrchestrator orchestrator, TimeSpan? flushInterval = null, Func<string>? describeCatalog = null)
     {
         _orchestrator = orchestrator;
         _flushInterval = flushInterval ?? DefaultFlushInterval;
+        _describeCatalog = describeCatalog;
         _flushTimer = new Timer(_ => Flush(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
@@ -113,6 +122,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             _truncatedLogLines = 0;
             _log.Clear();
             _reportRows.Clear();
+            _catalogRow = null;
         }
 
         try
@@ -122,6 +132,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             // never observe a torn or stale value -- see Cancel().
             lock (_gate) _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             lock (_gate) _skipDownloadCts = new CancellationTokenSource();
+            RecordCatalog();
             NotifyNow();
             _flushTimer.Change(_flushInterval, _flushInterval);
 
@@ -150,7 +161,15 @@ public sealed class InstallSession : IInstallSession, IDisposable
             // catch blocks below -- leaves the streamed rows alone rather than blanking a table
             // the user watched fill up.
             if (result.Report.Count > 0)
-                lock (_gate) { _reportRows.Clear(); _reportRows.AddRange(result.Report); }
+            {
+                lock (_gate)
+                {
+                    _reportRows.Clear();
+                    // The SDK's report knows nothing of the catalog row; it stays first.
+                    if (_catalogRow is not null) _reportRows.Add(_catalogRow);
+                    _reportRows.AddRange(result.Report);
+                }
+            }
 
             Result = result;
             Phase = result.IsCancelled ? InstallPhase.Cancelled
@@ -182,6 +201,43 @@ public sealed class InstallSession : IInstallSession, IDisposable
             WriteLogFile(plan);
 
             NotifyNow();
+        }
+    }
+
+    /// <summary>
+    /// Spec 7.2: one log line and one report row naming the catalog this run reads, as installed
+    /// right now -- so a support question is answered from the report. A catalog that cannot be
+    /// described is a warning row, never a reason not to install.
+    /// </summary>
+    private void RecordCatalog()
+    {
+        if (_describeCatalog is null) return;
+
+        string text;
+        var warning = false;
+        try
+        {
+            text = _describeCatalog();
+        }
+        catch (Exception ex)
+        {
+            text = $"Catalog: could not be read: {ex.Message}";
+            warning = true;
+        }
+
+        var row = new InstallReportEntry
+        {
+            PlannedOperation = text,
+            Category = InstallReportCategory.Step,
+            Outcome = warning ? InstallReportOutcome.Skipped : InstallReportOutcome.Success,
+            Comment = "The catalog this install reads.",
+            IsWarning = warning,
+        };
+        Append(new InstallLogLine(DateTimeOffset.Now, text, warning ? SdkLogLevel.Warning : SdkLogLevel.Info));
+        lock (_gate)
+        {
+            _catalogRow = row;
+            _reportRows.Add(row);
         }
     }
 
