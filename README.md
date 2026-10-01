@@ -49,8 +49,20 @@ It does **not** upload anything — publishing is opt-in, see below.
 .\Scripts\New-Release.ps1 -Version 3.0.6 -Notes "What changed." -Prerelease
 
 # ...and later to everyone, without a rebuild
-gh release edit v3.0.6 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest  # Promote-Release.ps1 (issue #30) will replace this
+.\Scripts\Promote-Release.ps1 -Version 3.0.6
 ```
+
+`Promote-Release.ps1` un-marks the pre-release and makes it GitHub's latest release, the one
+Stable installs read. It never rebuilds, so Stable gets exactly the binaries testers ran, but
+first it checks that those binaries are still current. It reads the release's `build-info.json`
+and runs the same two checks as Steps 0c and 0d against SDK `develop` and the latest stable
+catalog **as of now**: SDK fixes or a catalog release may have landed while the build waited in
+Preview. Both checks always run, so one refusal lists everything that is behind. Behind is refused
+unless you add `-AllowOlderSdk` / `-AllowOlderCatalog`; a check that could not run, or a seed that
+is no stable catalog release, is refused with no override. The fix for any refusal is a new
+Preview. It also refuses a draft, a release without `build-info.json` (made before the asset
+existed), and a version below the current Stable release. Like the release script, it edits the
+release under the first signed-in `gh` account that can write, and never switches accounts.
 
 Before it changes or builds anything, `New-Release.ps1` runs four gates. **0a** the packages
 token is set. **0b** a signed-in `gh` account can write to this repo: the active account if it

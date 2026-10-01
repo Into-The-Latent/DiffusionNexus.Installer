@@ -41,11 +41,11 @@
     a suffixed version (3.1.0-beta.1) flips electron-updater into matching releases by that
     suffix and makes the installed app accept pre-releases whatever its channel setting says.
 
-    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries. Today that is
-    the gh command below; Promote-Release.ps1 (issue #30) will check the SDK pin and the catalog
-    seed against what is current first. Because promotion never rebuilds, a Preview build embeds
-    the stable catalog seed too (Step 0d), never a preview one.
-        gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
+    To promote a Preview build to everyone, run Promote-Release.ps1: no rebuild, same binaries. It
+    reads the release's build-info.json and checks the SDK version and the catalog seed against
+    what is current at promotion time before it un-marks the pre-release. Because promotion never
+    rebuilds, a Preview build embeds the stable catalog seed too (Step 0d), never a preview one.
+        .\Scripts\Promote-Release.ps1 -Version 3.0.9
 
 .PARAMETER AllowOlderSdk
     Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
@@ -311,5 +311,5 @@ if ($LASTEXITCODE -ne 0) { throw "gh release create failed (see gh's output abov
 
 Write-Host "Released v$Version on $channelName" -ForegroundColor Green
 if ($Prerelease) {
-    Write-Host "Promote it to Stable, once the pin and the seed are still current: gh release edit v$Version --repo $ghRepo --prerelease=false --latest (Promote-Release.ps1 will do these checks; issue #30)" -ForegroundColor Yellow
+    Write-Host "Promote it to Stable when testers are done: .\Scripts\Promote-Release.ps1 -Version $Version (it checks the SDK and the catalog seed are still current first)" -ForegroundColor Yellow
 }
