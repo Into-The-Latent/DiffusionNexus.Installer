@@ -311,6 +311,16 @@ The app channel follows the saved preference as today (`AppUpdateChecker` reads 
 check), so a switch to Stable while on a newer Preview build keeps that build until Stable
 overtakes it. Unchanged, and already stated on the page.
 
+As built (#39): `SwitchChannelAsync` previews, `ConfirmSwitchAsync` is Switch, `KeepChannel`
+is Keep. Only "Removed" and "Updated" entries warn: a diff of additions alone, or an empty one
+(shared files only), switches and applies without asking. While a switch waits for an answer,
+checks, applies and other switches are refused and the radios show the choice being asked about.
+A switch during an install saves the preference and holds the apply behind the usual "once
+<workload> has finished" line. "Retry" runs a check; when that check offers Apply, the Apply
+button is the retry. The "still from" line (`SwitchIncomplete`) ends when an apply succeeds or a
+check finds the installed catalog current. Under `DIFFUSIONNEXUS_CATALOG_CHANNEL` a switch saves
+the preference only: the variable decides what this run installs.
+
 ### 7.2 The install says which catalog it used
 
 At install start the log gets one line, and the result view one row:
