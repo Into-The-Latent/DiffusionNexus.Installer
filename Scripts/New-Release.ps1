@@ -54,11 +54,12 @@
     that could not run (no SDK checkout, a failed fetch, pins that disagree).
 
 .PARAMETER AllowOlderCatalog
-    Release even though Scripts/Test-CatalogSeed.ps1 found the embedded catalog seed to differ from
-    the latest stable catalog release - a deliberate hold-back of the seed, after
+    Release even though Scripts/Test-CatalogSeed.ps1 found the embedded catalog seed to be an older
+    stable release rather than the latest - a deliberate hold-back of the seed, after
     Update-CatalogSeed.ps1 -Version N. What differs is still listed, and the release notes name the
-    seed that ships. It does not override a check that could not run (no download, an uncommitted
-    or corrupt seed).
+    seed that ships. It does not override a seed that is no stable release at all (ahead of stable,
+    another catalog under stable's number, a Preview manifest; exit 4), nor a check that could not
+    run (no download, an uncommitted or corrupt seed; exit 2).
 
 .EXAMPLE
     .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "Fixes the shortcut launch."
@@ -149,6 +150,7 @@ switch ($LASTEXITCODE) {
         }
         Write-Warning "Releasing WITHOUT the latest stable catalog seed (-AllowOlderCatalog)."
     }
+    4 { throw "The embedded catalog seed is not a stable catalog release -AllowOlderCatalog may ship (listed above). Run pwsh Scripts/Update-CatalogSeed.ps1 and commit. Nothing was built or changed." }
     default { throw "The embedded catalog seed could not be checked (see above). Nothing was built or changed." }
 }
 # What Step 0d judged, for Step 1c: the packaged app must report exactly this seed.

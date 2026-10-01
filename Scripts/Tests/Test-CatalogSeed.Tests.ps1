@@ -10,34 +10,73 @@ Test-Case 'equal: the seed is the latest stable release, reached through the rel
     Assert-Result (Invoke-CatalogSeedCheck $f) 0 -Contains 'Catalog seed v5 (0000000) is the latest stable catalog.'
 }
 
-Test-Case 'behind: names both versions, the fix command, and where the release came from' {
+Test-Case 'behind: an older stable release names both versions, the fix command, and where the release came from' {
     $f = New-CatalogFixture
     Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 4) | Out-Null
     Publish-CatalogRelease $f -Version 5 | Out-Null
     Assert-Result (Invoke-CatalogSeedCheck $f) 3 `
         -Contains 'is not the latest stable catalog (v5, 0000000', 'catalogVersion 4 vs 5 (the seed is behind)',
+                  "It is the older stable release v4 ($($f.ReleaseUrl)/download/v4/manifest.json)",
                   'pwsh Scripts/Update-CatalogSeed.ps1', "$($f.ReleaseUrl)/latest/download/manifest.json"
 }
 
-Test-Case 'ahead: a seed newer than stable is content the stable channel does not serve' {
+Test-Case 'behind, but not the stable release of its own number: no flag may ship it (exit 4)' {
+    $f = New-CatalogFixture
+    Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 4 -Commit ('a' * 40)) | Out-Null
+    Publish-CatalogRelease $f -Version 4 -Commit ('b' * 40) -NotLatest | Out-Null
+    Publish-CatalogRelease $f -Version 5 | Out-Null
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 `
+        -Contains 'catalogVersion 4 vs 5 (the seed is behind)', 'It is not the stable release v4 either', 'commit aaaaaaa vs bbbbbbb',
+                  '-AllowOlderCatalog covers only an older stable release', 'pwsh Scripts/Update-CatalogSeed.ps1'
+}
+
+Test-Case 'behind, and the release of its number cannot be read: not checked' {
+    $f = New-CatalogFixture
+    Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 4) | Out-Null
+    Remove-Item -LiteralPath (Join-Path $f.Releases 'download' 'v4') -Recurse -Force
+    Publish-CatalogRelease $f -Version 5 | Out-Null
+    Assert-Result (Invoke-CatalogSeedCheck $f) 2 -Contains 'NOT checked', "could not download $($f.ReleaseUrl)/download/v4/manifest.json"
+}
+
+Test-Case 'ahead: a seed newer than stable is content the stable channel does not serve, and no flag ships it' {
     $f = New-CatalogFixture
     Publish-CatalogRelease $f -Version 5 | Out-Null
     Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 6 -NotLatest) | Out-Null
-    Assert-Result (Invoke-CatalogSeedCheck $f) 3 -Contains 'catalogVersion 6 vs 5 (the seed is ahead: content the stable channel does not serve)'
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 `
+        -Contains 'catalogVersion 6 vs 5 (the seed is ahead: content the stable channel does not serve)', '-AllowOlderCatalog covers only an older stable release'
 }
 
-Test-Case 'same version, other commit: a seed taken from a preview packed under the same number differs' {
+Test-Case 'same version, other commit: a seed taken from a preview packed under the same number is no stable release' {
     $f = New-CatalogFixture
     Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 5 -Commit ('a' * 40)) | Out-Null
     Publish-CatalogRelease $f -Version 5 -Commit ('b' * 40) | Out-Null
-    Assert-Result (Invoke-CatalogSeedCheck $f) 3 -Contains 'commit aaaaaaa vs bbbbbbb' -Lacks 'catalogVersion'
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 -Contains 'commit aaaaaaa vs bbbbbbb' -Lacks 'catalogVersion'
 }
 
 Test-Case 'same version and commit, other bytes: a re-packed release differs by its archive hash' {
     $f = New-CatalogFixture
     Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 5 -Content 'first pack') | Out-Null
     Publish-CatalogRelease $f -Version 5 -Content 'second pack' | Out-Null
-    Assert-Result (Invoke-CatalogSeedCheck $f) 3 -Contains 'archive sha256' -Lacks 'catalogVersion', 'commit 0000'
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 -Contains 'archive sha256' -Lacks 'catalogVersion', 'commit 0000'
+}
+
+Test-Case 'a Preview seed manifest over the stable bytes is no stable seed: the SDK records its channel (exit 4)' {
+    $f = New-CatalogFixture
+    $seed = Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 5) -Uncommitted
+    $manifest = Get-Content -LiteralPath (Join-Path $seed 'manifest.json') -Raw | ConvertFrom-Json
+    $manifest.channel = 'Preview'
+    Set-Content -LiteralPath (Join-Path $seed 'manifest.json') -Value ($manifest | ConvertTo-Json -Depth 5) -NoNewline
+    Invoke-FixtureGit $f.Installer @('add', '--all'); Invoke-FixtureGit $f.Installer @('commit', '--quiet', '-m', 'preview seed')
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 -Contains 'is a Preview manifest', 'The seed is always a stable catalog', '-AllowOlderCatalog covers only'
+}
+
+Test-Case 'the same version, commit and archive under another pack time is not the release (exit 4)' {
+    $f = New-CatalogFixture
+    $seed = Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 5) -Uncommitted
+    $path = Join-Path $seed 'manifest.json'
+    Set-Content -LiteralPath $path -Value ((Get-Content -LiteralPath $path -Raw) -replace '2026-09-25T14:15:43', '2027-01-01T00:00:00') -NoNewline
+    Invoke-FixtureGit $f.Installer @('add', '--all'); Invoke-FixtureGit $f.Installer @('commit', '--quiet', '-m', 'hand-made seed')
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 -Contains 'the manifest itself is not the release', '-AllowOlderCatalog covers only'
 }
 
 Test-Case 'a zip that disagrees with its own manifest is not checked, whatever the release says' {
@@ -109,10 +148,14 @@ Test-Case 'a seed manifest rewritten with CRLF and a BOM still equals the releas
 
 Test-Case '-Expect judges the values given and reads nothing on disk: no seed, no git repo needed' {
     $f = New-CatalogFixture
+    $old = Publish-CatalogRelease $f -Version 4 -Content 'older'
+    $oldSha = (Get-FileHash -LiteralPath (Join-Path $old 'catalog.zip') -Algorithm SHA256).Hash
     $pack = Publish-CatalogRelease $f -Version 5
     $sha = (Get-FileHash -LiteralPath (Join-Path $pack 'catalog.zip') -Algorithm SHA256).Hash   # upper-case, as Get-FileHash prints it
     Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $(('0' * 7 + '5') * 5) $sha")) 0 -Contains 'Catalog seed v5 (0000000) is the latest stable catalog.'
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$(('0' * 7 + '4') * 5),$sha")) 3 -Contains 'The seed given is not the latest stable catalog', 'catalogVersion 4 vs 5' -Lacks 'Update-CatalogSeed'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$(('0' * 7 + '4') * 5),$oldSha")) 3 -Contains 'The seed given is not the latest stable catalog', 'catalogVersion 4 vs 5', 'It is the older stable release v4' -Lacks 'Update-CatalogSeed'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$(('0' * 7 + '4') * 5),$sha")) 4 -Contains 'It is not the stable release v4 either'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "6 $(('0' * 7 + '6') * 5) $sha")) 4 -Contains 'the seed is ahead'
     Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 00000005 $sha")) 2 -Contains 'NOT checked', '-Expect commit'
     Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $sha")) 2 -Contains 'NOT checked', '-Expect takes three values'
 }

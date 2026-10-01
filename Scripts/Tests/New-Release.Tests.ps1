@@ -106,6 +106,15 @@ Test-Case '-AllowOlderCatalog gets past a stale seed; -AllowOlderSdk alone does 
     Assert-Equal $r.VersionWritten $true 'version written'
 }
 
+Test-Case 'a seed ahead of stable refuses even with -AllowOlderCatalog: the flag covers only an older stable release' {
+    $f = New-ReleaseFixture
+    Set-CatalogSeed $f -From (Publish-CatalogRelease $f -Version 6 -NotLatest) | Out-Null
+    $r = Invoke-NewRelease $f -ExtraArgs @('-AllowOlderCatalog') -NativeErrors
+    if ($r.ExitCode -eq 0) { throw "expected a refusal, got exit 0. Output:`n$($r.Text)" }
+    Assert-Like $r.Text '*the seed is ahead*not a stable catalog release -AllowOlderCatalog may ship*Nothing was built or changed*' 'output'
+    Assert-Equal $r.VersionWritten $false 'version written'
+}
+
 Test-Case 'a seed that could not be checked refuses even with -AllowOlderCatalog' {
     $f = New-ReleaseFixture
     Set-Content -LiteralPath (Join-Path $f.Installer 'DiffusionNexus.Installer.Electron' 'Assets' 'Catalog' 'manifest.json.bak') -Value 'old'

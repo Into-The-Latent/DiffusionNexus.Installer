@@ -83,7 +83,7 @@ Everything under "Step 0" runs before `Directory.Build.props` is touched.
 | 0a | `GITHUB_PACKAGES_TOKEN` is set (moved up from after the version write) | — |
 | 0b | A signed-in `gh` account can write to the repo (`ReleaseAccount.ps1`, skipped with `-SkipUpload`) | — |
 | 0c | SDK pin is current (`Test-SdkPin.ps1`) | `-AllowOlderSdk`, exit 3 only |
-| 0d | Embedded catalog seed equals the latest stable catalog (`Test-CatalogSeed.ps1`) | `-AllowOlderCatalog`, exit 3 only |
+| 0d | Embedded catalog seed equals the latest stable catalog (`Test-CatalogSeed.ps1`) | `-AllowOlderCatalog`, exit 3 only (an older stable release) |
 | 1 | Write version, clear publish folder, `dotnet publish -p:UseLocalSDK=false` | — |
 | 1a | Packaged SDK DLLs are byte-identical to the pinned packages (exists) | — |
 | 1b | Third-party notices current (exists) | — |
@@ -130,8 +130,17 @@ not carry a preview seed to Stable users.
 - `-Expect "<version> <commit> <sha256>"` (one string, because `pwsh -File` hands a script literal
   strings and cannot fill an array parameter) compares a given seed instead of the working tree's
   (for promotion); nothing on disk is read.
-- Exit 3 when the seed differs, with the exact command to fix it:
-  `pwsh Scripts/Update-CatalogSeed.ps1` then commit. Exit 2 when the seed or the release cannot be
+- In the working tree the whole seed manifest must be the release's (parsed, so line endings do
+  not count): the SDK records the seed's channel and pack time as where the installed catalog came
+  from, so a Preview stamp or a hand-made `generatedAt` over the right archive is a wrong seed.
+- Exit 3 when the seed is an older stable release: behind the latest, and exactly the release of
+  its own number (`<releases>/download/v<N>/manifest.json`), with the exact command to fix it:
+  `pwsh Scripts/Update-CatalogSeed.ps1` then commit. Only exit 3 is overridable: the override is for
+  a deliberate hold-back, which `Update-CatalogSeed.ps1 -Version N` produces.
+- Exit 4 when the seed is no stable catalog release: ahead of the latest (content the stable channel
+  does not serve), another catalog under the latest's number, not the release of its own number,
+  or not a Stable manifest. Listed the same way; no flag ships it.
+- Exit 2 when the seed or a release cannot be
   read, when `git status --porcelain -- Assets/Catalog` is not empty (uncommitted seed files must
   never ship), or when the zip's hash does not match its manifest.
 
@@ -208,7 +217,7 @@ scripts' own `gh` calls use the token.
 4. `Test-SdkPin.ps1 -Pin <sdk>` and `Test-CatalogSeed.ps1 -Expect <seed>`, judged against SDK
    `develop` and the latest stable catalog **as of now**, not as of the build. Exit 3 on either
    → refused with the list and "cut a new Preview", unless the matching `-AllowOlder*` flag is
-   given. Exit 2 → refused, no override.
+   given. Exit 2, and the seed gate's exit 4 (no stable release at all) → refused, no override.
 5. `gh release edit vX --prerelease=false --latest` under the resolved token. If that fails, the
    message says the release is still a pre-release.
 

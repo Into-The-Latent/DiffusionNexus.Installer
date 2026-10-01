@@ -24,6 +24,12 @@ function Save-CatalogAsset([string]$Url, [string]$Path) {
     catch { throw "could not download $Url ($($_.Exception.Message))" }
 }
 
+# A file's sha256 as manifests write it (lower-case hex), or '' when there is no file. One recipe
+# for the gate and the update script, so the two can never disagree about the same bytes.
+function Get-Sha256([string]$Path) {
+    if (Test-Path -LiteralPath $Path -PathType Leaf) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
+}
+
 # The fields the seed gate compares, from a manifest's text: catalogVersion, the catalog commit,
 # the archive's sha256 (lower-cased; hex is case-insensitive) and the channel. Throws naming $What
 # when the text is not that.

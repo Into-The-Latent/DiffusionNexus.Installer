@@ -65,8 +65,10 @@ release's `manifest.json` (public, no token) and stops the release when the embe
 `DiffusionNexus.Installer.Electron/Assets/Catalog` is not that release: same version, commit and
 archive hash, and a zip that matches its manifest. The fix is `pwsh Scripts/Update-CatalogSeed.ps1`
 (it downloads and verifies both files; `-Version N` embeds an older stable tag on purpose) and a
-commit; the gate refuses an uncommitted seed. Add `-AllowOlderCatalog` to ship a different seed on
-purpose. A Preview build embeds the stable seed too, because promotion never rebuilds. A refusal
+commit; the gate refuses an uncommitted seed. Add `-AllowOlderCatalog` to ship an older stable
+release on purpose (exactly the release of its number, as `-Version N` embeds it); a seed ahead of
+stable, another catalog under stable's number, or a Preview manifest is refused with no override.
+A Preview build embeds the stable seed too, because promotion never rebuilds. A refusal
 leaves the working tree untouched. Run either check on its own at any time with
 `pwsh Scripts/Test-SdkPin.ps1` or `pwsh Scripts/Test-CatalogSeed.ps1`.
 

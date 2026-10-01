@@ -54,9 +54,6 @@ $assets = if ($Version) { "$(Get-CatalogReleaseBase $ReleaseBase)/download/v$Ver
 $seedDir = Join-Path $RepoRoot $CatalogSeedFolder
 if (-not (Test-Path -LiteralPath $seedDir -PathType Container)) { throw "$seedDir does not exist. Is $RepoRoot the installer repo?" }
 
-function Get-Sha256([string]$Path) {
-    if (Test-Path -LiteralPath $Path -PathType Leaf) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
-}
 $before = @('manifest.json', 'catalog.zip' | ForEach-Object { Get-Sha256 (Join-Path $seedDir $_) })
 
 # Both assets to a temp folder first, verified there, then moved: the seed is never half replaced.

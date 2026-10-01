@@ -13,18 +13,27 @@
     so a promoted binary must not carry a preview seed to Stable users.
 
     Equal means: the seed's catalogVersion, commit and archive.sha256 are the latest stable
-    manifest's, and catalog.zip really has that sha256. The manifest is downloaded from
+    manifest's, and catalog.zip really has that sha256. In the working tree the whole manifest must
+    be the release's too (fields compared, not bytes): the SDK records the seed's channel and pack
+    time as where the installed catalog came from, so a Preview stamp or a hand-made generatedAt is
+    a wrong seed even over the right archive. The manifest is downloaded from
     <ReleaseBase>/latest/download/manifest.json; public, no token.
 
     Exit codes - New-Release.ps1 and Promote-Release.ps1 rely on them:
       0  the seed is the latest stable catalog
-      3  it differs. What differs is listed, with the fix: pwsh Scripts/Update-CatalogSeed.ps1,
-         then commit.
-      2  it could not be checked: the release could not be downloaded or is not a Stable manifest,
-         the seed is missing or not a manifest, catalog.zip disagrees with its own manifest, or the
-         seed folder has uncommitted changes (a release must never carry what no commit records).
-         Any unexpected error lands here too, never on 3, so it can never be waved through with
-         -AllowOlderCatalog. (1 is left to pwsh, which uses it for a script that does not parse.)
+      3  it is an older stable release: behind the latest, and exactly the release of its own
+         number (<ReleaseBase>/download/v<N>/manifest.json). What differs is listed, with the fix:
+         pwsh Scripts/Update-CatalogSeed.ps1, then commit. The only answer -AllowOlderCatalog
+         overrides: a deliberate hold-back is Update-CatalogSeed.ps1 -Version N.
+      4  it is no stable catalog release at all: ahead of the latest, another catalog under the
+         latest's number, not the release of its own number, or not a Stable manifest. Listed the
+         same way. No flag ships it.
+      2  it could not be checked: a release could not be downloaded or the latest is not a Stable
+         manifest, the seed is missing or not a manifest, catalog.zip disagrees with its own
+         manifest, or the seed folder has uncommitted changes (a release must never carry what no
+         commit records). Any unexpected error lands here too, never on 3, so it can never be waved
+         through with -AllowOlderCatalog. (1 is left to pwsh, which uses it for a script that does
+         not parse.)
 
 .PARAMETER RepoRoot
     The installer repo. Defaults to the folder above this script.
@@ -69,9 +78,19 @@ function Stop-Unchecked([string]$Reason) {
     exit 2
 }
 
+# Checked, and wrong in a way no flag excuses.
+function Stop-NotStable([string]$Reason) {
+    Write-Host $Reason -ForegroundColor Red
+    Write-Host "No flag ships this seed: -AllowOlderCatalog covers only an older stable release (Update-CatalogSeed.ps1 -Version N)." -ForegroundColor Red
+    Write-Host $fix -ForegroundColor Yellow
+    exit 4
+}
+
 . (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
 if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
-$manifestUrl = "$(Get-CatalogReleaseBase $ReleaseBase)/latest/download/manifest.json"
+$releaseBase = Get-CatalogReleaseBase $ReleaseBase
+$manifestUrl = "$releaseBase/latest/download/manifest.json"
+$seedText = $null   # the seed manifest's text; only the working tree has one, -Expect gives three values
 
 # ------------------------------------------------------------------------ the seed under judgement
 if ($Expect) {
@@ -101,41 +120,79 @@ if ($Expect) {
     if ($status.Count -gt 0) {
         Stop-Unchecked "the seed under $CatalogSeedFolder has uncommitted changes:`n$(($status | ForEach-Object { "  $_" }) -join "`n")`nCommit them (or restore the files) and run the check again."
     }
-    try { $seed = Read-CatalogManifest (Get-Content -LiteralPath $manifestPath -Raw) "the embedded seed manifest $manifestPath" }
+    $seedName = 'The embedded seed'
+    $fix = "-> pwsh Scripts/Update-CatalogSeed.ps1, then commit $CatalogSeedFolder."
+    $seedText = Get-Content -LiteralPath $manifestPath -Raw
+    try { $seed = Read-CatalogManifest $seedText "the embedded seed manifest $manifestPath" }
     catch { Stop-Unchecked $_.Exception.Message }
-    $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $zipHash = Get-Sha256 $zipPath
     if ($zipHash -ne $seed.Sha256) {
         Stop-Unchecked "$zipPath does not match its manifest: its sha256 is $zipHash, the manifest says $($seed.Sha256). Run pwsh Scripts/Update-CatalogSeed.ps1 to replace both files, then commit."
     }
-    $seedName = 'The embedded seed'
-    $fix = "-> pwsh Scripts/Update-CatalogSeed.ps1, then commit $CatalogSeedFolder."
+    if ($seed.Channel -ne 'Stable') {
+        Stop-NotStable "$manifestPath is a $($seed.Channel) manifest. The seed is always a stable catalog: the SDK records the seed's channel as where the installed catalog came from, and promotion carries this binary to Stable users unchanged."
+    }
+}
+
+# A release's manifest, downloaded: its fields and its text. Anything short of that is "not checked".
+function Get-ReleaseManifest([string]$Url, [string]$What) {
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ("catalogseed-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temp | Out-Null
+    try {
+        $path = Join-Path $temp 'manifest.json'
+        try { Save-CatalogAsset $Url $path } catch { Stop-Unchecked $_.Exception.Message }
+        $text = Get-Content -LiteralPath $path -Raw
+        try { $manifest = Read-CatalogManifest $text "$What ($Url)" } catch { Stop-Unchecked $_.Exception.Message }
+        $manifest | Add-Member -NotePropertyName Text -NotePropertyValue $text -PassThru
+    } finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# What the seed has that the release does not. Empty = the seed is that release: the three values,
+# and in the working tree the whole manifest, parsed (so CRLF, a BOM or indentation do not count).
+function Get-Differences($Release) {
+    $lines = @(
+        if ($seed.Version -ne $Release.Version) {
+            $direction = if ($seed.Version -lt $Release.Version) { 'the seed is behind' } else { 'the seed is ahead: content the stable channel does not serve' }
+            "catalogVersion $($seed.Version) vs $($Release.Version) ($direction)"
+        }
+        if ($seed.Commit -ne $Release.Commit) { "commit $($seed.Short) vs $($Release.Short)" }
+        if ($seed.Sha256 -ne $Release.Sha256) { "archive sha256 $($seed.Sha256.Substring(0, 12))... vs $($Release.Sha256.Substring(0, 12))..." }
+    )
+    if ($lines.Count -eq 0 -and $null -ne $seedText) {
+        $parsed = { param($text) $text | ConvertFrom-Json | ConvertTo-Json -Depth 32 -Compress }
+        if ((& $parsed $seedText) -ne (& $parsed $Release.Text)) {
+            $lines = @("the manifest itself is not the release's (channel, generatedAt or a section hash): hand-made or re-packed")
+        }
+    }
+    $lines
 }
 
 # ------------------------------------------------------------------------ the latest stable release
-$temp = Join-Path ([IO.Path]::GetTempPath()) ("catalogseed-" + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $temp | Out-Null
-try {
-    $remotePath = Join-Path $temp 'manifest.json'
-    try { Save-CatalogAsset $manifestUrl $remotePath } catch { Stop-Unchecked $_.Exception.Message }
-    try { $remote = Read-CatalogManifest (Get-Content -LiteralPath $remotePath -Raw) "the latest stable manifest ($manifestUrl)" }
-    catch { Stop-Unchecked $_.Exception.Message }
-} finally { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
+$remote = Get-ReleaseManifest $manifestUrl 'the latest stable manifest'
 if ($remote.Channel -ne 'Stable') { Stop-Unchecked "$manifestUrl is a $($remote.Channel) manifest, not a Stable one." }
 
 # ---------------------------------------------------------------------------------- the verdict
-$differences = @(
-    if ($seed.Version -ne $remote.Version) {
-        $direction = if ($seed.Version -lt $remote.Version) { 'the seed is behind' } else { 'the seed is ahead: content the stable channel does not serve' }
-        "catalogVersion $($seed.Version) vs $($remote.Version) ($direction)"
-    }
-    if ($seed.Commit -ne $remote.Commit) { "commit $($seed.Short) vs $($remote.Short)" }
-    if ($seed.Sha256 -ne $remote.Sha256) { "archive sha256 $($seed.Sha256.Substring(0, 12))... vs $($remote.Sha256.Substring(0, 12))..." }
-)
+$differences = @(Get-Differences $remote)
 if ($differences.Count -eq 0) {
     Write-Host "Catalog seed v$($seed.Version) ($($seed.Short)) is the latest stable catalog. ($manifestUrl)" -ForegroundColor Green
     exit 0
 }
 Write-Host "$seedName is not the latest stable catalog (v$($remote.Version), $($remote.Short), $manifestUrl):" -ForegroundColor Yellow
 $differences | ForEach-Object { Write-Host "  $_" }
+if ($seed.Version -gt $remote.Version) { Stop-NotStable "A seed ahead of the latest stable release is no stable release." }
+if ($seed.Version -eq $remote.Version) { Stop-NotStable "Another catalog under the number of the latest stable release is no stable release." }
+
+# Behind. The override is for a deliberate hold-back, so the seed must be exactly the stable
+# release of its own number, as Update-CatalogSeed.ps1 -Version N embeds it.
+$tagUrl = "$releaseBase/download/v$($seed.Version)/manifest.json"
+$tag = Get-ReleaseManifest $tagUrl "the stable release v$($seed.Version)"
+$tagDifferences = @(Get-Differences $tag)
+if ($tag.Channel -ne 'Stable') { $tagDifferences += "$tagUrl is a $($tag.Channel) manifest" }
+if ($tagDifferences.Count -gt 0) {
+    Write-Host "It is not the stable release v$($seed.Version) either ($tagUrl):" -ForegroundColor Red
+    $tagDifferences | ForEach-Object { Write-Host "  $_" }
+    Stop-NotStable "The seed is no stable catalog release."
+}
+Write-Host "It is the older stable release v$($seed.Version) ($tagUrl)." -ForegroundColor Yellow
 Write-Host $fix -ForegroundColor Yellow
 exit 3
