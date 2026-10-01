@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DiffusionNexus.Installer.SDK.Catalog;
@@ -40,15 +41,19 @@ public static class BuildInfo
     /// what the release script runs anyway. Not the entry assembly: under a test host that is testhost.dll,
     /// dated whenever the .NET SDK was installed.</param>
     public static BuildInfoDocument Create(string? assemblyLocation) =>
-        // The same resource Program.cs hands the SDK as CatalogOptions.EmbeddedManifest.
-        Create(assemblyLocation, () => typeof(BuildInfo).Assembly.GetManifestResourceStream("manifest.json"));
+        // The same resources Program.cs hands the SDK as CatalogOptions.EmbeddedManifest and EmbeddedArchive.
+        Create(assemblyLocation,
+            () => typeof(BuildInfo).Assembly.GetManifestResourceStream("manifest.json"),
+            () => typeof(BuildInfo).Assembly.GetManifestResourceStream("catalog.zip"));
 
     /// <param name="assemblyLocation">See <see cref="Create(string?)"/>.</param>
     /// <param name="embeddedManifest">The embedded seed manifest, or null when the build has none. A build
     /// with no seed, or a seed manifest without a commit or an archive hash, gets no document: the exception
     /// ends the process with a non-zero exit and the release script refuses the build, instead of an asset
     /// that promotion would trust.</param>
-    public static BuildInfoDocument Create(string? assemblyLocation, Func<Stream?> embeddedManifest)
+    /// <param name="embeddedArchive">The embedded catalog.zip. Its bytes must hash to the manifest's sha256,
+    /// so the answer states what this binary carries, not what its manifest claims.</param>
+    public static BuildInfoDocument Create(string? assemblyLocation, Func<Stream?> embeddedManifest, Func<Stream?> embeddedArchive)
     {
         // The Catalog assembly is the one whose version the release gates judge: the pin check
         // reads the same version from the csproj, and the schema constant lives here.
@@ -59,10 +64,10 @@ public static class BuildInfo
         DateTimeOffset? builtAt = !string.IsNullOrEmpty(assemblyLocation) && File.Exists(assemblyLocation)
             ? new DateTimeOffset(File.GetLastWriteTimeUtc(assemblyLocation), TimeSpan.Zero)
             : null;
-        return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, ReadSeed(embeddedManifest), builtAt);
+        return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, ReadSeed(embeddedManifest, embeddedArchive), builtAt);
     }
 
-    private static BuildInfoCatalogSeed ReadSeed(Func<Stream?> embeddedManifest)
+    private static BuildInfoCatalogSeed ReadSeed(Func<Stream?> embeddedManifest, Func<Stream?> embeddedArchive)
     {
         using var stream = embeddedManifest()
             ?? throw new InvalidOperationException("The embedded catalog manifest 'manifest.json' is missing: this build carries no catalog seed and must not be released.");
@@ -73,6 +78,11 @@ public static class BuildInfo
             throw new InvalidOperationException("The embedded catalog manifest names no commit: this seed cannot be checked against a release and must not be released.");
         if (string.IsNullOrWhiteSpace(manifest.Archive?.Sha256))
             throw new InvalidOperationException("The embedded catalog manifest has no archive sha256: this seed cannot be checked against a release and must not be released.");
+        using var archive = embeddedArchive()
+            ?? throw new InvalidOperationException("The embedded catalog archive 'catalog.zip' is missing: this build carries no catalog seed and must not be released.");
+        var actual = Convert.ToHexStringLower(SHA256.HashData(archive));
+        if (!string.Equals(actual, manifest.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"The embedded catalog.zip has sha256 {actual}; its manifest says {manifest.Archive.Sha256}. This build does not carry the seed its manifest names and must not be released.");
         return new BuildInfoCatalogSeed(manifest.CatalogVersion, manifest.Commit, manifest.Archive.Sha256);
     }
 

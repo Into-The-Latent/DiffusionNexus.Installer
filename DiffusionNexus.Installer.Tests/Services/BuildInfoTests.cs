@@ -69,14 +69,32 @@ public class BuildInfoTests
         // document that promotion would trust: the exception ends the process with a non-zero exit,
         // and Step 1c refuses the build.
         var location = typeof(BuildInfo).Assembly.Location;
-        var noSeed = () => BuildInfo.Create(location, () => null);
-        var noCommit = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"archive\":{\"name\":\"catalog.zip\",\"sha256\":\"ab\",\"bytes\":1}}"u8.ToArray()));
-        var noArchive = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"commit\":\"abc\"}"u8.ToArray()));
+        var noSeed = () => BuildInfo.Create(location, () => null, EmbeddedArchive);
+        var noCommit = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"archive\":{\"name\":\"catalog.zip\",\"sha256\":\"ab\",\"bytes\":1}}"u8.ToArray()), EmbeddedArchive);
+        var noArchive = () => BuildInfo.Create(location, () => new MemoryStream("{\"catalogVersion\":5,\"commit\":\"abc\"}"u8.ToArray()), EmbeddedArchive);
 
         noSeed.Should().Throw<InvalidOperationException>().WithMessage("*manifest.json*missing*");
         noCommit.Should().Throw<InvalidOperationException>().WithMessage("*commit*");
         noArchive.Should().Throw<InvalidOperationException>().WithMessage("*archive*");
     }
+
+    [Fact]
+    public void An_embedded_archive_that_is_not_the_manifests_is_no_answer()
+    {
+        // The sha256 in the answer is a fact about the bytes this binary carries, not the manifest's
+        // claim: promotion trusts it. A missing or different catalog.zip resource gets no document.
+        var location = typeof(BuildInfo).Assembly.Location;
+        var noZip = () => BuildInfo.Create(location, EmbeddedManifest, () => null);
+        var otherZip = () => BuildInfo.Create(location, EmbeddedManifest, () => new MemoryStream("not the archive"u8.ToArray()));
+
+        noZip.Should().Throw<InvalidOperationException>().WithMessage("*catalog.zip*missing*");
+        otherZip.Should().Throw<InvalidOperationException>().WithMessage("*catalog.zip*sha256*manifest says*");
+        BuildInfo.Create(location, EmbeddedManifest, EmbeddedArchive).CatalogSeed.Sha256.Should().Be(BuildInfo.Create().CatalogSeed.Sha256);
+    }
+
+    private static Stream? EmbeddedManifest() => typeof(BuildInfo).Assembly.GetManifestResourceStream("manifest.json");
+
+    private static Stream? EmbeddedArchive() => typeof(BuildInfo).Assembly.GetManifestResourceStream("catalog.zip");
 
     [Fact]
     public void The_json_is_one_object_with_the_release_scripts_property_names()
