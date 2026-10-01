@@ -58,14 +58,17 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// A switch waiting for Switch or Keep: the target channel's content removes or changes
-    /// something. While it is set, checks, applies and other switches are refused.
+    /// something. While it is set, checks, applies and other switches are refused, and
+    /// <see cref="UpdateAvailable"/> is false (the last check describes the channel being left).
     /// </summary>
     CatalogChannelSwitch? PendingSwitch { get; }
 
     /// <summary>
-    /// The preference names a channel whose content did not land: the preview check or the apply
-    /// failed, or an install held the apply. Ends when an apply succeeds or a check finds the
-    /// installed catalog current.
+    /// What is installed is known to come from another channel than <see cref="Channel"/> -- a
+    /// section's recorded channel, SDK 2.1.0; unknown is never a mismatch -- and no check has found
+    /// it current: a switch whose content did not land (the preview or the apply failed, or an
+    /// install held the apply). Read from catalog-state.json, so it survives a restart. False under
+    /// an active override and while a switch waits for an answer.
     /// </summary>
     bool SwitchIncomplete { get; }
 
@@ -74,12 +77,15 @@ public interface ICatalogUpdateCoordinator
     /// or changes something waits in <see cref="PendingSwitch"/>; otherwise the switch goes ahead
     /// at once, as <see cref="ConfirmSwitchAsync"/> would. Refused (no-op) while checking,
     /// applying or switching. Settings I/O errors propagate, and then nothing was changed.
+    /// Completes once the choice is saved (or waits for an answer); a download it starts runs on
+    /// and reports through <see cref="Changed"/>, like <see cref="ApplyAsync"/>.
     /// </summary>
     Task SwitchChannelAsync(CatalogChannel target, CancellationToken ct = default);
 
     /// <summary>
-    /// "Switch": saves the preference, then applies the previewed check. A failed apply keeps the
-    /// preference and the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
+    /// "Switch": saves the preference, then starts the apply of the previewed check and completes;
+    /// the download reports through <see cref="Changed"/>. A failed apply keeps the preference and
+    /// the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
     /// <see cref="PendingSwitch"/>. Settings I/O errors propagate, and then nothing was changed.
     /// </summary>
     Task ConfirmSwitchAsync(CancellationToken ct = default);

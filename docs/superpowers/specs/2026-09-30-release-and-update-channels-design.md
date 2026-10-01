@@ -314,12 +314,24 @@ overtakes it. Unchanged, and already stated on the page.
 As built (#39): `SwitchChannelAsync` previews, `ConfirmSwitchAsync` is Switch, `KeepChannel`
 is Keep. Only "Removed" and "Updated" entries warn: a diff of additions alone, or an empty one
 (shared files only), switches and applies without asking. While a switch waits for an answer,
-checks, applies and other switches are refused and the radios show the choice being asked about.
-A switch during an install saves the preference and holds the apply behind the usual "once
-<workload> has finished" line. "Retry" runs a check; when that check offers Apply, the Apply
-button is the retry. The "still from" line (`SwitchIncomplete`) ends when an apply succeeds or a
-check finds the installed catalog current. Under `DIFFUSIONNEXUS_CATALOG_CHANNEL` a switch saves
-the preference only: the variable decides what this run installs.
+checks, applies and other switches are refused, no update is advertised anywhere (the last check
+describes the channel being left), and the radios show the choice being asked about. A switch
+completes once the choice is saved; its download runs on like a manual apply, so the app check
+does not wait for it. A switch during an install saves the preference and holds the apply behind
+the usual "once <workload> has finished" line. "Retry" runs a check; when that check offers
+Apply, the Apply button is the retry. The "still from" line (`SwitchIncomplete`) is read from
+`catalog-state.json`: a section whose recorded channel differs from the one followed, unless a
+check found the catalog current or an override is active. It survives a restart and names the
+section that lagged; a section that records no channel (SDK 2.0.0) is unknown, never a mismatch
+on its own. For such a state only this run's own switch that did not land is known, and the line
+then claims no source: "The installed catalog (v6) is not from Stable yet."
+Under `DIFFUSIONNEXUS_CATALOG_CHANNEL` a switch saves the preference only: the variable decides
+what this run installs.
+
+7.2 as built: the wizard takes the catalog line when it reads the workload, and the plan carries
+it, because a switch can apply another catalog while the wizard is open. A section that records
+no channel says "channel not recorded" (the top-level stamp is never used for provenance), and a
+state file that cannot be read gives a warning row instead of "none recorded".
 
 ### 7.2 The install says which catalog it used
 

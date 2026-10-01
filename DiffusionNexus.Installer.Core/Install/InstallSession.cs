@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
@@ -19,7 +20,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
     private readonly IInstallationOrchestrator _orchestrator;
     private readonly TimeSpan _flushInterval;
-    private readonly Func<string>? _describeCatalog;
+    private readonly ICatalogProvenance? _catalog;
     private readonly Lock _gate = new();
     private readonly Queue<InstallLogLine> _log = new();
     private readonly List<InstallReportEntry> _reportRows = [];
@@ -32,15 +33,15 @@ public sealed class InstallSession : IInstallSession, IDisposable
     // The current run's catalog row (spec 7.2), kept so the finished report cannot drop it.
     private InstallReportEntry? _catalogRow;
 
-    /// <param name="describeCatalog">
-    /// The catalog an install uses, in one line (<c>InstalledCatalogDescription</c>), read when each
-    /// run starts. Null records no catalog line.
+    /// <param name="catalog">
+    /// Reads the catalog line for a plan whose selection did not capture one. Null, and a plan
+    /// without one records no catalog line.
     /// </param>
-    public InstallSession(IInstallationOrchestrator orchestrator, TimeSpan? flushInterval = null, Func<string>? describeCatalog = null)
+    public InstallSession(IInstallationOrchestrator orchestrator, TimeSpan? flushInterval = null, ICatalogProvenance? catalog = null)
     {
         _orchestrator = orchestrator;
         _flushInterval = flushInterval ?? DefaultFlushInterval;
-        _describeCatalog = describeCatalog;
+        _catalog = catalog;
         _flushTimer = new Timer(_ => Flush(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
@@ -132,7 +133,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             // never observe a torn or stale value -- see Cancel().
             lock (_gate) _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             lock (_gate) _skipDownloadCts = new CancellationTokenSource();
-            RecordCatalog();
+            RecordCatalog(plan);
             NotifyNow();
             _flushTimer.Change(_flushInterval, _flushInterval);
 
@@ -205,25 +206,15 @@ public sealed class InstallSession : IInstallSession, IDisposable
     }
 
     /// <summary>
-    /// Spec 7.2: one log line and one report row naming the catalog this run reads, as installed
-    /// right now -- so a support question is answered from the report. A catalog that cannot be
-    /// described is a warning row, never a reason not to install.
+    /// Spec 7.2: one log line and one report row naming the catalog this run's workload came from
+    /// -- captured by the wizard when it read the workload, else read now -- so a support question
+    /// is answered from the report. A catalog that cannot be read is a warning row, never a reason
+    /// not to install.
     /// </summary>
-    private void RecordCatalog()
+    private void RecordCatalog(WizardPlan plan)
     {
-        if (_describeCatalog is null) return;
-
-        string text;
-        var warning = false;
-        try
-        {
-            text = _describeCatalog();
-        }
-        catch (Exception ex)
-        {
-            text = $"Catalog: could not be read: {ex.Message}";
-            warning = true;
-        }
+        if ((plan.Selection.Catalog ?? _catalog?.Read()) is not { } reading) return;
+        var (text, warning) = (reading.Text, reading.Failed);
 
         var row = new InstallReportEntry
         {

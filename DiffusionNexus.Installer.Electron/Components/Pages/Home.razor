@@ -341,20 +341,11 @@
         yield return (". Software you have already installed is not affected.", false);
     }
 
-    private string IncompleteText
-    {
-        get
-        {
-            var installed = Catalog.Installed;
-            if (installed is null || installed.HighestCatalogVersion == 0)
-                return $"You follow {Catalog.Channel}. Its catalog is not installed yet.";
-
-            // The Workloads section's own channel when the state records it (SDK 2.1.0); the stamp
-            // otherwise, which follows the same section.
-            var from = installed.Workloads?.Channel ?? installed.Channel;
-            return $"You follow {Catalog.Channel}. The installed catalog is still from {from} (v{installed.HighestCatalogVersion}).";
-        }
-    }
+    // Shown only while SwitchIncomplete. The wording is InstalledCatalogDescription's: the section
+    // that lagged, or -- for a state that records no channel -- only that the switch did not land.
+    private string IncompleteText => Catalog.Installed is { } installed
+        ? $"You follow {Catalog.Channel}. {InstalledCatalogDescription.Lagging(installed, Catalog.Channel) ?? InstalledCatalogDescription.NotYetFrom(installed, Catalog.Channel)}"
+        : $"You follow {Catalog.Channel}.";
 
     /// <summary>The Added / Updated / Removed list, for an update and for a switch's warning alike.</summary>
     private static RenderFragment ChangeList(CatalogUpdateCheck check) => __builder =>
@@ -423,11 +414,13 @@
         _ => "Not checked yet.",
     };
 
+    // One rule with the "still from" line and the install report: the section's recorded channel,
+    // and none when it records none (InstalledCatalogDescription).
     private string InstalledText => Catalog.Installed switch
     {
         null => "unknown",
-        { HighestCatalogVersion: 0 } => "not yet installed",
-        var s => $"v{s.HighestCatalogVersion} ({s.Channel}), applied {(s.Workloads?.AppliedAt ?? s.Workflows?.AppliedAt)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}",
+        { Workloads: null, Workflows: null } => "not yet installed",
+        var s => $"{InstalledCatalogDescription.Short(s)}, applied {(s.Workloads?.AppliedAt ?? s.Workflows?.AppliedAt)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}",
     };
 
     private string OutcomeText

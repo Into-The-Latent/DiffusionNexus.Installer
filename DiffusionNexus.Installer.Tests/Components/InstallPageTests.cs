@@ -5,6 +5,7 @@ using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Components.Wizard;
 using DiffusionNexus.Installer.Electron.Services;
@@ -37,6 +38,8 @@ namespace DiffusionNexus.Installer.Tests.Components;
 public class InstallPageTests : BunitContext
 {
     private static readonly Guid WorkloadId = Guid.NewGuid();
+
+    private readonly FakeCatalogProvenance _provenance = new(() => "Catalog v6 (Preview, 2df647e)");
 
     private static InstallationConfiguration Workload(string name = "Fooocus")
     {
@@ -96,6 +99,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
+        Services.AddSingleton<ICatalogProvenance>(_provenance);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
@@ -461,6 +465,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
+        Services.AddSingleton<ICatalogProvenance>(_provenance);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
             new InstallFolderModule(settings.Object, new PreInstallationService()),
@@ -692,6 +697,32 @@ public class InstallPageTests : BunitContext
         page.Markup.Should().Contain("Ready to install", "a dismissed dialog must not advance");
         page.Markup.Should().Contain("not started");
         page.Markup.Should().NotContain("Installing");
+    }
+
+    // PR #43 review: the report must name the catalog the workload was read from. A channel switch
+    // from the top bar can apply another catalog while the wizard is open, so the line is taken
+    // when the wizard reads the workload and travels with the plan.
+    [Fact]
+    public async Task The_plan_carries_the_catalog_read_with_the_workload_not_one_read_at_install()
+    {
+        RegisterContent(EmptyScanner());
+        Services.AddSingleton(Mock.Of<IMismatchedFilePrompt>());
+        WizardPlan? started = null;
+        var preflight = Services.GetRequiredService<IModelPreflight>();
+        Mock.Get(preflight).Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .Callback((WizardPlan plan, CancellationToken _) => started = plan)
+            .ReturnsAsync(new PreflightResult(false, null));
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        _provenance.Reads.Should().Be(1, "taken with the workload, when the wizard opened");
+
+        _provenance.Describe = () => "Catalog v5 (Stable, 51e1684)";   // a switch applied Stable meanwhile
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".checkbox input").Change(true); // disclaimer
+        await page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation").ClickAsync(new MouseEventArgs());
+
+        started.Should().NotBeNull();
+        started!.Selection.Catalog.Should().Be(new InstalledCatalogReading("Catalog v6 (Preview, 2df647e)", false));
     }
 
     [Fact]

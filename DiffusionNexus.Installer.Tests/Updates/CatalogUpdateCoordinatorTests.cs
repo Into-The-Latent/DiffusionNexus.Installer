@@ -41,9 +41,17 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     private CatalogUpdateCoordinator Create() =>
         new(_service, _options, _settings.Object, _session.Object, () => _environment);
 
-    private void WriteInstalledState(int version) =>
-        new LocalCatalogState { Workloads = new SectionState(version, "abc", DateTimeOffset.UtcNow) }
-            .Save(_options.InstalledCatalogPath);
+    /// <summary>What an apply leaves on disk. A channel is recorded per section, as SDK 2.1.0 does; null is a 2.0.0 state.</summary>
+    private void WriteInstalledState(int version, CatalogChannel? channel = null) =>
+        new LocalCatalogState
+        {
+            Workloads = new SectionState(version, "abc", DateTimeOffset.UtcNow) { Channel = channel },
+            Workflows = new SectionState(version, "abc", DateTimeOffset.UtcNow) { Channel = channel },
+        }.Save(_options.InstalledCatalogPath);
+
+    /// <summary>A switch returns once the choice is saved; the download runs on like ApplyAsync.</summary>
+    private static void Settle(CatalogUpdateCoordinator coordinator) =>
+        SpinWait.SpinUntil(() => coordinator.Phase != CatalogUpdatePhase.Applying, 5000).Should().BeTrue();
 
     // ----- channel -----
 
@@ -405,7 +413,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     private CatalogUpdateCoordinator CreateOnPreview(int installed = 5)
     {
         _saved.CatalogChannel = "Preview";
-        WriteInstalledState(installed);
+        WriteInstalledState(installed, CatalogChannel.Preview);
         return Create();
     }
 
@@ -479,9 +487,10 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = CreateOnPreview();
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
         var preview = coordinator.PendingSwitch!.Preview;
-        _service.OnApply = () => WriteInstalledState(4);
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
 
         await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
 
         VerifySaved("Stable");
         appliesAtSave.Should().Be(0, "the preference is saved before the download starts, so a failed download cannot lose the choice");
@@ -528,6 +537,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = CreateOnPreview();
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        Settle(coordinator);
 
         coordinator.PendingSwitch.Should().BeNull();
         VerifySaved("Stable");
@@ -593,6 +603,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
 
         await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
 
         VerifySaved("Stable");
         coordinator.Channel.Should().Be(CatalogChannel.Stable);
@@ -601,10 +612,165 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.CanApply.Should().BeTrue("the Apply button is the retry");
 
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
         await coordinator.ApplyAsync();
 
         coordinator.SwitchIncomplete.Should().BeFalse();
         _service.AppliedCheck!.Channel.Should().Be(CatalogChannel.Stable);
+    }
+
+    // PR #43 review: the switch returned only after the download, so the app check (which follows
+    // the same channel) waited minutes on a slow connection. The choice is saved before the
+    // download; that is when the switch is done.
+    [Fact]
+    public async Task A_switch_returns_once_the_choice_is_saved_while_the_download_runs_on()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        _service.HoldApply = new TaskCompletionSource();
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        var confirm = coordinator.ConfirmSwitchAsync();
+
+        (await Task.WhenAny(confirm, Task.Delay(5000))).Should().BeSameAs(confirm, "a held download must not hold the switch");
+        VerifySaved("Stable");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
+
+        _service.OnApply = null;
+        WriteInstalledState(4, CatalogChannel.Stable);
+        _service.HoldApply.SetResult();
+        Settle(coordinator);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+    }
+
+    // PR #43 review: the "still from" line was an in-memory flag and went with a restart while the
+    // preference and the installed content still disagreed. It is read from catalog-state.json.
+    [Theory]
+    [InlineData(CatalogUpdateOutcome.Failed, true)]
+    [InlineData(CatalogUpdateOutcome.UpdatesAvailable, true)]
+    [InlineData(CatalogUpdateOutcome.RequiresNewerSoftware, true)]
+    [InlineData(CatalogUpdateOutcome.UpToDate, false)]
+    [InlineData(CatalogUpdateOutcome.OverrideActive, false)]
+    public async Task An_incomplete_switch_survives_a_restart(CatalogUpdateOutcome outcome, bool incomplete)
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(6, CatalogChannel.Preview);
+        _service.NextCheck = () => CatalogChecks.Outcome(outcome);
+        using var coordinator = Create();          // a fresh process: no switch ran in it
+
+        await coordinator.CheckAsync();
+
+        coordinator.SwitchIncomplete.Should().Be(incomplete);
+    }
+
+    // PR #43 review: any preview that was not UpToDate marked the switch incomplete, even back to
+    // the channel whose content is installed: "You follow Preview. ... still from Preview".
+    [Fact]
+    public async Task Switching_back_to_the_channel_already_installed_is_complete_even_offline()
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(5, CatalogChannel.Preview);
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        VerifySaved("Preview");
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    // Every state written before this build (SDK 2.0.0) records no channel per section, so the
+    // state cannot say where the content came from. A switch that did not land in this process is
+    // still known; it is all that is claimed, and it ends with a current check or a landed apply.
+    [Fact]
+    public async Task A_failed_switch_on_a_state_without_recorded_channels_is_incomplete_for_this_run()
+    {
+        _saved.CatalogChannel = "Preview";
+        WriteInstalledState(6);
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        VerifySaved("Stable");
+        coordinator.SwitchIncomplete.Should().BeTrue();
+
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        await coordinator.CheckAsync();
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_state_without_recorded_channels_is_not_called_incomplete_without_a_failed_switch()
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(6);
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline");
+        using var coordinator = Create();          // a restart after the failed switch above
+
+        await coordinator.CheckAsync();
+
+        coordinator.SwitchIncomplete.Should().BeFalse("unknown provenance is never a mismatch on its own");
+    }
+
+    [Fact]
+    public async Task A_landed_apply_ends_an_incomplete_switch_on_a_state_without_recorded_channels()
+    {
+        _saved.CatalogChannel = "Preview";
+        WriteInstalledState(6);
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "stalled");
+        using var coordinator = Create();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+        coordinator.SwitchIncomplete.Should().BeTrue();
+
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
+        await coordinator.ApplyAsync();
+
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_active_override_is_never_called_incomplete()
+    {
+        var overrideDir = Path.Combine(_dir, "override");
+        Directory.CreateDirectory(overrideDir);
+        File.WriteAllText(Path.Combine(overrideDir, "catalog.json"), "{}");
+        _options.LocalOverridePath = overrideDir;
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(6, CatalogChannel.Preview);
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline");
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    // PR #43 review: while a switch waited, the old channel's check still advertised an update
+    // (top bar, welcome notice) and CanApply said yes to an apply that was then refused.
+    [Fact]
+    public async Task A_waiting_switch_advertises_no_update_and_offers_no_apply()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Preview);
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        using var coordinator = CreateOnPreview();
+        await coordinator.CheckAsync();
+        coordinator.UpdateAvailable.Should().BeTrue();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        coordinator.UpdateAvailable.Should().BeFalse();
+        coordinator.CanApply.Should().BeFalse();
+        coordinator.ApplyBlockedReason.Should().BeNull();
+
+        coordinator.KeepChannel();
+        coordinator.UpdateAvailable.Should().BeTrue("Keep puts back what was there");
+        coordinator.CanApply.Should().BeTrue();
     }
 
     [Fact]
@@ -635,6 +801,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
 
         await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
 
         VerifySaved("Stable");
         _service.ApplyCalls.Should().Be(0, "never swap content under a running plan");

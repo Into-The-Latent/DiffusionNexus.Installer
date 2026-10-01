@@ -47,13 +47,89 @@ public sealed class InstalledCatalogDescriptionTests : IDisposable
         InstalledCatalogDescription.Describe(state).Should().Be("Catalog v5 (Stable, 51e1684); workflows v6 (Preview, abc1234)");
     }
 
-    // A state written by SDK 2.0.0 records no channel per section; its stamp is all there is.
+    // PR #43 review: a state written by SDK 2.0.0 records no channel per section, and its stamp
+    // can name a channel whose content never landed. Unknown is said, never guessed.
     [Fact]
-    public void A_section_without_a_channel_falls_back_to_the_stamp()
+    public void A_section_without_a_channel_says_the_channel_is_not_recorded()
     {
         var state = new LocalCatalogState { Channel = CatalogChannel.Preview, Workloads = Section(5, null, null) };
 
-        InstalledCatalogDescription.Describe(state).Should().Be("Catalog v5 (Preview)");
+        InstalledCatalogDescription.Describe(state).Should().Be("Catalog v5 (channel not recorded)");
+    }
+
+    // PR #43 review (major): Load answers "no state" for a locked file, so the report claimed
+    // "none recorded" with a Success outcome. Read throws, and the reading says it could not look.
+    [Fact]
+    public void A_state_file_held_by_another_process_is_a_failed_reading_not_no_state()
+    {
+        var installed = Path.Combine(_dir, "catalog");
+        new LocalCatalogState { Workloads = Section(5, CatalogChannel.Stable, "51e1684") }.Save(installed);
+        var options = new CatalogOptions { InstalledCatalogPath = installed };
+
+        using (new FileStream(Path.Combine(installed, CatalogSchema.StateFileName), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var describe = () => InstalledCatalogDescription.Describe(options);
+            describe.Should().Throw<IOException>();
+
+            var reading = new CatalogProvenance(options).Read();
+            reading.Failed.Should().BeTrue();
+            reading.Text.Should().StartWith("Catalog: could not be read: ");
+        }
+
+        new CatalogProvenance(options).Read().Should().Be(new InstalledCatalogReading("Catalog v5 (Stable, 51e1684)", false));
+    }
+
+    [Fact]
+    public void The_row_names_the_workloads_version_and_channel_or_just_the_version()
+    {
+        InstalledCatalogDescription.Short(new LocalCatalogState { Workloads = Section(5, CatalogChannel.Stable, "a"), Workflows = Section(6, CatalogChannel.Preview, "b") })
+            .Should().Be("v5 (Stable)");
+        InstalledCatalogDescription.Short(new LocalCatalogState { Channel = CatalogChannel.Preview, Workloads = Section(5, null, "a") })
+            .Should().Be("v5");
+        InstalledCatalogDescription.Short(new LocalCatalogState()).Should().Be("not yet installed");
+    }
+
+    [Fact]
+    public void Lagging_names_what_is_installed_from_another_channel()
+    {
+        var both = new LocalCatalogState { Workloads = Section(5, CatalogChannel.Preview, "a"), Workflows = Section(5, CatalogChannel.Preview, "a") };
+        InstalledCatalogDescription.Lagging(both, CatalogChannel.Stable).Should().Be("The installed catalog is still from Preview (v5).");
+        InstalledCatalogDescription.Lagging(both, CatalogChannel.Preview).Should().BeNull();
+    }
+
+    // PR #43 review: after a partial apply the line named one section's channel and the other's
+    // version. It names the section that lagged.
+    [Fact]
+    public void Lagging_after_a_partial_apply_names_the_section_left_behind()
+    {
+        var partial = new LocalCatalogState { Workloads = Section(4, CatalogChannel.Stable, "a"), Workflows = Section(5, CatalogChannel.Preview, "b") };
+
+        InstalledCatalogDescription.Lagging(partial, CatalogChannel.Stable).Should().Be("The installed workflows are still from Preview (v5).");
+        InstalledCatalogDescription.Lagging(partial, CatalogChannel.Preview).Should().Be("The installed workloads are still from Stable (v4).");
+    }
+
+    [Fact]
+    public void Lagging_with_two_different_sources_names_both()
+    {
+        var state = new LocalCatalogState { Workloads = Section(6, CatalogChannel.Preview, "a"), Workflows = Section(5, CatalogChannel.Preview, "b") };
+
+        InstalledCatalogDescription.Lagging(state, CatalogChannel.Stable).Should().Be("The installed workloads are still from Preview (v6), the workflows from Preview (v5).");
+    }
+
+    [Fact]
+    public void Not_yet_from_says_only_what_is_certain()
+    {
+        var old = new LocalCatalogState { Channel = CatalogChannel.Preview, Workloads = Section(6, null, "a"), Workflows = Section(6, null, "a") };
+
+        InstalledCatalogDescription.NotYetFrom(old, CatalogChannel.Stable).Should().Be("The installed catalog (v6) is not from Stable yet.");
+    }
+
+    [Fact]
+    public void An_unrecorded_channel_is_never_a_mismatch()
+    {
+        var old = new LocalCatalogState { Channel = CatalogChannel.Preview, Workloads = Section(5, null, "a"), Workflows = Section(5, null, "a") };
+
+        InstalledCatalogDescription.Lagging(old, CatalogChannel.Stable).Should().BeNull();
     }
 
     [Fact]

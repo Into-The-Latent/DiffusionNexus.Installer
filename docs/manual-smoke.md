@@ -306,7 +306,9 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    removed is gone from the gallery; a copy of it you installed earlier is untouched on disk.
 5. Disconnect the network and pick Preview. **Expect:** no warning (the preview failed), "The
    catalog check failed: …" and "You follow Preview. The installed catalog is still from Stable
-   (vS)." with **Retry**. Relaunch. **Expect:** Preview is still checked (the choice was saved).
+   (vS)." with **Retry**. Relaunch (still offline). **Expect:** Preview is still checked (the
+   choice was saved) and, once the startup check has failed, the same "still from" line: it is
+   read from `catalog-state.json`, not remembered.
    Reconnect and press **Retry**. **Expect:** the Preview diff with **Apply catalog update**
    (the Retry button gives way to it); Apply, and the "still from" line goes.
 6. Right after an editor **Release** (both channels serve the same content), switch channels.
@@ -317,7 +319,11 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    the page.
 8. Start any install. **Expect:** the first log line and the first row of the result table read
    "Catalog vS (Stable, <first 7 of the commit in catalog-state.json>)", and the log file the
-   install writes into its folder carries the same line.
+   install writes into its folder carries the same line. On a state written before this build
+   (no channel per section) it reads "Catalog vN (channel not recorded, …)".
+9. Open a workload's wizard, use the top bar to go to `/updates`, switch channels so content is
+   applied, go back and install. **Expect:** the report names the catalog the wizard was opened
+   on, not the one applied meanwhile: the plan installs what the wizard read.
 
 ## 8. App updates on the Preview channel
 

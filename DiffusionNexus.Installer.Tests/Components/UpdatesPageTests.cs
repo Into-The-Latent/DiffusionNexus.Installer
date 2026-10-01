@@ -132,12 +132,29 @@ public class UpdatesPageTests : BunitContext
         Register(InstallPhase.Idle);
         _catalog.Installed = new LocalCatalogState
         {
-            Channel = CatalogChannel.Stable,
-            Workloads = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)),
-            Workflows = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)),
+            Channel = CatalogChannel.Preview,
+            Workloads = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)) { Channel = CatalogChannel.Stable },
+            Workflows = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)) { Channel = CatalogChannel.Stable },
         };
 
+        // The section's recorded channel, not the stamp: one rule with the "still from" line and
+        // the install report (PR #43 review).
         Render<UpdatesPage>().Find(".catalog-installed").TextContent.Should().Contain("v3 (Stable), applied 2026-09-15");
+    }
+
+    // A state written by SDK 2.0.0 records no channel per section; its stamp can name a channel
+    // whose content never landed, so the row names none.
+    [Fact]
+    public void An_installed_catalog_without_a_recorded_channel_shows_only_its_version()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Installed = new LocalCatalogState
+        {
+            Channel = CatalogChannel.Preview,
+            Workloads = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)),
+        };
+
+        Render<UpdatesPage>().Find(".catalog-installed").TextContent.Trim().Should().Be("v3, applied 2026-09-15");
     }
 
     [Fact]
@@ -590,6 +607,7 @@ public class UpdatesPageTests : BunitContext
         {
             Channel = CatalogChannel.Preview,
             Workloads = new SectionState(5, "51e1684", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Preview },
+            Workflows = new SectionState(5, "51e1684", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Preview },
         };
         _catalog.LastCheck = lastCheck;
         _catalog.Phase = CatalogUpdatePhase.Checked;
@@ -620,6 +638,41 @@ public class UpdatesPageTests : BunitContext
 
         page.Find(".catalog-switch-incomplete").QuerySelector("button").Should().BeNull();
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // PR #43 review: after a partial apply the line named the Workloads channel with the highest
+    // version of both sections, "still from Stable (v5)". It names the section that lagged.
+    [Fact]
+    public void After_a_partial_apply_the_line_names_the_section_left_behind()
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Available(4, CatalogChannel.Stable));
+        _catalog.Installed = new LocalCatalogState
+        {
+            Channel = CatalogChannel.Stable,
+            Workloads = new SectionState(4, "aaa", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Stable },
+            Workflows = new SectionState(5, "51e1684", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Preview },
+        };
+
+        Normalized(Render<UpdatesPage>().Find(".catalog-switch-incomplete")).Should()
+            .StartWith("You follow Stable. The installed workflows are still from Preview (v5).");
+    }
+
+    // A state written before SDK 2.1.0 records no channel: the line claims no source channel.
+    [Fact]
+    public void An_incomplete_switch_over_an_unrecorded_state_names_no_source_channel()
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline"));
+        _catalog.Installed = new LocalCatalogState
+        {
+            Channel = CatalogChannel.Preview,
+            Workloads = new SectionState(6, "51e1684", DateTimeOffset.UtcNow),
+            Workflows = new SectionState(6, "51e1684", DateTimeOffset.UtcNow),
+        };
+
+        Normalized(Render<UpdatesPage>().Find(".catalog-switch-incomplete")).Should()
+            .StartWith("You follow Stable. The installed catalog (v6) is not from Stable yet.");
     }
 
     [Theory]

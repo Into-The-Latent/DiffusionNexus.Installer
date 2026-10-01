@@ -17,7 +17,7 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public CatalogApplyResult? LastApply { get; set; }
     public string? ApplyBlockedReason { get; set; }
 
-    public bool UpdateAvailable => LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
+    public bool UpdateAvailable => PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
     public bool CanApply => UpdateAvailable && Phase == CatalogUpdatePhase.Checked && ApplyBlockedReason is null;
 
     public event Action? Changed;
