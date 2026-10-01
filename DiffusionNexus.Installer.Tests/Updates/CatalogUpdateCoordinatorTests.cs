@@ -132,11 +132,12 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         var read = new TaskCompletionSource<UserSettings>();
         _settings.SetupSequence(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
                  .Returns(read.Task)
+                 .ReturnsAsync(_saved)
                  .ReturnsAsync(_saved);
         using var coordinator = Create();
 
         var resolving = coordinator.ResolveChannelAsync();
-        await coordinator.SetChannelAsync(CatalogChannel.Preview);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
         read.SetResult(new UserSettings { UserName = "tester", CatalogChannel = "Stable" });
 
         (await resolving).Should().Be(CatalogChannel.Preview);
@@ -396,48 +397,340 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.CheckCalls.Should().Be(2);
     }
 
-    // ----- channel switch -----
+    // ----- channel switch (#39: preview, warn, switch, fall through) -----
+
+    private static CatalogUpdateCheck StableRemoves(string workload) =>
+        CatalogChecks.Available(4, CatalogChannel.Stable, workloads: [CatalogChecks.WorkloadRemoved(workload, "V1.0")]);
+
+    private CatalogUpdateCoordinator CreateOnPreview(int installed = 5)
+    {
+        _saved.CatalogChannel = "Preview";
+        WriteInstalledState(installed);
+        return Create();
+    }
+
+    private void VerifyNothingSaved() =>
+        _settings.Verify(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()), Times.Never);
+
+    private void VerifySaved(string channel) =>
+        _settings.Verify(s => s.SaveAsync(It.Is<UserSettings>(u => u.CatalogChannel == channel), It.IsAny<CancellationToken>()), Times.Once);
 
     [Fact]
-    public async Task Setting_the_channel_saves_it_repoints_the_sdk_and_forgets_the_last_check()
+    public async Task A_switch_previews_the_target_channel_without_repointing_the_sdk()
     {
-        _service.NextCheck = () => CatalogChecks.Available();
-        using var coordinator = Create();
-        await coordinator.CheckAsync();
+        _service.HoldCheck = new TaskCompletionSource();
+        using var coordinator = CreateOnPreview();
 
-        await coordinator.SetChannelAsync(CatalogChannel.Preview);
+        var switching = coordinator.SwitchChannelAsync(CatalogChannel.Stable);
 
-        _settings.Verify(s => s.SaveAsync(It.Is<UserSettings>(u => u.CatalogChannel == "Preview"), It.IsAny<CancellationToken>()), Times.Once);
-        coordinator.Channel.Should().Be(CatalogChannel.Preview);
-        coordinator.ChannelSource.Should().Be(CatalogChannelSource.Setting);
+        SpinWait.SpinUntil(() => _service.PreviewedChannels.Count > 0, 2000).Should().BeTrue();
+        _service.PreviewedChannels.Should().Equal(CatalogChannel.Stable);
+        _service.CheckCalls.Should().Be(0, "the configured-channel check reads the option the preview must not touch");
         _options.Channel.Should().Be(CatalogChannel.Preview);
-        coordinator.LastCheck.Should().BeNull();
-        coordinator.UpdateAvailable.Should().BeFalse();
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checking);
+        VerifyNothingSaved();
+
+        _service.HoldCheck.SetResult();
+        await switching;
+    }
+
+    [Fact]
+    public async Task A_switch_that_removes_or_changes_something_waits_for_an_answer_and_saves_nothing()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        using var coordinator = CreateOnPreview();
+        await coordinator.CheckAsync();
+        var before = coordinator.LastCheck;
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        coordinator.PendingSwitch.Should().NotBeNull();
+        coordinator.PendingSwitch!.Target.Should().Be(CatalogChannel.Stable);
+        coordinator.PendingSwitch.Warning.Removed.Should().Equal("Qwen-Image-2.1");
+        VerifyNothingSaved();
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        _options.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.LastCheck.Should().BeSameAs(before, "what was on the page stays until the user answers");
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+    }
+
+    [Fact]
+    public async Task A_changed_workflow_needs_an_answer_too()
+    {
+        _service.NextPreview = _ => CatalogChecks.Available(4, CatalogChannel.Stable, workloads: [],
+            workflows: [CatalogChecks.WorkflowUpdated("Upscale", "V2", "V1", "Krea-2-Turbo")]);
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        coordinator.PendingSwitch.Should().NotBeNull();
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Switching_saves_the_preference_then_applies_the_previewed_check()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        var appliesAtSave = -1;
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) => { appliesAtSave = _service.ApplyCalls; return s; });
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        var preview = coordinator.PendingSwitch!.Preview;
+        _service.OnApply = () => WriteInstalledState(4);
+
+        await coordinator.ConfirmSwitchAsync();
+
+        VerifySaved("Stable");
+        appliesAtSave.Should().Be(0, "the preference is saved before the download starts, so a failed download cannot lose the choice");
+        _service.AppliedCheck.Should().BeSameAs(preview, "the apply downloads from and stamps the channel the preview read");
+        _service.AppliedSections.Should().Be(CatalogSections.All);
+        _service.CheckCalls.Should().Be(0, "no second check: the preview is what the user agreed to");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        _options.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.PendingSwitch.Should().BeNull();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Keep_saves_nothing_and_leaves_everything_as_it_was()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        using var coordinator = CreateOnPreview();
+        await coordinator.CheckAsync();
+        var before = coordinator.LastCheck;
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        var raised = 0;
+        coordinator.Changed += () => raised++;
+
+        coordinator.KeepChannel();
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifyNothingSaved();
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.LastCheck.Should().BeSameAs(before);
+        coordinator.SwitchIncomplete.Should().BeFalse();
+        raised.Should().Be(1, "the radio snaps back on that render");
+
+        await coordinator.CheckAsync();
+        _service.CheckCalls.Should().Be(2, "Keep ends the switch, so checks run again");
+    }
+
+    [Fact]
+    public async Task A_switch_that_only_adds_applies_without_asking()
+    {
+        _service.NextPreview = _ => CatalogChecks.Available(6, CatalogChannel.Stable, workloads: [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Stable");
+        _service.ApplyCalls.Should().Be(1);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+    }
+
+    [Fact]
+    public async Task A_switch_to_the_same_content_only_saves_the_preference()
+    {
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Stable");
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpToDate);
+        coordinator.LastCheck.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_failed_preview_still_saves_the_preference_and_keeps_the_installed_content()
+    {
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "No such host is known.") with { Channel = channel };
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        VerifySaved("Stable");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.PendingSwitch.Should().BeNull();
+        coordinator.SwitchIncomplete.Should().BeTrue();
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(5);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+    }
+
+    [Fact]
+    public async Task A_preview_that_throws_is_a_failed_preview_not_a_crash()
+    {
+        _service.NextPreview = _ => throw new InvalidOperationException("boom");
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        VerifySaved("Stable");
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.Failed);
+        coordinator.LastCheck.Error.Should().Be("boom");
+        coordinator.SwitchIncomplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_failed_apply_still_saves_the_preference_and_can_be_retried()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        await coordinator.ConfirmSwitchAsync();
+
+        VerifySaved("Stable");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.SwitchIncomplete.Should().BeTrue();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.CanApply.Should().BeTrue("the Apply button is the retry");
+
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        await coordinator.ApplyAsync();
+
+        coordinator.SwitchIncomplete.Should().BeFalse();
+        _service.AppliedCheck!.Channel.Should().Be(CatalogChannel.Stable);
+    }
+
+    [Fact]
+    public async Task A_check_that_finds_the_catalog_current_ends_an_incomplete_switch()
+    {
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "still offline");
+        await coordinator.CheckAsync();
+        coordinator.SwitchIncomplete.Should().BeTrue("a retry that fails again changes nothing");
+
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        await coordinator.CheckAsync();
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_switch_during_an_install_saves_the_preference_and_holds_the_apply()
+    {
+        var plan = await new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = new InstallationConfiguration { Name = "Krea-2-Turbo" } });
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _session.SetupGet(s => s.Plan).Returns(plan);
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        await coordinator.ConfirmSwitchAsync();
+
+        VerifySaved("Stable");
+        _service.ApplyCalls.Should().Be(0, "never swap content under a running plan");
+        coordinator.ApplyBlockedReason.Should().Be("It can be applied once Krea-2-Turbo has finished.");
+        coordinator.SwitchIncomplete.Should().BeTrue();
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        await coordinator.ApplyAsync();
+        _service.ApplyCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Checks_applies_and_other_switches_are_refused_while_a_switch_waits_for_an_answer()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        var pending = coordinator.PendingSwitch;
+
+        await coordinator.CheckAsync();
+        await coordinator.ApplyAsync();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        _service.CheckCalls.Should().Be(0);
+        _service.ApplyCalls.Should().Be(0);
+        _service.PreviewedChannels.Should().HaveCount(1);
+        coordinator.PendingSwitch.Should().BeSameAs(pending);
+    }
+
+    [Fact]
+    public async Task Confirming_or_keeping_without_a_pending_switch_does_nothing()
+    {
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.ConfirmSwitchAsync();
+        coordinator.KeepChannel();
+
+        VerifyNothingSaved();
+        _service.ApplyCalls.Should().Be(0);
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Idle);
     }
 
     [Fact]
-    public async Task Setting_the_channel_under_an_environment_override_saves_but_keeps_following_the_environment()
+    public async Task A_failed_save_on_switch_changes_nothing_and_propagates()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("settings.json is locked"));
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        var confirm = () => coordinator.ConfirmSwitchAsync();
+
+        await confirm.Should().ThrowAsync<IOException>();
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.PendingSwitch.Should().BeNull();
+        await coordinator.CheckAsync();
+        _service.CheckCalls.Should().Be(1, "a failed save must not leave the coordinator stuck in a switch");
+    }
+
+    [Fact]
+    public async Task Switching_to_the_channel_already_followed_does_nothing()
+    {
+        using var coordinator = CreateOnPreview();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        _service.PreviewedChannels.Should().BeEmpty();
+        VerifyNothingSaved();
+    }
+
+    [Fact]
+    public async Task A_switch_under_an_environment_override_saves_but_previews_and_applies_nothing()
     {
         _environment = "stable";
         using var coordinator = Create();
 
-        await coordinator.SetChannelAsync(CatalogChannel.Preview);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
 
         _saved.CatalogChannel.Should().Be("Preview");
         (coordinator.Channel, coordinator.ChannelSource).Should().Be((CatalogChannel.Stable, CatalogChannelSource.Environment));
+        _service.PreviewedChannels.Should().BeEmpty("the environment decides what is installed; previewing another channel would be a lie");
+        _service.ApplyCalls.Should().Be(0);
     }
 
     [Fact]
-    public async Task Setting_the_channel_is_refused_while_a_check_is_running()
+    public async Task A_switch_is_refused_while_a_check_is_running()
     {
         _service.HoldCheck = new TaskCompletionSource();
         using var coordinator = Create();
         var check = coordinator.CheckAsync();
 
-        await coordinator.SetChannelAsync(CatalogChannel.Preview);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
 
-        _settings.Verify(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()), Times.Never);
+        VerifyNothingSaved();
+        _service.PreviewedChannels.Should().BeEmpty();
         _service.HoldCheck.SetResult();
         await check;
     }
@@ -493,7 +786,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
                  .Returns(async (UserSettings s, CancellationToken _) => { await saveGate.Task; return s; });
         using var coordinator = Create();
 
-        var switching = coordinator.SetChannelAsync(CatalogChannel.Preview);
+        var switching = coordinator.SwitchChannelAsync(CatalogChannel.Preview);
         await coordinator.CheckAsync();
 
         _service.CheckCalls.Should().Be(0);

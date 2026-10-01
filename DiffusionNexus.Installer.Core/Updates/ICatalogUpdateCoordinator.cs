@@ -56,6 +56,34 @@ public interface ICatalogUpdateCoordinator
     /// <summary>Never throws. A no-op unless <see cref="CanApply"/>.</summary>
     Task ApplyAsync(CancellationToken ct = default);
 
-    /// <summary>Saves the preference and forgets the last check. Refused (no-op) while checking or applying. Settings I/O errors propagate.</summary>
-    Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default);
+    /// <summary>
+    /// A switch waiting for Switch or Keep: the target channel's content removes or changes
+    /// something. While it is set, checks, applies and other switches are refused.
+    /// </summary>
+    CatalogChannelSwitch? PendingSwitch { get; }
+
+    /// <summary>
+    /// The preference names a channel whose content did not land: the preview check or the apply
+    /// failed, or an install held the apply. Ends when an apply succeeds or a check finds the
+    /// installed catalog current.
+    /// </summary>
+    bool SwitchIncomplete { get; }
+
+    /// <summary>
+    /// Previews <paramref name="target"/> without saving anything (spec 7.1). A diff that removes
+    /// or changes something waits in <see cref="PendingSwitch"/>; otherwise the switch goes ahead
+    /// at once, as <see cref="ConfirmSwitchAsync"/> would. Refused (no-op) while checking,
+    /// applying or switching. Settings I/O errors propagate, and then nothing was changed.
+    /// </summary>
+    Task SwitchChannelAsync(CatalogChannel target, CancellationToken ct = default);
+
+    /// <summary>
+    /// "Switch": saves the preference, then applies the previewed check. A failed apply keeps the
+    /// preference and the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
+    /// <see cref="PendingSwitch"/>. Settings I/O errors propagate, and then nothing was changed.
+    /// </summary>
+    Task ConfirmSwitchAsync(CancellationToken ct = default);
+
+    /// <summary>"Keep": drops the <see cref="PendingSwitch"/>. Saves nothing.</summary>
+    void KeepChannel();
 }

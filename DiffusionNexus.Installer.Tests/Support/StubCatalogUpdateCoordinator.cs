@@ -31,17 +31,39 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public Task CheckAsync(CancellationToken ct = default) { Checks++; return Task.CompletedTask; }
     public Task ApplyAsync(CancellationToken ct = default) { Applies++; return Task.CompletedTask; }
     public Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default) { ChannelResolutions++; return Task.FromResult(Channel); }
+    public CatalogChannelSwitch? PendingSwitch { get; set; }
+    public bool SwitchIncomplete { get; set; }
+
+    /// <summary>When set, a switch waits for an answer with this warning instead of going ahead.</summary>
+    public CatalogChannelSwitch? PendingOnSwitch { get; set; }
+    public int Confirms { get; private set; }
+    public int Keeps { get; private set; }
+
     /// <summary>Mimics the real coordinator's silent refusal: no state change, no Changed.</summary>
     public bool RefuseChannelChange { get; set; }
     public Exception? ChannelSaveFailure { get; set; }
 
-    public Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default)
+    public Task SwitchChannelAsync(CatalogChannel channel, CancellationToken ct = default)
     {
         ChannelSet = channel;
+        if (RefuseChannelChange) return Task.CompletedTask;
+        if (PendingOnSwitch is not null) { PendingSwitch = PendingOnSwitch; return Task.CompletedTask; }
         if (ChannelSaveFailure is not null) return Task.FromException(ChannelSaveFailure);
-        if (!RefuseChannelChange) Channel = channel;
+        Channel = channel;
         return Task.CompletedTask;
     }
+
+    public Task ConfirmSwitchAsync(CancellationToken ct = default)
+    {
+        Confirms++;
+        if (PendingSwitch is not { } pending) return Task.CompletedTask;
+        PendingSwitch = null;
+        if (ChannelSaveFailure is not null) return Task.FromException(ChannelSaveFailure);
+        Channel = pending.Target;
+        return Task.CompletedTask;
+    }
+
+    public void KeepChannel() { Keeps++; PendingSwitch = null; }
 
     public void RaiseChanged() => Changed?.Invoke();
 }

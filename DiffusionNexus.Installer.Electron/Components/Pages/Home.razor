@@ -35,8 +35,8 @@
                where the user clicked. A new key makes it rebuild the inputs from what is in effect. *@
             <label class="catalog-channel-option" @key="(channel, _radioGeneration)">
                 <input type="radio" name="update-channel" value="@channel"
-                       checked="@(Catalog.Channel == channel)"
-                       disabled="@(EnvironmentPinned || CatalogBusy || _busy)"
+                       checked="@(ShownChannel == channel)"
+                       disabled="@(EnvironmentPinned || CatalogBusy || _busy || _switchBusy || SwitchPending)"
                        @onchange="() => SetChannelAsync(channel)" />
                 @channel
             </label>
@@ -50,6 +50,20 @@
         @if (EnvironmentPinned)
         {
             <p class="panel-hint">Set by DIFFUSIONNEXUS_CATALOG_CHANNEL for this run; the saved setting is not in effect.</p>
+        }
+
+        @* Spec 7.1: content warnings come before the action. What the target channel takes away
+           from the list of things you can install is shown, and nothing is saved until Switch. *@
+        @if (Catalog.PendingSwitch is { } pending)
+        {
+            <div class="channel-switch-warning">
+                <p>@foreach (var (text, bold) in WarningSegments(pending.Warning)) { if (bold) { <strong>@text</strong> } else { @text } }</p>
+                @ChangeList(pending.Preview)
+                <div class="actions">
+                    <button class="primary" @onclick="ConfirmSwitchAsync">Switch to @pending.Target</button>
+                    <button @onclick="KeepChannel">Keep @Catalog.Channel</button>
+                </div>
+            </div>
         }
 
         @if (_channelError is not null)
@@ -76,8 +90,21 @@
             </span>
         </div>
 
+        @* Rule 1: a switch whose content did not land still saved the choice. Say what is installed,
+           and offer the retry -- unless the Apply button below already is the retry. *@
+        @if (Catalog.SwitchIncomplete && !CatalogBusy)
+        {
+            <p class="catalog-switch-incomplete">
+                @IncompleteText
+                @if (!Catalog.UpdateAvailable)
+                {
+                    <button @onclick="RetryAsync" disabled="@_busy">Retry</button>
+                }
+            </p>
+        }
+
         <div class="actions">
-            <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@_busy">
+            <button class="primary" @onclick="CheckForUpdatesAsync" disabled="@(_busy || _switchBusy || SwitchPending)">
                 @(_busy ? "Checking..." : "Check for updates")
             </button>
 
@@ -100,27 +127,9 @@
             </p>
         }
 
-        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
+        @if (!SwitchPending && Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
         {
-            var rows = CatalogChangeRows.Build(available);
-            foreach (var group in new[] { ChangeKind.Added, ChangeKind.Updated, ChangeKind.Removed })
-            {
-                var inGroup = rows.Where(r => r.Change == group).ToList();
-                if (inGroup.Count == 0) continue;
-                <div class="catalog-changes">
-                    <h3>@group</h3>
-                    <ul>
-                        @foreach (var row in inGroup)
-                        {
-                            <li>
-                                <span class="catalog-change-kind">@row.Kind</span>
-                                <span class="catalog-change-name">@row.Name</span>
-                                <span class="catalog-change-version">@row.VersionText</span>
-                            </li>
-                        }
-                    </ul>
-                </div>
-            }
+            @ChangeList(available)
 
             @if (Catalog.Phase == CatalogUpdatePhase.Applying)
             {
@@ -163,6 +172,10 @@
 
 @code {
     private bool _busy;
+
+    // A channel switch from click to done: preview, save, apply, then the app check. Disables the
+    // radios and the check button without labelling the download "Checking...".
+    private bool _switchBusy;
     private string? _channelError;
     private int _radioGeneration;
 
@@ -179,6 +192,11 @@
     // The coordinator refuses a switch in these phases (the startup check included), so the
     // radios say so up front instead of accepting a click that will not take.
     private bool CatalogBusy => Catalog.Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying;
+
+    private bool SwitchPending => Catalog.PendingSwitch is not null;
+
+    // The radios show the choice being asked about; Keep puts them back on the channel in effect.
+    private CatalogChannel ShownChannel => Catalog.PendingSwitch?.Target ?? Catalog.Channel;
 
     protected override void OnInitialized()
     {
@@ -214,19 +232,63 @@
     private async Task SetChannelAsync(CatalogChannel channel)
     {
         _channelError = null;
+        _switchBusy = true;
         try
         {
-            await Catalog.SetChannelAsync(channel);
-        }
-        catch (Exception ex)
-        {
-            // An escaped exception here replaces the page with the Blazor error banner, which is a
-            // worse outcome than a message under the radios that still work afterwards.
-            _channelError = $"The channel could not be saved: {ex.Message}";
-        }
+            try
+            {
+                await Catalog.SwitchChannelAsync(channel);
+            }
+            catch (Exception ex)
+            {
+                // An escaped exception here replaces the page with the Blazor error banner, which is a
+                // worse outcome than a message under the radios that still work afterwards.
+                _channelError = $"The channel could not be saved: {ex.Message}";
+            }
 
-        // A refusal is a silent no-op on the coordinator's side (no Changed), and a failed save
-        // leaves the channel where it was: either way the clicked radio is now wrong.
+            // Waiting for Switch or Keep: the warning under the radios says so.
+            if (Catalog.PendingSwitch?.Target == channel) return;
+
+            await AfterSwitchAsync(channel);
+        }
+        finally
+        {
+            _switchBusy = false;
+        }
+    }
+
+    private async Task ConfirmSwitchAsync()
+    {
+        if (Catalog.PendingSwitch is not { } pending) return;
+
+        _channelError = null;
+        _switchBusy = true;
+        try
+        {
+            try
+            {
+                await Catalog.ConfirmSwitchAsync();
+            }
+            catch (Exception ex)
+            {
+                _channelError = $"The channel could not be saved: {ex.Message}";
+            }
+
+            await AfterSwitchAsync(pending.Target);
+        }
+        finally
+        {
+            _switchBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// A refusal is a silent no-op on the coordinator's side (no Changed), and a failed save leaves
+    /// the channel where it was: either way the clicked radio is now wrong. A switch that took
+    /// already did the catalog side, so only the app, which follows the same channel, is checked.
+    /// </summary>
+    private async Task AfterSwitchAsync(CatalogChannel channel)
+    {
         if (Catalog.Channel != channel)
         {
             _radioGeneration++;
@@ -234,10 +296,89 @@
             return;
         }
 
-        // A switch forgets the last catalog check, so both rows would otherwise sit on "Not
-        // checked yet." until the user thought to press the button.
-        await CheckForUpdatesAsync();
+        await AppUpdates.CheckAsync();
     }
+
+    // Saves nothing. The new key rebuilds the radios from the channel in effect.
+    private void KeepChannel()
+    {
+        Catalog.KeepChannel();
+        _radioGeneration++;
+    }
+
+    private async Task RetryAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Catalog.CheckAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// "Stable is at v4. Switching removes **A** and **B** and changes 3 workflows. Software you
+    /// have already installed is not affected." The last sentence is mandatory: the warning is
+    /// about the list of things you can install, never about anything on disk.
+    /// </summary>
+    private static IEnumerable<(string Text, bool Bold)> WarningSegments(ChannelSwitchWarning warning)
+    {
+        yield return ($"{warning.Target} is at v{warning.Version}. Switching ", false);
+        if (warning.Removed.Count > 0)
+        {
+            yield return ("removes ", false);
+            for (var i = 0; i < warning.Removed.Count; i++)
+            {
+                if (i > 0) yield return (i == warning.Removed.Count - 1 ? " and " : ", ", false);
+                yield return (warning.Removed[i], true);
+            }
+            if (warning.ChangesText is not null) yield return (" and ", false);
+        }
+        if (warning.ChangesText is not null) yield return (warning.ChangesText, false);
+        yield return (". Software you have already installed is not affected.", false);
+    }
+
+    private string IncompleteText
+    {
+        get
+        {
+            var installed = Catalog.Installed;
+            if (installed is null || installed.HighestCatalogVersion == 0)
+                return $"You follow {Catalog.Channel}. Its catalog is not installed yet.";
+
+            // The Workloads section's own channel when the state records it (SDK 2.1.0); the stamp
+            // otherwise, which follows the same section.
+            var from = installed.Workloads?.Channel ?? installed.Channel;
+            return $"You follow {Catalog.Channel}. The installed catalog is still from {from} (v{installed.HighestCatalogVersion}).";
+        }
+    }
+
+    /// <summary>The Added / Updated / Removed list, for an update and for a switch's warning alike.</summary>
+    private static RenderFragment ChangeList(CatalogUpdateCheck check) => __builder =>
+    {
+        var rows = CatalogChangeRows.Build(check);
+        foreach (var group in new[] { ChangeKind.Added, ChangeKind.Updated, ChangeKind.Removed })
+        {
+            var inGroup = rows.Where(r => r.Change == group).ToList();
+            if (inGroup.Count == 0) continue;
+            <div class="catalog-changes">
+                <h3>@group</h3>
+                <ul>
+                    @foreach (var row in inGroup)
+                    {
+                        <li>
+                            <span class="catalog-change-kind">@row.Kind</span>
+                            <span class="catalog-change-name">@row.Name</span>
+                            <span class="catalog-change-version">@row.VersionText</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+    };
 
     /// <summary>
     /// Whether an install is in flight. The session is a singleton, so this is true even though
@@ -293,6 +434,7 @@
     {
         get
         {
+            if (Catalog.PendingSwitch is { } pending) return $"Switching to {pending.Target} waits for your answer above.";
             if (Catalog.Phase == CatalogUpdatePhase.Checking) return "Checking the catalog…";
             if (Catalog.Phase == CatalogUpdatePhase.Applied) return $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion}.";
             return Catalog.LastCheck switch

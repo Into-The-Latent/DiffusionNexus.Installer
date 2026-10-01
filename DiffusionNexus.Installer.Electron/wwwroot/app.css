@@ -237,6 +237,36 @@ html, body {
     color: #ff8f8f;
 }
 
+/* A channel switch waiting for Switch or Keep (spec 7.1). The .panel-warning colours: a question
+   to answer, set apart from the hint above it. */
+.channel-switch-warning {
+    margin: 1rem 0 0;
+    padding: .75rem 1rem;
+    border: 1px solid #6b5a1f;
+    border-radius: 6px;
+    background: #221e12;
+}
+
+.channel-switch-warning p {
+    margin: 0;
+}
+
+.channel-switch-warning .actions {
+    display: flex;
+    gap: .5rem;
+    margin-top: .75rem;
+}
+
+/* A switch whose content did not land: amber, the app's warning colour -- the choice is saved and
+   nothing is broken, but what is installed is not what the user picked yet. */
+.catalog-switch-incomplete {
+    color: #e8c67a;
+}
+
+.catalog-switch-incomplete button {
+    margin-left: .5rem;
+}
+
 /* ---------------------------------------------------------------------------
    Wizard, gallery and modal (slice 1)
 
