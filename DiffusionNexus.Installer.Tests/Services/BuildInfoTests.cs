@@ -186,6 +186,38 @@ public class BuildInfoTests
         seed.GetProperty("channel").GetString().Should().Be("Stable", "the channel is written as its name, never its enum number");
         seed.GetProperty("generatedAt").GetDateTimeOffset().Should().Be(expected.CatalogSeed.GeneratedAt);
         root.GetProperty("builtAt").GetDateTimeOffset().Should().Be(expected.BuiltAt);
+        root.GetProperty("sdkPackages").EnumerateArray().Select(p => p.GetString()).Should().Equal(expected.SdkPackages);
         text.Should().NotContain("\"App\"", "property names are camelCase");
+    }
+
+    [Fact]
+    public void The_document_names_the_SDK_packages_this_build_ships()
+    {
+        // Promote-Release passes these to Test-SdkPin -Packages: the packages whose SDK commits count are
+        // the ones the promoted build carries, not the ones the checkout promotion runs from happens to pin.
+        // They are the SDK assemblies next to the one that loaded, sorted, without ".dll".
+        var folder = Path.GetDirectoryName(typeof(CatalogSchema).Assembly.Location)!;
+        var onDisk = Directory.GetFiles(folder, "DiffusionNexus.Installer.SDK.*.dll")
+            .Select(Path.GetFileNameWithoutExtension).Order(StringComparer.Ordinal).ToList();
+
+        var packages = BuildInfo.Create().SdkPackages;
+
+        packages.Should().Equal(onDisk);
+        packages.Should().Contain(["DiffusionNexus.Installer.SDK.Catalog", "DiffusionNexus.Installer.SDK.Models",
+                                   "DiffusionNexus.Installer.SDK.Services", "DiffusionNexus.Installer.SDK.Shared"]);
+    }
+
+    [Fact]
+    public void A_build_without_SDK_assemblies_beside_it_is_a_refusal()
+    {
+        // Nothing to judge the SDK by: an asset listing no packages would make the promotion gate walk none
+        // and report "includes everything".
+        var empty = Directory.CreateTempSubdirectory("buildinfo-nosdk-").FullName;
+        try
+        {
+            var create = () => BuildInfo.Create(typeof(BuildInfo).Assembly.Location, EmbeddedManifest, EmbeddedArchive, sdkFolder: empty);
+            create.Should().Throw<InvalidOperationException>().WithMessage("*no DiffusionNexus.Installer.SDK.* assembly*must not be released*");
+        }
+        finally { Directory.Delete(empty, recursive: true); }
     }
 }

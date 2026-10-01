@@ -171,7 +171,9 @@ exits 0 before any host or window is created.
   "catalogSchema": 1,
   "catalogSeed": { "version": 5, "commit": "51e1684cfa48d22344e82e7037e8e97018be72bd", "sha256": "e7d3…",
                    "channel": "Stable", "generatedAt": "2026-09-25T14:15:43.8266732+00:00" },
-  "builtAt": "2026-09-30T18:00:00Z"
+  "builtAt": "2026-09-30T18:00:00Z",
+  "sdkPackages": [ "DiffusionNexus.Installer.SDK.Catalog", "DiffusionNexus.Installer.SDK.Models",
+                   "DiffusionNexus.Installer.SDK.Services", "DiffusionNexus.Installer.SDK.Shared" ]
 }
 ```
 
@@ -184,11 +186,14 @@ build that reports `null`, so readers of the uploaded asset may rely on a timest
   `CatalogSchema.Supported`. `catalogSeed`: read from the embedded `manifest.json` (channel by
   name, `generatedAt` as in the manifest: the SDK records both from the seed), and `sha256` is
   checked against the embedded `catalog.zip` bytes; no seed, or bytes that are not the manifest's,
-  gets no document and a non-zero exit.
+  gets no document and a non-zero exit. `sdkPackages` (added in #30's review): the
+  `DiffusionNexus.Installer.SDK.*` assemblies beside the loaded Catalog assembly, sorted, without
+  `.dll`; none gets no document. Promotion judges the SDK commits in exactly these packages, so
+  the checkout it runs from cannot narrow the check.
 - Step 1c runs it against the **packaged** app in the publish folder, so the asset is what the
-  binary says, not what the script assumed. The script then requires `sdk` = the csproj pin and
-  `catalogSeed` = what step 0d confirmed, and refuses on any mismatch: that is a build that does
-  not contain what was checked.
+  binary says, not what the script assumed. The script then requires `sdk` = the csproj pin,
+  every pinned SDK package among `sdkPackages`, and `catalogSeed` = what step 0d confirmed, and
+  refuses on any mismatch: that is a build that does not contain what was checked.
 - Uploaded as a release asset next to the installer, the blockmap and `latest.yml`. It is the
   source of truth for promotion (section 5) and for the catalog repo's gate (section 6).
 - The unit test that already checks the embedded resources is extended to run the entry point's
@@ -220,16 +225,25 @@ scripts' own `gh` calls use the token.
 `.\Scripts\Promote-Release.ps1 -Version X [-AllowOlderSdk] [-AllowOlderCatalog]`:
 
 1. Resolves the release token (section 4.7); none → refused before anything is read.
-2. `gh release view vX`: must exist and be a pre-release. Already Stable → "nothing to promote".
+2. `gh release view vX` and `releases/latest` (a 404 there = no full release yet, nothing to go
+   backwards from; any other failure, or a latest tag that is no `vX.Y.Z`, → refused). vX must
+   exist, not be a draft, and carry the four assets `New-Release.ps1` uploads (installer,
+   blockmap, `latest.yml`, `build-info.json`), each in state `uploaded` with a size: Stable
+   installs read `latest.yml` and the installer from whatever release is latest. vX already
+   latest → "nothing to promote"; below latest → refused (an older Stable release: nothing to
+   promote); un-marked but not latest (a half-done promotion, a hand edit) → promoted again.
 3. Downloads `build-info.json` from that release. Missing (a release made before this design) →
    refused with "cut a new Preview".
-4. `Test-SdkPin.ps1 -Pin <sdk>` and `Test-CatalogSeed.ps1 -Expect <seed>`, judged against SDK
-   `develop` and the latest stable catalog **as of now**, not as of the build; `<seed>` is the five
-   `catalogSeed` values, read from the asset's text (`Read-BuildInfoSeed`). Exit 3 on either
-   → refused with the list and "cut a new Preview", unless the matching `-AllowOlder*` flag is
-   given. Exit 2, and the seed gate's exit 4 (no stable release at all) → refused, no override.
-5. `gh release edit vX --prerelease=false --latest` under the resolved token. If that fails, the
-   message says the release is still a pre-release.
+4. `Test-SdkPin.ps1 -Pin <sdk> -Packages <sdkPackages>` and `Test-CatalogSeed.ps1 -Expect <seed>`,
+   judged against SDK `develop` and the latest stable catalog **as of now**, not as of the build;
+   `<seed>` is the five `catalogSeed` values, read from the asset's text (`Read-BuildInfoSeed`).
+   Both always run. Exit 3 on either → refused with the list and "cut a new Preview", unless the
+   matching `-AllowOlder*` flag is given. Exit 2, and the seed gate's exit 4 (no stable release at
+   all) → refused, no override.
+5. Step 2 again (the gates take a while; another promotion may have landed), then
+   `gh release edit vX --prerelease=false --latest` under the resolved token, then a read-back. The
+   message says what GitHub shows afterwards: still a pre-release, un-marked but not latest
+   (re-run to finish), or promoted; a success gh reports that GitHub does not show is a failure.
 
 Promotion never rebuilds: Stable gets exactly the binaries testers ran. The README, the
 `New-Release.ps1` help and its final hint point at this script instead of the hand-typed command.

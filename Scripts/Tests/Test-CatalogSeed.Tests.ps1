@@ -218,6 +218,20 @@ Test-Case 'Step 1c reads build-info''s catalogSeed and names every field that di
     try { & $missing; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message '*build-info.json reports no catalogSeed*' 'no seed' }
 }
 
+Test-Case 'build-info''s sdkPackages: the names as listed; missing, empty or not SDK packages is a refusal' {
+    . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
+    $listed = Read-BuildInfoSdkPackages '{ "sdkPackages": ["DiffusionNexus.Installer.SDK.Catalog", "DiffusionNexus.Installer.SDK.Models"] }' 'build-info.json'
+    Assert-Equal ($listed -join ',') 'DiffusionNexus.Installer.SDK.Catalog,DiffusionNexus.Installer.SDK.Models' 'the packages'
+    foreach ($case in @(
+        @('{ "app": "3.0.99" }', '*build-info.json lists no sdkPackages*'),
+        @('{ "sdkPackages": [] }', '*build-info.json lists no sdkPackages*'),
+        @('{ "sdkPackages": "DiffusionNexus.Installer.SDK.Models" }', '*build-info.json lists no sdkPackages*'),
+        @('{ "sdkPackages": ["DiffusionNexus.Installer.SDK.Models", "Newtonsoft.Json"] }', "*'Newtonsoft.Json' in the sdkPackages of build-info.json is no DiffusionNexus.Installer.SDK.* package*"))) {
+        try { Read-BuildInfoSdkPackages $case[0] 'build-info.json' | Out-Null; throw "expected a refusal for $($case[0])" }
+        catch { Assert-Like $_.Exception.Message $case[1] $case[0] }
+    }
+}
+
 Test-Case 'a manifest is read as the SDK reads it: trailing commas and comments pass, non-JSON and non-objects are refused clearly' {
     . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
     $c = 'a' * 40; $sha = 'b' * 64

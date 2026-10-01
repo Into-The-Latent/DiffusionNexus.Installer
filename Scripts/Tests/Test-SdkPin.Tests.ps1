@@ -210,6 +210,24 @@ Test-Case '-Pin checks the given version instead of the project pins' {
     Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1')) 3 -Contains 'SDK pin 2.0.0-preview.1 is missing 1 commit', 'fix: services change'
 }
 
+Test-Case '-Packages decides which packages count, whatever the project files reference' {
+    # Promotion judges the packages the shipped build carries (build-info.json sdkPackages): a checkout
+    # that stopped referencing one must not narrow the walk, and one that references more must not widen it.
+    $f = New-SdkFixture
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Catalog/Catalog.cs' 'fix: catalog change'
+    Write-FixtureProject $f 'Installer.Core' @('DiffusionNexus.Installer.SDK.Models') '2.0.0-preview.1'   # the checkout dropped Catalog
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1')) 0 -Contains 'includes everything'
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', 'DiffusionNexus.Installer.SDK.Models,DiffusionNexus.Installer.SDK.Catalog')) 3 -Contains 'fix: catalog change'
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', 'DiffusionNexus.Installer.SDK.Models')) 0 -Contains 'includes everything'
+}
+
+Test-Case '-Packages that name no SDK package, or a folder SDK develop lacks, are "not checked"' {
+    $f = New-SdkFixture
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', ' , ')) 2 -Contains '-Packages names no package'
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', 'Some.Other.Package')) 2 -Contains "'Some.Other.Package' is not a DiffusionNexus.Installer.SDK.* package"
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', 'DiffusionNexus.Installer.SDK.Gone')) 2 -Contains 'package folder DiffusionNexus.Installer.SDK.Gone does not exist'
+}
+
 Test-Case '-Pin with no tag is "not checked"' {
     $f = New-SdkFixture
     Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.5.0')) 2 -Contains 'the pinned version 2.5.0 has no tag v2.5.0'

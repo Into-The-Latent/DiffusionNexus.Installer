@@ -59,10 +59,14 @@ and runs the same two checks as Steps 0c and 0d against SDK `develop` and the la
 catalog **as of now**: SDK fixes or a catalog release may have landed while the build waited in
 Preview. Both checks always run, so one refusal lists everything that is behind. Behind is refused
 unless you add `-AllowOlderSdk` / `-AllowOlderCatalog`; a check that could not run, or a seed that
-is no stable catalog release, is refused with no override. The fix for any refusal is a new
-Preview. It also refuses a draft, a release without `build-info.json` (made before the asset
-existed), and a version below the current Stable release. Like the release script, it edits the
-release under the first signed-in `gh` account that can write, and never switches accounts.
+is no stable catalog release, is refused with no override. The SDK check counts the SDK packages
+the build ships (`sdkPackages` in `build-info.json`), not the ones your checkout pins. The fix for
+any refusal is a new Preview. It also refuses a draft, a release missing any of the four assets
+(a half-finished upload, or a release made before `build-info.json` existed), and a version below
+the current Stable release. It reads GitHub again right before the edit and reads the result back
+afterwards; if a promotion stopped half way (un-marked but not latest), running it again finishes
+it. Like the release script, it edits the release under the first signed-in `gh` account that can
+write, and never switches accounts.
 
 Before it changes or builds anything, `New-Release.ps1` runs four gates. **0a** the packages
 token is set. **0b** a signed-in `gh` account can write to this repo: the active account if it
@@ -87,7 +91,7 @@ leaves the working tree untouched. Run either check on its own at any time with
 After packaging, the script runs the packaged app with `--build-info` and uploads its answer as
 `build-info.json` next to the installer: the app version, the SDK version it was built with, the
 catalog schema it reads and the catalog seed it embeds (version, commit, sha256 of the embedded
-archive, channel, pack time); the script refuses
+archive, channel, pack time) and the SDK packages it ships; the script refuses
 a build whose answer differs from what the gates checked. That asset, not the release notes, is what
 promotion and the catalog repo's gate read. The notes end with two generated lines,
 `Built with Installer SDK X` and `Bundled catalog vN (stable)`, for people; nothing reads them back.

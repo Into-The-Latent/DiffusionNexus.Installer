@@ -12,16 +12,21 @@
 
       1. A signed-in gh account that can write to the installer repo (Scripts/ReleaseAccount.ps1);
          none -> refused before anything is read. Only this script's gh calls use its token.
-      2. The release vX: it must exist, be published (not a draft) and be a pre-release. Already
-         Stable -> nothing to promote. A version below the current Stable release is refused:
-         --latest would move GitHub's latest release backwards.
-      3. Its build-info.json asset (New-Release.ps1 Step 1c). A release without one was made before
-         the asset existed: cut a new Preview.
-      4. Test-SdkPin.ps1 -Pin <sdk> against SDK develop and Test-CatalogSeed.ps1 -Expect <seed>
-         against the latest stable catalog. Both always run, so one refusal lists everything.
-         Behind (exit 3) -> refused, unless -AllowOlderSdk / -AllowOlderCatalog. Not checked
-         (exit 2), and a seed that is no stable catalog release at all (exit 4) -> refused, no flag.
-      5. gh release edit vX --prerelease=false --latest.
+      2. The release vX and GitHub's latest release. vX must exist, be published (not a draft) and
+         carry every asset New-Release.ps1 uploads, fully uploaded: Stable installs read latest.yml
+         and the installer from whatever release is latest. Already the latest -> nothing to
+         promote. Below the latest -> refused (--latest would move Stable backwards), or nothing to
+         promote when vX is an older Stable release anyway. Un-marked but not latest (a promotion
+         that failed half way, or a hand edit) -> promoted again, so a re-run repairs it.
+      3. Its build-info.json: the SDK version and packages and the catalog seed the build carries.
+      4. Test-SdkPin.ps1 -Pin <sdk> -Packages <sdkPackages> against SDK develop and
+         Test-CatalogSeed.ps1 -Expect <seed> against the latest stable catalog. Both always run, so
+         one refusal lists everything. Behind (exit 3) -> refused, unless -AllowOlderSdk /
+         -AllowOlderCatalog. Not checked (exit 2), and a seed that is no stable catalog release at
+         all (exit 4) -> refused, no flag.
+      5. Step 2 again, because the checks take a while and another promotion may have landed
+         meanwhile; then gh release edit vX --prerelease=false --latest, and a read-back that vX is
+         now Stable and the latest release.
 
 .PARAMETER Version
     The release to promote, e.g. 3.0.11 (its tag is v3.0.11).
@@ -60,24 +65,67 @@ $PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
 $tag      = "v$Version"
+# What New-Release.ps1 uploads. electron-updater on Stable reads latest.yml from GitHub's latest
+# release, then the installer and its blockmap; promotion reads build-info.json.
+$requiredAssets = @("EasyWorkloadInstaller-ITL-Setup-$Version.exe", "EasyWorkloadInstaller-ITL-Setup-$Version.exe.blockmap", 'latest.yml', 'build-info.json')
 . (Join-Path $PSScriptRoot 'ReleaseAccount.ps1')
 . (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
 
-# One gh call under the release token: its stdout, and its stderr for the message when it fails.
+# One gh call under the release token: its stdout (joined) and its stderr, for the message when it fails.
 function Invoke-ReleaseGh([string[]]$GhArgs) {
-    $lines = @(Invoke-WithGhToken $releaseToken { gh @GhArgs 2>&1 })
-    $exit = $LASTEXITCODE
-    [pscustomobject]@{
-        ExitCode = $exit
-        Out      = @($lines | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n"
-        Err      = @($lines | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n"
-    }
+    $run = Invoke-Native { Invoke-WithGhToken $releaseToken { gh @GhArgs 2>&1 } }
+    [pscustomobject]@{ ExitCode = $run.ExitCode; Out = $run.Out -join "`n"; Err = $run.Err -join "`n" }
 }
 
-function Get-ReleaseState {
+# What GitHub says now: vX (its flags and assets) and the tag of the latest release, $null when the
+# repo has no full release yet (404: nothing to go backwards from). Throws when either cannot be read.
+function Get-ReleaseFacts {
     $view = Invoke-ReleaseGh @('release', 'view', $tag, '--repo', $ghRepo, '--json', 'isPrerelease,isDraft,assets')
-    if ($view.ExitCode -ne 0) { return $null }
-    try { $view.Out | ConvertFrom-Json } catch { $null }
+    if ($view.ExitCode -ne 0) { throw "Could not read release $tag on $ghRepo (gh exit $($view.ExitCode)):`n$($view.Err)" }
+    try { $release = $view.Out | ConvertFrom-Json } catch { throw "gh release view $tag answered something that is not JSON:`n$($view.Out)" }
+    $latest = Invoke-ReleaseGh @('api', "repos/$ghRepo/releases/latest", '--jq', '.tag_name')
+    if ($latest.ExitCode -eq 0) { $latestTag = $latest.Out.Trim() }
+    elseif ($latest.Err -match 'HTTP 404') { $latestTag = $null }
+    else { throw "Could not read the latest release of $ghRepo (gh exit $($latest.ExitCode)):`n$($latest.Err)" }
+    [pscustomobject]@{ Release = $release; LatestTag = $latestTag }
+}
+
+# What promoting vX means, given those facts: 'promote', or 'done' (nothing to do; says why). Throws
+# when it must not happen.
+function Get-PromotionVerdict($Facts) {
+    $release = $Facts.Release
+    $latestTag = $Facts.LatestTag
+    if ($release.isDraft) { throw "$tag is a draft, not a published Preview release: testers never ran it." }
+    if ($latestTag -eq $tag) {
+        Write-Host "$tag is already GitHub's latest Stable release: nothing to promote." -ForegroundColor Green
+        return 'done'
+    }
+    if ($null -ne $latestTag) {
+        # A guard against moving Stable backwards compares, or refuses: a tag it cannot read is no "go".
+        $latestVersion = $null
+        if (-not ($latestTag -match '^v(\d+\.\d+\.\d+)$' -and [version]::TryParse($Matches[1], [ref]$latestVersion))) {
+            throw "GitHub's latest release of $ghRepo is '$latestTag', which is no vX.Y.Z tag, so $tag cannot be checked against it: promoting could move Stable backwards. Make a vX.Y.Z release the latest by hand first."
+        }
+        if ($latestVersion -gt [version]$Version) {
+            if (-not $release.isPrerelease) {
+                Write-Host "$tag is an older Stable release; $latestTag is the latest: nothing to promote." -ForegroundColor Green
+                return 'done'
+            }
+            throw "$latestTag is already Stable and newer than $tag. Promoting $tag would make GitHub's latest release go backwards."
+        }
+    }
+    if (-not $release.isPrerelease) {
+        Write-Warning "$tag is no longer a pre-release but is not GitHub's latest release ($(if ($latestTag) { "that is $latestTag" } else { 'there is none' })), so Stable installs are not offered it. Promoting it again makes it the latest."
+    }
+    $missing = @(foreach ($name in $requiredAssets) {
+        $asset = @($release.assets | Where-Object name -eq $name) | Select-Object -First 1
+        if (-not $asset) { "$name (missing)" }
+        elseif ($asset.state -ne 'uploaded' -or [long]$asset.size -le 0) { "$name (upload not finished: state '$($asset.state)', $($asset.size) bytes)" }
+    })
+    if ($missing.Count -gt 0) {
+        throw "$tag does not carry every release asset:`n  $($missing -join "`n  ")`nAs the latest release it would send every Stable install to a file that is not there. Cut a new Preview with New-Release.ps1 -Prerelease (a release made before build-info.json existed has none either)."
+    }
+    'promote'
 }
 
 # ------------------------------------------------------------------------------- 1. the account
@@ -86,30 +134,12 @@ $releaseToken = Resolve-ReleaseToken $ghRepo
 if (-not $releaseToken) { throw "$(Get-NoReleaseAccountMessage $ghRepo) Nothing was read or changed." }
 
 # ------------------------------------------------------------------------------- 2. the release
-Write-Host "Step 2: release $tag must be a published Preview release" -ForegroundColor Cyan
-$view = Invoke-ReleaseGh @('release', 'view', $tag, '--repo', $ghRepo, '--json', 'isPrerelease,isDraft,assets')
-if ($view.ExitCode -ne 0) { throw "Could not read release $tag on $ghRepo (gh exit $($view.ExitCode)):`n$($view.Err)`nNothing was changed." }
-try { $release = $view.Out | ConvertFrom-Json } catch { throw "gh release view $tag answered something that is not JSON:`n$($view.Out)`nNothing was changed." }
-if ($release.isDraft) { throw "$tag is a draft, not a published Preview release: testers never ran it. Nothing was changed." }
-if (-not $release.isPrerelease) {
-    Write-Host "$tag is already a Stable release: nothing to promote." -ForegroundColor Green
-    return
-}
-# --latest makes this GitHub's latest release, the one Stable installs read. Below the current one,
-# that would move Stable backwards.
-$latest = Invoke-ReleaseGh @('api', "repos/$ghRepo/releases/latest", '--jq', '.tag_name')
-if ($latest.ExitCode -ne 0) { throw "Could not read the latest Stable release of $ghRepo (gh exit $($latest.ExitCode)):`n$($latest.Err)`nNothing was changed." }
-$latestTag = $latest.Out.Trim()
-$latestVersion = $null
-if ($latestTag -match '^v(\d+\.\d+\.\d+)$' -and [version]::TryParse($Matches[1], [ref]$latestVersion) -and $latestVersion -gt [version]$Version) {
-    throw "$latestTag is already Stable and newer than $tag. Promoting $tag would make GitHub's latest release go backwards. Nothing was changed."
-}
+Write-Host "Step 2: release $tag can become GitHub's latest release" -ForegroundColor Cyan
+try { $verdict = Get-PromotionVerdict (Get-ReleaseFacts) } catch { throw "$($_.Exception.Message)`nNothing was changed." }
+if ($verdict -eq 'done') { return }
 
 # ------------------------------------------------------------------------- 3. what the build is
 Write-Host "Step 3: build-info.json of $tag" -ForegroundColor Cyan
-if (-not @($release.assets | Where-Object name -eq 'build-info.json')) {
-    throw "$tag has no build-info.json asset: it was released before New-Release.ps1 wrote one, so nothing says which SDK and catalog it carries. Cut a new Preview with New-Release.ps1 -Prerelease. Nothing was changed."
-}
 $download = Join-Path ([IO.Path]::GetTempPath()) ("promote-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $download | Out-Null
 try {
@@ -123,16 +153,19 @@ try {
 try {
     $buildInfo = $buildInfoText | ConvertFrom-Json
     $seed = Read-BuildInfoSeed $buildInfoText "build-info.json of $tag"
+    $sdkPackages = Read-BuildInfoSdkPackages $buildInfoText "build-info.json of $tag"
 } catch { throw "build-info.json of $tag cannot be read ($($_.Exception.Message)). Cut a new Preview. Nothing was changed." }
 if ("$($buildInfo.app)" -ne $Version) { throw "build-info.json of $tag says it describes version '$($buildInfo.app)', not $Version. Cut a new Preview. Nothing was changed." }
 if ("$($buildInfo.sdk)" -notmatch '^\d+\.\d+\.\d+') { throw "build-info.json of $tag names no SDK version (got '$($buildInfo.sdk)'). Cut a new Preview. Nothing was changed." }
-Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog seed v$($seed.Version) ($($seed.Short), $($seed.Channel))" -ForegroundColor Green
+Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk) ($($sdkPackages.Count) packages), catalog seed v$($seed.Version) ($($seed.Short), $($seed.Channel))" -ForegroundColor Green
 
 # --------------------------------------------------------------- 4. still current, as of now
 $refusals = [System.Collections.Generic.List[string]]::new()
 
+# The packages the build ships decide which SDK commits count, not the ones this checkout pins:
+# promotion may run from any branch.
 Write-Host "Step 4a: SDK $($buildInfo.sdk) includes everything on SDK develop" -ForegroundColor Cyan
-pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-SdkPin.ps1') -RepoRoot $repoRoot -Pin $buildInfo.sdk
+pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-SdkPin.ps1') -RepoRoot $repoRoot -Pin $buildInfo.sdk -Packages ($sdkPackages -join ',')
 switch ($LASTEXITCODE) {
     0 { }
     3 {
@@ -143,10 +176,7 @@ switch ($LASTEXITCODE) {
 }
 
 Write-Host "Step 4b: the bundled catalog seed is the latest stable catalog" -ForegroundColor Cyan
-if (-not $CatalogReleases) { $CatalogReleases = $DefaultCatalogReleases }
-if ($CatalogReleases.TrimEnd('/') -ne $DefaultCatalogReleases) {
-    Write-Warning "Step 4b reads $CatalogReleases, not the real catalog releases (-CatalogReleases)."
-}
+$CatalogReleases = Resolve-GateCatalogReleases $CatalogReleases 'Step 4b'
 $expect = "$($seed.Version) $($seed.Commit) $($seed.Sha256) $($seed.Channel) $($seed.GeneratedAt.ToString('o'))"
 pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-CatalogSeed.ps1') -RepoRoot $repoRoot -ReleaseBase $CatalogReleases -Expect $expect
 switch ($LASTEXITCODE) {
@@ -164,14 +194,20 @@ if ($refusals.Count -gt 0) {
 }
 
 # ------------------------------------------------------------------------------- 5. promote
+# The checks took a while: judge what GitHub says now, not what Step 2 read.
 Write-Host "Step 5: promoting $tag to Stable" -ForegroundColor Cyan
+try { $verdict = Get-PromotionVerdict (Get-ReleaseFacts) } catch { throw "While the checks ran, GitHub changed: $($_.Exception.Message)`nNothing was changed." }
+if ($verdict -eq 'done') { return }
 $edit = Invoke-ReleaseGh @('release', 'edit', $tag, '--repo', $ghRepo, '--prerelease=false', '--latest')
+# Read back either way, and say what the release is now, not what it probably is.
+try { $after = Get-ReleaseFacts } catch { $after = $null }
+$state = if ($null -eq $after) { "Its state could not be read back: check it on GitHub, then re-run this script, which finishes a half-done promotion." }
+         elseif ($after.Release.isPrerelease) { "$tag is still a pre-release." }
+         elseif ($after.LatestTag -ne $tag) { "$tag is no longer a pre-release, but GitHub's latest release is $(if ($after.LatestTag) { $after.LatestTag } else { 'none' }), so Stable installs are not offered it. Re-run this script: it makes $tag the latest." }
+         else { $null }
 if ($edit.ExitCode -ne 0) {
-    # Say what the release is now, not what it probably is.
-    $after = Get-ReleaseState
-    $state = if ($null -eq $after) { "Its state could not be read back: check it on GitHub before retrying." }
-             elseif ($after.isPrerelease) { "$tag is still a pre-release." }
-             else { "$tag is no longer a pre-release all the same: check on GitHub that it is the latest release." }
-    throw "gh release edit $tag failed (gh exit $($edit.ExitCode)):`n$($edit.Err)`n$state"
+    $outcome = if ($state) { $state } else { "GitHub shows $tag as Stable and the latest release all the same." }
+    throw "gh release edit $tag failed (gh exit $($edit.ExitCode)):`n$($edit.Err)`n$outcome"
 }
+if ($state) { throw "gh release edit $tag reported success, but: $state" }
 Write-Host "Promoted $tag to Stable: installs on Stable are offered it on their next update check." -ForegroundColor Green

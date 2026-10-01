@@ -152,10 +152,7 @@ Write-Host "Step 0d: the embedded catalog seed is the latest stable catalog" -Fo
 # The releases page is passed explicitly, so the check never falls back to
 # DIFFUSIONNEXUS_CATALOG_RELEASES: a value left in the environment must not steer a release.
 . (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
-if (-not $CatalogReleases) { $CatalogReleases = $DefaultCatalogReleases }
-if ($CatalogReleases.TrimEnd('/') -ne $DefaultCatalogReleases) {
-    Write-Warning "Step 0d reads $CatalogReleases, not the real catalog releases (-CatalogReleases)."
-}
+$CatalogReleases = Resolve-GateCatalogReleases $CatalogReleases 'Step 0d'
 pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-CatalogSeed.ps1') -RepoRoot $repoRoot -ReleaseBase $CatalogReleases
 switch ($LASTEXITCODE) {
     0 { }
@@ -236,6 +233,11 @@ try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
 if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
+# Promote-Release judges the SDK commits in exactly the packages this list names, so every package the
+# projects pin has to be on it: one missing would never be walked.
+$sdkPackages = Read-BuildInfoSdkPackages $buildInfoText "the packaged app's --build-info answer"
+$unlisted = @($sdkRefs | ForEach-Object Include | Where-Object { $_ -notin $sdkPackages })
+if ($unlisted.Count -gt 0) { throw "The packaged app does not list the pinned SDK package(s) $($unlisted -join ', ') among its sdkPackages ($($sdkPackages -join ', ')). This build does not contain what was checked." }
 # The seed from the text, not from $buildInfo: ConvertFrom-Json turns generatedAt into a local date.
 $packagedSeed = Read-BuildInfoSeed $buildInfoText "the packaged app's --build-info answer"
 $seedDifferences = @(Compare-CatalogSeed $packagedSeed $seed)
