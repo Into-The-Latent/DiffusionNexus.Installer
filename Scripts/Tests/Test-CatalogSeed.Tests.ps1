@@ -76,7 +76,7 @@ Test-Case 'the same version, commit and archive under another pack time is not t
     $path = Join-Path $seed 'manifest.json'
     Set-Content -LiteralPath $path -Value ((Get-Content -LiteralPath $path -Raw) -replace '2026-09-25T14:15:43', '2027-01-01T00:00:00') -NoNewline
     Invoke-FixtureGit $f.Installer @('add', '--all'); Invoke-FixtureGit $f.Installer @('commit', '--quiet', '-m', 'hand-made seed')
-    Assert-Result (Invoke-CatalogSeedCheck $f) 4 -Contains 'the manifest itself is not the release', '-AllowOlderCatalog covers only'
+    Assert-Result (Invoke-CatalogSeedCheck $f) 4 -Contains 'generatedAt 2027-01-01T00:00:00', '-AllowOlderCatalog covers only'
 }
 
 Test-Case 'a zip that disagrees with its own manifest is not checked, whatever the release says' {
@@ -157,17 +157,38 @@ Test-Case 'a seed manifest rewritten with CRLF and a BOM still equals the releas
 }
 
 Test-Case '-Expect judges the values given and reads nothing on disk: no seed, no git repo needed' {
+    # The five values build-info.json reports: version, commit, archive sha256, channel, generatedAt.
     $f = New-CatalogFixture
+    $packed = '2026-09-25T14:15:43.8266732+00:00'   # what Write-CatalogManifest stamps
     $old = Publish-CatalogRelease $f -Version 4 -Content 'older'
     $oldSha = (Get-FileHash -LiteralPath (Join-Path $old 'catalog.zip') -Algorithm SHA256).Hash
     $pack = Publish-CatalogRelease $f -Version 5
     $sha = (Get-FileHash -LiteralPath (Join-Path $pack 'catalog.zip') -Algorithm SHA256).Hash   # upper-case, as Get-FileHash prints it
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $(('0' * 7 + '5') * 5) $sha")) 0 -Contains 'Catalog seed v5 (0000000) is the latest stable catalog.'
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$(('0' * 7 + '4') * 5),$oldSha")) 3 -Contains 'The seed given is not the latest stable catalog', 'catalogVersion 4 vs 5', 'It is the older stable release v4' -Lacks 'Update-CatalogSeed'
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$(('0' * 7 + '4') * 5),$sha")) 4 -Contains 'It is not the stable release v4 either'
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "6 $(('0' * 7 + '6') * 5) $sha")) 4 -Contains 'the seed is ahead'
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 00000005 $sha")) 2 -Contains 'NOT checked', '-Expect commit'
-    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $sha")) 2 -Contains 'NOT checked', '-Expect takes three values'
+    $c4 = ('0' * 7 + '4') * 5; $c5 = ('0' * 7 + '5') * 5
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha Stable $packed")) 0 -Contains 'Catalog seed v5 (0000000) is the latest stable catalog.'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha Stable 2026-09-25T16:15:43.8266732+02:00")) 0   # the same instant
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$c4,$oldSha,Stable,$packed")) 3 -Contains 'The seed given is not the latest stable catalog', 'catalogVersion 4 vs 5', 'It is the older stable release v4' -Lacks 'Update-CatalogSeed'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "4,$c4,$sha,Stable,$packed")) 4 -Contains 'It is not the stable release v4 either'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "6 $(('0' * 7 + '6') * 5) $sha Stable $packed")) 4 -Contains 'the seed is ahead'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha Preview $packed")) 4 -Contains 'is a Preview seed', 'The seed is always a stable catalog'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha Stable 2027-01-01T00:00:00+00:00")) 4 -Contains 'generatedAt 2027-01-01T00:00:00'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 00000005 $sha Stable $packed")) 2 -Contains 'NOT checked', '-Expect', 'commit'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha Stable yesterday")) 2 -Contains 'NOT checked', 'generatedAt'
+    Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha")) 2 -Contains 'NOT checked', '-Expect takes five values'
+}
+
+Test-Case 'Step 1c reads build-info''s catalogSeed and names every field that differs, sha256 included' {
+    . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
+    $c = 'a' * 40; $sha = 'b' * 64; $other = 'c' * 64
+    $info = "{ ""app"": ""3.0.99"", ""catalogSeed"": { ""version"": 5, ""commit"": ""$c"", ""sha256"": ""$sha"", ""channel"": ""Stable"", ""generatedAt"": ""2026-09-25T14:15:43.8266732+00:00"" } }"
+    $packaged = Read-BuildInfoSeed $info 'build-info.json'
+    Assert-Equal $packaged.Version 5 'version'
+    Assert-Equal $packaged.GeneratedAt.UtcDateTime.ToString('o') '2026-09-25T14:15:43.8266732Z' 'generatedAt, read as text whatever the culture'
+    Assert-Equal (@(Compare-CatalogSeed $packaged (New-CatalogSeed 5 $c $sha Stable '2026-09-25T16:15:43.8266732+02:00' 'x')).Count) 0 'differences from the same seed'
+    $lines = @(Compare-CatalogSeed $packaged (New-CatalogSeed 5 $c $other Preview '2027-01-01T00:00:00+00:00' 'x')) -join "`n"
+    Assert-Like $lines "*archive sha256 $sha vs $other*channel Stable vs Preview*generatedAt 2026-09-25T14:15:43.8266732+00:00 vs 2027-01-01T00:00:00.0000000+00:00*" 'differences'
+    $missing = { Read-BuildInfoSeed '{ "app": "3.0.99" }' 'build-info.json' }
+    try { & $missing; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message '*build-info.json reports no catalogSeed*' 'no seed' }
 }
 
 Complete-Tests

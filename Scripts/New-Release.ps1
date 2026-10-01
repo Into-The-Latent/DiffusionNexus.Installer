@@ -237,10 +237,11 @@ try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
 if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
-$packagedSeed = $buildInfo.catalogSeed
-if (-not $packagedSeed) { throw "The packaged app reports no catalogSeed. This build is not what the release script expects." }
-if ("$($packagedSeed.version)" -ne "$($seed.Version)" -or "$($packagedSeed.commit)".ToLowerInvariant() -ne $seed.Commit -or "$($packagedSeed.sha256)".ToLowerInvariant() -ne $seed.Sha256) {
-    throw "The packaged app says it bundles catalog v$($packagedSeed.version) ($($packagedSeed.commit)); Step 0d checked v$($seed.Version) ($($seed.Commit)). This build does not contain what was checked."
+# The seed from the text, not from $buildInfo: ConvertFrom-Json turns generatedAt into a local date.
+$packagedSeed = Read-BuildInfoSeed $buildInfoText "the packaged app's --build-info answer"
+$seedDifferences = @(Compare-CatalogSeed $packagedSeed $seed)
+if ($seedDifferences.Count -gt 0) {
+    throw "The packaged app's catalog seed is not the one Step 0d checked (packaged vs checked):`n  $($seedDifferences -join "`n  ")`nThis build does not contain what was checked."
 }
 # builtAt is null only when the app cannot date its own assembly file (a single-file publish). The
 # shipped app is never that, and promotion reads this asset as fact, so a null here is a broken build.

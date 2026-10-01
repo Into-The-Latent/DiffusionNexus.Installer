@@ -60,6 +60,10 @@ public class BuildInfoTests
         seed.Version.Should().Be(embedded.GetProperty("catalogVersion").GetInt32());
         seed.Commit.Should().Be(embedded.GetProperty("commit").GetString()).And.MatchRegex("^[0-9a-f]{40}$");
         seed.Sha256.Should().Be(embedded.GetProperty("archive").GetProperty("sha256").GetString()).And.MatchRegex("^[0-9a-f]{64}$");
+        // What the SDK records from the seed besides those three: Test-CatalogSeed -Expect needs them
+        // to refuse a Preview stamp or a hand-made pack time over the right archive.
+        seed.Channel.Should().Be(embedded.GetProperty("channel").GetString());
+        seed.GeneratedAt.Should().Be(embedded.GetProperty("generatedAt").GetDateTimeOffset());
     }
 
     [Fact]
@@ -113,6 +117,8 @@ public class BuildInfoTests
         seed.GetProperty("version").GetInt32().Should().Be(BuildInfo.Create().CatalogSeed.Version);
         seed.GetProperty("commit").GetString().Should().Be(BuildInfo.Create().CatalogSeed.Commit);
         seed.GetProperty("sha256").GetString().Should().Be(BuildInfo.Create().CatalogSeed.Sha256);
+        seed.GetProperty("channel").GetString().Should().Be("Stable", "the channel is written as its name, never its enum number");
+        seed.GetProperty("generatedAt").GetDateTimeOffset().Should().Be(BuildInfo.Create().CatalogSeed.GeneratedAt);
         root.GetProperty("builtAt").GetDateTimeOffset().Should().Be(BuildInfo.Create().BuiltAt);
         text.Should().NotContain("\"App\"", "property names are camelCase");
     }

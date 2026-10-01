@@ -63,8 +63,7 @@ New-Item -ItemType Directory -Path $temp | Out-Null
 try {
     $manifestPath = Join-Path $temp 'manifest.json'
     $zipPath = Join-Path $temp 'catalog.zip'
-    Save-CatalogAsset "$assets/manifest.json" $manifestPath
-    $manifest = Read-CatalogManifest (Get-Content -LiteralPath $manifestPath -Raw) "$assets/manifest.json"
+    $manifest = Read-CatalogReleaseManifest "$assets/manifest.json" $manifestPath 'the release manifest'
     if ($manifest.Channel -ne 'Stable') { throw "$assets/manifest.json is a $($manifest.Channel) manifest, not a Stable one; the seed is always a stable catalog." }
     if ($Version -and $manifest.Version -ne $Version) { throw "$assets/manifest.json says catalogVersion $($manifest.Version), not $Version." }
     # The archive from the release the manifest names: a second latest redirect may already serve a

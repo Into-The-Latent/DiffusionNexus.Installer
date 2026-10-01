@@ -74,7 +74,8 @@ leaves the working tree untouched. Run either check on its own at any time with
 
 After packaging, the script runs the packaged app with `--build-info` and uploads its answer as
 `build-info.json` next to the installer: the app version, the SDK version it was built with, the
-catalog schema it reads and the catalog seed it embeds (version, commit, sha256); the script refuses
+catalog schema it reads and the catalog seed it embeds (version, commit, sha256 of the embedded
+archive, channel, pack time); the script refuses
 a build whose answer differs from what the gates checked. That asset, not the release notes, is what
 promotion and the catalog repo's gate read. The notes end with two generated lines,
 `Built with Installer SDK X` and `Bundled catalog vN (stable)`, for people; nothing reads them back.

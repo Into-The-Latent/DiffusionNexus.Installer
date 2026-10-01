@@ -7,12 +7,15 @@ using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 
 namespace DiffusionNexus.Installer.Electron.Services;
 
-/// <summary>The catalog this build embeds as its seed: the three values Test-CatalogSeed.ps1
-/// judges, read from the embedded manifest.json.</summary>
+/// <summary>The catalog this build embeds as its seed, read from the embedded manifest.json: the
+/// values Test-CatalogSeed.ps1 -Expect judges. Channel and pack time too, because the SDK records both
+/// from the seed, so a Preview stamp or a hand-made generatedAt is a wrong seed over the right archive.</summary>
 public sealed record BuildInfoCatalogSeed(
     [property: JsonPropertyName("version")] int Version,
     [property: JsonPropertyName("commit")] string Commit,
-    [property: JsonPropertyName("sha256")] string Sha256);
+    [property: JsonPropertyName("sha256")] string Sha256,
+    [property: JsonPropertyName("channel")] string Channel,
+    [property: JsonPropertyName("generatedAt")] DateTimeOffset GeneratedAt);
 
 /// <summary>What this build says about itself: the `--build-info` answer, uploaded by
 /// New-Release.ps1 as the `build-info.json` release asset. The property names are read by the
@@ -83,7 +86,8 @@ public static class BuildInfo
         var actual = Convert.ToHexStringLower(SHA256.HashData(archive));
         if (!string.Equals(actual, manifest.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"The embedded catalog.zip has sha256 {actual}; its manifest says {manifest.Archive.Sha256}. This build does not carry the seed its manifest names and must not be released.");
-        return new BuildInfoCatalogSeed(manifest.CatalogVersion, manifest.Commit, manifest.Archive.Sha256);
+        // The channel by name: the release scripts compare it as text, and an enum number would read as "0".
+        return new BuildInfoCatalogSeed(manifest.CatalogVersion, manifest.Commit, manifest.Archive.Sha256, manifest.Channel.ToString(), manifest.GeneratedAt);
     }
 
     public static string ToJson() => JsonSerializer.Serialize(Create(), Json);
