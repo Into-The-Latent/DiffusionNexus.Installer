@@ -77,6 +77,19 @@ function Read-BuildInfoSeed([string]$Text, [string]$What) {
     } finally { $doc.Dispose() }
 }
 
+# The packaged app's --build-info answer: its stdout, the JSON document. A refusing build writes its
+# reason to stderr and exits 1, so the throw carries stderr - the console is not the only log.
+function Get-BuildInfoText([string]$EntryPoint) {
+    $lines = @(& $EntryPoint --build-info 2>&1)
+    $exit = $LASTEXITCODE
+    $answer = @($lines | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n"
+    if ($exit -ne 0) {
+        $reason = @($lines | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n"
+        throw "The packaged app did not answer --build-info (exit $exit):`n$(@($reason, $answer) -ne '' -join "`n")"
+    }
+    $answer
+}
+
 # Every field in which two seeds differ, in full, so a refusal shows what differs. Empty = the same.
 function Compare-CatalogSeed($Actual, $Expected) {
     @(

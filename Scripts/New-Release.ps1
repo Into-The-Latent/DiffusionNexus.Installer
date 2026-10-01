@@ -231,8 +231,7 @@ if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scr
 Write-Host "Step 1c: build-info.json from the packaged app" -ForegroundColor Cyan
 $entryPoint = Join-Path $publish 'bin\DiffusionNexus.Installer.Electron.exe'
 if (-not (Test-Path -LiteralPath $entryPoint)) { throw "Packaged entry point missing: $entryPoint" }
-$buildInfoText = (& $entryPoint --build-info | ForEach-Object { "$_" }) -join "`n"
-if ($LASTEXITCODE -ne 0) { throw "The packaged app did not answer --build-info (exit $LASTEXITCODE):`n$buildInfoText" }
+$buildInfoText = Get-BuildInfoText $entryPoint
 try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }

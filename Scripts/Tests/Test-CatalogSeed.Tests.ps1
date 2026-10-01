@@ -211,4 +211,18 @@ Test-Case 'Step 1c reads build-info''s catalogSeed and names every field that di
     try { & $missing; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message '*build-info.json reports no catalogSeed*' 'no seed' }
 }
 
+Test-Case 'Step 1c keeps the packaged app''s refusal reason from stderr, and only stdout as the answer' {
+    . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
+    $dir = Join-Path ([IO.Path]::GetTempPath()) ("buildinfo " + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $script:FixtureRoots.Add($dir)
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    $refuses = Join-Path $dir 'refuses.cmd'
+    Set-Content -LiteralPath $refuses -Value '@echo off', 'echo The embedded catalog.zip has sha256 x; its manifest says y. 1>&2', 'exit /b 1'
+    try { Get-BuildInfoText $refuses; throw 'expected a refusal' }
+    catch { Assert-Like $_.Exception.Message '*did not answer --build-info (exit 1)*its manifest says y.*' 'the refusal' }
+    $answers = Join-Path $dir 'answers.cmd'
+    Set-Content -LiteralPath $answers -Value '@echo off', 'echo a warning 1>&2', 'echo {"app": "3.0.99"}', 'exit /b 0'
+    Assert-Equal (Get-BuildInfoText $answers) '{"app": "3.0.99"}' 'the answer, without what went to stderr'
+}
+
 Complete-Tests
