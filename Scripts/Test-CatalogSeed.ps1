@@ -115,9 +115,9 @@ if ($Expect) {
     # would not be the seed built. An untracked file in the folder counts too.
     # Only stdout lines are files. git may write to stderr and still exit 0 (a CRLF warning during the
     # index refresh, a deprecation notice); that text is only for the message when git fails.
-    $output = @(& git -C $RepoRoot status --porcelain --untracked-files=all -- $CatalogSeedFolder 2>&1)
-    $status = @($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
-    if ($LASTEXITCODE -ne 0) { Stop-Unchecked "git status in $RepoRoot failed:`n$(($output | ForEach-Object { "$_" }) -join "`n")" }
+    $git = Invoke-Native { git -C $RepoRoot status --porcelain --untracked-files=all -- $CatalogSeedFolder }
+    $status = $git.Out
+    if ($git.ExitCode -ne 0) { Stop-Unchecked "git status in $RepoRoot failed:`n$(($git.Err + $git.Out) -join "`n")" }
     if ($status.Count -gt 0) {
         Stop-Unchecked "the seed under $CatalogSeedFolder has uncommitted changes:`n$(($status | ForEach-Object { "  $_" }) -join "`n")`nCommit them (or restore the files) and run the check again."
     }

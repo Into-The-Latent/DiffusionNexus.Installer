@@ -41,11 +41,11 @@
     a suffixed version (3.1.0-beta.1) flips electron-updater into matching releases by that
     suffix and makes the installed app accept pre-releases whatever its channel setting says.
 
-    To promote a Preview build to everyone, un-mark it - no rebuild, same binaries. Today that is
-    the gh command below; Promote-Release.ps1 (issue #30) will check the SDK pin and the catalog
-    seed against what is current first. Because promotion never rebuilds, a Preview build embeds
-    the stable catalog seed too (Step 0d), never a preview one.
-        gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
+    To promote a Preview build to everyone, run Promote-Release.ps1: no rebuild, same binaries. It
+    reads the release's build-info.json and checks the SDK version and the catalog seed against
+    what is current at promotion time before it un-marks the pre-release. Because promotion never
+    rebuilds, a Preview build embeds the stable catalog seed too (Step 0d), never a preview one.
+        .\Scripts\Promote-Release.ps1 -Version 3.0.9
 
 .PARAMETER AllowOlderSdk
     Release even though Scripts/Test-SdkPin.ps1 found commits on SDK develop that the pinned SDK
@@ -152,10 +152,7 @@ Write-Host "Step 0d: the embedded catalog seed is the latest stable catalog" -Fo
 # The releases page is passed explicitly, so the check never falls back to
 # DIFFUSIONNEXUS_CATALOG_RELEASES: a value left in the environment must not steer a release.
 . (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
-if (-not $CatalogReleases) { $CatalogReleases = $DefaultCatalogReleases }
-if ($CatalogReleases.TrimEnd('/') -ne $DefaultCatalogReleases) {
-    Write-Warning "Step 0d reads $CatalogReleases, not the real catalog releases (-CatalogReleases)."
-}
+$CatalogReleases = Resolve-GateCatalogReleases $CatalogReleases 'Step 0d'
 pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-CatalogSeed.ps1') -RepoRoot $repoRoot -ReleaseBase $CatalogReleases
 switch ($LASTEXITCODE) {
     0 { }
@@ -236,6 +233,11 @@ try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
 if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
+# Step 0c walked the pinned SDK packages; Promote-Release walks the ones this list names. They must be
+# one set: a package that comes in only transitively would pass here and be refused at promotion.
+$sdkPackages = Read-BuildInfoSdkPackages $buildInfoText "the packaged app's --build-info answer"
+$packageMismatch = @(Get-SdkPackageMismatch @($sdkRefs | ForEach-Object Include) $sdkPackages)
+if ($packageMismatch.Count -gt 0) { throw "The SDK packages the packaged app ships are not the ones the projects pin:`n  $($packageMismatch -join "`n  ")`nPin every shipped SDK package in the Electron project. This build does not contain what was checked." }
 # The seed from the text, not from $buildInfo: ConvertFrom-Json turns generatedAt into a local date.
 $packagedSeed = Read-BuildInfoSeed $buildInfoText "the packaged app's --build-info answer"
 $seedDifferences = @(Compare-CatalogSeed $packagedSeed $seed)
@@ -311,5 +313,5 @@ if ($LASTEXITCODE -ne 0) { throw "gh release create failed (see gh's output abov
 
 Write-Host "Released v$Version on $channelName" -ForegroundColor Green
 if ($Prerelease) {
-    Write-Host "Promote it to Stable, once the pin and the seed are still current: gh release edit v$Version --repo $ghRepo --prerelease=false --latest (Promote-Release.ps1 will do these checks; issue #30)" -ForegroundColor Yellow
+    Write-Host "Promote it to Stable when testers are done: .\Scripts\Promote-Release.ps1 -Version $Version (it checks the SDK and the catalog seed are still current first)" -ForegroundColor Yellow
 }

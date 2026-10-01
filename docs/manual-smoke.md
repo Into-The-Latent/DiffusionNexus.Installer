@@ -304,7 +304,9 @@ Call the installed version `A` and the test version `B` (next patch number).
    releases.", "Update available: B. Downloading...", and **Restart and install** appears. Do
    not press it yet.
 4. Still on that page, nothing should say `latest`, `beta` or `prerelease` anywhere.
-5. Promote it: `gh release edit vB --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest`.
+5. Promote it: `.\Scripts\Promote-Release.ps1 -Version B`.
+   **Expect:** both checks pass ("includes everything on SDK develop", "is the latest stable
+   catalog") and it ends with "Promoted vB to Stable".
    Wait a minute (the `releases/latest` redirect lags). Launch the **Stable** copy again.
    **Expect:** `vB` is now offered and downloads.
 6. Press **Restart and install** on either copy. **Expect:** the app comes back as `B`.

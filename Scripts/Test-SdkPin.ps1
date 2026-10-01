@@ -46,6 +46,12 @@
     the version a shipped build reports in its build-info.json. The project files still say which
     packages count; their versions are ignored.
 
+.PARAMETER Packages
+    The SDK packages whose commits count, comma-separated, instead of the ones the project files
+    reference. Promote-Release.ps1 passes the sdkPackages a shipped build's build-info.json lists:
+    the build being promoted decides, not the checkout promotion runs from. (One string, because
+    pwsh -File cannot fill an array parameter.)
+
 .EXAMPLE
     pwsh Scripts/Test-SdkPin.ps1
 
@@ -57,7 +63,8 @@ param(
     [string]$RepoRoot,
     [string]$SdkPath,
     [string]$SdkBranch = 'develop',
-    [string]$Pin
+    [string]$Pin,
+    [string]$Packages
 )
 
 $ErrorActionPreference = 'Stop'
@@ -130,6 +137,7 @@ function Test-ShipsRootBuildChange([string]$Hash, [string[]]$Files) {
 }
 
 if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
+. (Join-Path $PSScriptRoot 'CatalogRelease.ps1')   # $SdkPackageNamePattern, shared with the build-info reader
 
 # ------------------------------------------------------------------------------------ the pin
 # -LiteralPath throughout: -Path reads [ ] in the repo path as a wildcard, and a checkout under such a
@@ -151,7 +159,16 @@ if (-not $Pin) {   # -Pin: an explicit version makes the project versions irrele
 $pinTag     = "v$Pin"
 $pinRef     = "$tagNamespace/$pinTag"
 $pinVersion = [semver]$Pin
-$packages   = @($refs | Select-Object -ExpandProperty Package -Unique)
+if ($PSBoundParameters.ContainsKey('Packages')) {
+    # Not $packages: variable names ignore case, and the parameter's [string] would join the list again.
+    $packageList = @($Packages -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    if ($packageList.Count -eq 0) { Stop-Unchecked "-Packages names no package (got '$Packages')." }
+    foreach ($package in $packageList) {
+        if ($package -notmatch $SdkPackageNamePattern) { Stop-Unchecked "'$package' is not a DiffusionNexus.Installer.SDK.* package (-Packages)." }
+    }
+} else {
+    $packageList = @($refs | Select-Object -ExpandProperty Package -Unique)
+}
 
 # ------------------------------------------------------------------------- the SDK checkout
 if (-not $SdkPath) {
@@ -189,16 +206,20 @@ if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$branchRef^{commit}"))
 if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$pinRef^{commit}")).ExitCode -ne 0) {
     Stop-Unchecked "the pinned version $Pin has no tag $pinTag in the SDK repo."
 }
-foreach ($package in $packages) {
-    if ((Invoke-SdkGit @('cat-file', '-e', "${branchRef}:$package")).ExitCode -ne 0) {
-        Stop-Unchecked "package folder $package does not exist on $branchName. A moved or renamed project would be invisible to this check."
+foreach ($package in $packageList) {
+    # A folder the pin ships that develop has since removed or renamed is walked like any other: the
+    # commit that removed it is one the pin lacks, so the answer is "behind", which -AllowOlderSdk can
+    # override - never "not checked", which nothing can. Only a folder in neither is unknown.
+    if ((Invoke-SdkGit @('cat-file', '-e', "${branchRef}:$package")).ExitCode -ne 0 -and
+        (Invoke-SdkGit @('cat-file', '-e', "${pinRef}:$package")).ExitCode -ne 0) {
+        Stop-Unchecked "package folder $package does not exist on $branchName nor in $pinTag. A moved or renamed project would be invisible to this check."
     }
 }
 
 # ------------------------------------------------------------------- what the pin leaves out
 # One walk: each record is a TAB-led header line (no path starts with a tab) followed by the paths
 # the commit touched among the ones asked for.
-$log = Invoke-SdkGit (@('log', '--no-merges', '--reverse', '--name-only', '--format=%x09%H%x09%h%x09%s', "$pinRef..$branchRef", '--') + $packages + $rootBuildFiles)
+$log = Invoke-SdkGit (@('log', '--no-merges', '--reverse', '--name-only', '--format=%x09%H%x09%h%x09%s', "$pinRef..$branchRef", '--') + $packageList + $rootBuildFiles)
 if ($log.ExitCode -ne 0) { Stop-Unchecked "git log failed:`n$($log.Lines -join "`n")" }
 $records = [System.Collections.Generic.List[object]]::new()
 foreach ($line in $log.Lines) {
@@ -209,7 +230,7 @@ foreach ($line in $log.Lines) {
     }
 }
 $missing = @(foreach ($record in $records) {
-    $inPackage = @($record.Paths | Where-Object { $path = $_; $packages | Where-Object { $path -eq $_ -or $path.StartsWith("$_/") } }).Count -gt 0
+    $inPackage = @($record.Paths | Where-Object { $path = $_; $packageList | Where-Object { $path -eq $_ -or $path.StartsWith("$_/") } }).Count -gt 0
     $rootFiles = @($record.Paths | Where-Object { $_ -in $rootBuildFiles })
     if ($inPackage -or ($rootFiles.Count -gt 0 -and (Test-ShipsRootBuildChange $record.Hash $rootFiles))) { $record }
 })

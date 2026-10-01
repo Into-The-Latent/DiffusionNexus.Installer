@@ -25,7 +25,8 @@ public sealed record BuildInfoDocument(
     [property: JsonPropertyName("sdk")] string Sdk,
     [property: JsonPropertyName("catalogSchema")] int CatalogSchema,
     [property: JsonPropertyName("catalogSeed")] BuildInfoCatalogSeed CatalogSeed,
-    [property: JsonPropertyName("builtAt")] DateTimeOffset? BuiltAt);
+    [property: JsonPropertyName("builtAt")] DateTimeOffset? BuiltAt,
+    [property: JsonPropertyName("sdkPackages")] IReadOnlyList<string> SdkPackages);
 
 public static class BuildInfo
 {
@@ -56,7 +57,9 @@ public static class BuildInfo
     /// that promotion would trust.</param>
     /// <param name="embeddedArchive">The embedded catalog.zip. Its bytes must hash to the manifest's sha256,
     /// so the answer states what this binary carries, not what its manifest claims.</param>
-    public static BuildInfoDocument Create(string? assemblyLocation, Func<Stream?> embeddedManifest, Func<Stream?> embeddedArchive)
+    /// <param name="sdkFolder">Where the SDK assemblies are: the folder the Catalog assembly loaded from,
+    /// normally (resources/bin in the packaged app).</param>
+    public static BuildInfoDocument Create(string? assemblyLocation, Func<Stream?> embeddedManifest, Func<Stream?> embeddedArchive, string? sdkFolder = null)
     {
         // The Catalog assembly is the one whose version the release gates judge: the pin check
         // reads the same version from the csproj, and the schema constant lives here.
@@ -67,7 +70,21 @@ public static class BuildInfo
         DateTimeOffset? builtAt = !string.IsNullOrEmpty(assemblyLocation) && File.Exists(assemblyLocation)
             ? new DateTimeOffset(File.GetLastWriteTimeUtc(assemblyLocation), TimeSpan.Zero)
             : null;
-        return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, ReadSeed(embeddedManifest, embeddedArchive), builtAt);
+        return new BuildInfoDocument(AppVersion.Display, sdk, CatalogSchema.Supported, ReadSeed(embeddedManifest, embeddedArchive), builtAt,
+            ReadSdkPackages(sdkFolder ?? Path.GetDirectoryName(catalogAssembly.Location)));
+    }
+
+    // The SDK packages this build ships, by the assemblies beside it. Promote-Release judges the SDK
+    // commits in exactly these, so a promotion run from a checkout that pins another set cannot narrow it.
+    private static IReadOnlyList<string> ReadSdkPackages(string? folder)
+    {
+        var packages = string.IsNullOrEmpty(folder) || !Directory.Exists(folder)
+            ? []
+            : Directory.GetFiles(folder, "DiffusionNexus.Installer.SDK.*.dll")
+                .Select(path => Path.GetFileNameWithoutExtension(path)).Order(StringComparer.Ordinal).ToList();
+        if (packages.Count == 0)
+            throw new InvalidOperationException($"There is no DiffusionNexus.Installer.SDK.* assembly in '{folder}': nothing says which SDK packages this build ships, so it cannot be checked and must not be released.");
+        return packages;
     }
 
     private static BuildInfoCatalogSeed ReadSeed(Func<Stream?> embeddedManifest, Func<Stream?> embeddedArchive)

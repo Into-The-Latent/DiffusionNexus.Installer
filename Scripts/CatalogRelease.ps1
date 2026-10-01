@@ -86,15 +86,73 @@ function Read-BuildInfoSeed([string]$Text, [string]$What) {
     } finally { $doc.Dispose() }
 }
 
+# What an SDK package name looks like, for the build-info reader below and Test-SdkPin -Packages alike:
+# a name one accepts and the other refuses would turn a promotion into an unoverridable "not checked".
+$SdkPackageNamePattern = '^DiffusionNexus\.Installer\.SDK\.[A-Za-z0-9.]+$'
+
+# The SDK packages a build-info.json lists (sdkPackages): the assemblies the build ships, which
+# Promote-Release hands Test-SdkPin -Packages. Throws naming $What when there is no such list.
+function Read-BuildInfoSdkPackages([string]$Text, [string]$What) {
+    $doc = [System.Text.Json.JsonDocument]::Parse($Text.TrimStart([char]0xFEFF))
+    try {
+        $names = @()
+        if ($doc.RootElement.ValueKind -eq 'Object') {
+            foreach ($property in $doc.RootElement.EnumerateObject()) {
+                if ($property.Name -eq 'sdkPackages' -and $property.Value.ValueKind -eq 'Array') {
+                    $names = @($property.Value.EnumerateArray() | ForEach-Object { $_.ToString() })
+                }
+            }
+        }
+    } finally { $doc.Dispose() }
+    if ($names.Count -eq 0) { throw "$What lists no sdkPackages." }
+    foreach ($name in $names) {
+        if ($name -notmatch $SdkPackageNamePattern) { throw "'$name' in the sdkPackages of $What is no DiffusionNexus.Installer.SDK.* package." }
+    }
+    $names
+}
+
+# How the SDK packages a build ships differ from the ones the projects pin, one line per direction;
+# empty = the same set. Step 0c walks the pinned ones and promotion the shipped ones, so a difference
+# either way would have the two gates judge one build differently.
+function Get-SdkPackageMismatch([string[]]$Pinned, [string[]]$Shipped) {
+    $notShipped = @($Pinned | Where-Object { $_ -notin $Shipped })
+    $notPinned = @($Shipped | Where-Object { $_ -notin $Pinned })
+    if ($notShipped.Count -gt 0) { "pinned but not shipped: $($notShipped -join ', ')" }
+    if ($notPinned.Count -gt 0) { "shipped but not pinned (Step 0c never checked it): $($notPinned -join ', ')" }
+}
+
+# A native command's answer: its exit code, its stdout lines (the answer, the only data) and its stderr
+# lines (for a message: git and gh write warnings there and still exit 0). Under 2>&1 stderr comes back
+# as ErrorRecords, which is how the two are told apart. The block runs in a child scope of this
+# function, so it sees its caller's variables except any named like the three locals here
+# ($NativeCommand, $nativeLines, $nativeExit), which hide them.
+function Invoke-Native([scriptblock]$NativeCommand) {
+    $nativeLines = @(& $NativeCommand 2>&1)
+    $nativeExit = $LASTEXITCODE
+    [pscustomobject]@{
+        ExitCode = $nativeExit
+        Out      = @($nativeLines | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+        Err      = @($nativeLines | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    }
+}
+
+# The catalog releases page New-Release.ps1 and Promote-Release.ps1 judge against: the one given, else
+# the real one. Never DIFFUSIONNEXUS_CATALOG_RELEASES (the standalone seed scripts honour it for their
+# tests), so a value left in the environment cannot steer a release or a promotion. Another page is
+# announced, naming the step that reads it.
+function Resolve-GateCatalogReleases([string]$Given, [string]$Step) {
+    $base = if ($Given) { $Given.TrimEnd('/') } else { $DefaultCatalogReleases }
+    if ($base -ne $DefaultCatalogReleases) { Write-Warning "$Step reads $base, not the real catalog releases (-CatalogReleases)." }
+    $base
+}
+
 # The packaged app's --build-info answer: its stdout, the JSON document. A refusing build writes its
 # reason to stderr and exits 1, so the throw carries stderr - the console is not the only log.
 function Get-BuildInfoText([string]$EntryPoint) {
-    $lines = @(& $EntryPoint --build-info 2>&1)
-    $exit = $LASTEXITCODE
-    $answer = @($lines | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n"
-    if ($exit -ne 0) {
-        $reason = @($lines | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n"
-        throw "The packaged app did not answer --build-info (exit $exit):`n$(@($reason, $answer) -ne '' -join "`n")"
+    $run = Invoke-Native { & $EntryPoint --build-info }
+    $answer = $run.Out -join "`n"
+    if ($run.ExitCode -ne 0) {
+        throw "The packaged app did not answer --build-info (exit $($run.ExitCode)):`n$(@(($run.Err -join "`n"), $answer) -ne '' -join "`n")"
     }
     $answer
 }
