@@ -137,6 +137,7 @@ function Test-ShipsRootBuildChange([string]$Hash, [string[]]$Files) {
 }
 
 if (-not $RepoRoot) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
+. (Join-Path $PSScriptRoot 'CatalogRelease.ps1')   # $SdkPackageNamePattern, shared with the build-info reader
 
 # ------------------------------------------------------------------------------------ the pin
 # -LiteralPath throughout: -Path reads [ ] in the repo path as a wildcard, and a checkout under such a
@@ -163,7 +164,7 @@ if ($PSBoundParameters.ContainsKey('Packages')) {
     $packageList = @($Packages -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique)
     if ($packageList.Count -eq 0) { Stop-Unchecked "-Packages names no package (got '$Packages')." }
     foreach ($package in $packageList) {
-        if ($package -notmatch '^DiffusionNexus\.Installer\.SDK\.[A-Za-z0-9.]+$') { Stop-Unchecked "'$package' is not a DiffusionNexus.Installer.SDK.* package (-Packages)." }
+        if ($package -notmatch $SdkPackageNamePattern) { Stop-Unchecked "'$package' is not a DiffusionNexus.Installer.SDK.* package (-Packages)." }
     }
 } else {
     $packageList = @($refs | Select-Object -ExpandProperty Package -Unique)
@@ -206,8 +207,12 @@ if ((Invoke-SdkGit @('rev-parse', '--verify', '--quiet', "$pinRef^{commit}")).Ex
     Stop-Unchecked "the pinned version $Pin has no tag $pinTag in the SDK repo."
 }
 foreach ($package in $packageList) {
-    if ((Invoke-SdkGit @('cat-file', '-e', "${branchRef}:$package")).ExitCode -ne 0) {
-        Stop-Unchecked "package folder $package does not exist on $branchName. A moved or renamed project would be invisible to this check."
+    # A folder the pin ships that develop has since removed or renamed is walked like any other: the
+    # commit that removed it is one the pin lacks, so the answer is "behind", which -AllowOlderSdk can
+    # override - never "not checked", which nothing can. Only a folder in neither is unknown.
+    if ((Invoke-SdkGit @('cat-file', '-e', "${branchRef}:$package")).ExitCode -ne 0 -and
+        (Invoke-SdkGit @('cat-file', '-e', "${pinRef}:$package")).ExitCode -ne 0) {
+        Stop-Unchecked "package folder $package does not exist on $branchName nor in $pinTag. A moved or renamed project would be invisible to this check."
     }
 }
 

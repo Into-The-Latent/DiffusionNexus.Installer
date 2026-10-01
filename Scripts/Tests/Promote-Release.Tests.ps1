@@ -33,6 +33,8 @@ function global:gh {
     }
     if ($call -eq "api repos/$repo/releases/latest --jq .tag_name") {
         if ($f.LatestDown) { return Fail-Gh 'gh: Bad Gateway (HTTP 502)' }
+        # releases/latest lagging behind an edit for that many reads.
+        if ($f.Edited -and $f.LatestLag -gt 0) { $f.LatestLag--; return $f.LatestBeforeEdit }
         if ($null -eq $f.Latest) { '{"message":"Not Found","status":"404"}'; return Fail-Gh 'gh: Not Found (HTTP 404)' }
         return $f.Latest
     }
@@ -58,6 +60,7 @@ function global:gh {
             }
             'edit' {
                 $f.Edited = $true
+                $f.LatestBeforeEdit = $f.Latest
                 # How far the edit got before gh answered: none, the flag only, all of it, or (Silent) none
                 # although gh says it worked.
                 if ($f.EditGets -in 'Flag', 'All') { $release.Prerelease = $false }
@@ -168,7 +171,31 @@ Test-Case 'a repo with no full release yet (releases/latest is 404) is promoted:
 Test-Case 'un-marked but not latest (a half-done promotion, a hand edit): the gates run and it is made latest' {
     $f = New-PromoteFixture
     $global:Fake.Releases['v3.1.0'].Prerelease = $false
-    Assert-Promoted (Invoke-Promote $f) '*is no longer a pre-release but is not GitHub''s latest release (that is v3.0.10)*includes everything*Promoted v3.1.0*'
+    $r = Invoke-Promote $f
+    Assert-Promoted $r '*is no longer a pre-release but is not GitHub''s latest release (that is v3.0.10)*includes everything*Promoted v3.1.0*'
+    Assert-Equal ([regex]::Matches($r.Text, 'is no longer a pre-release but').Count) 1 'times the state is announced'
+}
+
+Test-Case 'un-marked but not latest, and a gate refuses: the refusal says it stays un-marked, not "still a pre-release"' {
+    $f = New-PromoteFixture
+    $global:Fake.Releases['v3.1.0'].Prerelease = $false
+    Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: landed while in Preview'
+    $r = Invoke-Promote $f
+    Assert-Refused $r '*NOT promoted*Nothing was changed: v3.1.0 stays un-marked but not GitHub''s latest release*'
+    if ($r.Text.Contains('still a pre-release')) { throw "the refusal calls an un-marked release a pre-release. Output:`n$($r.Text)" }
+}
+
+Test-Case 'releases/latest lagging behind a successful edit is waited for, not reported as a failure' {
+    $f = New-PromoteFixture
+    $global:Fake.LatestLag = 2
+    Assert-Promoted (Invoke-Promote $f)
+}
+
+Test-Case 'vX promoted by someone else while the checks ran: nothing left to do, said as such, no edit' {
+    $f = New-PromoteFixture
+    $global:Fake.OnSecondView = { $global:Fake.Latest = 'v3.1.0'; $global:Fake.Releases['v3.1.0'].Prerelease = $false }
+    $r = Invoke-Promote $f
+    Assert-NothingToDo $r '*includes everything*While the checks ran, v3.1.0 became GitHub''s latest Stable release: nothing left to promote*'
 }
 
 Test-Case '-AllowOlderSdk and -AllowOlderCatalog promote with a warning' {
@@ -333,12 +360,17 @@ Test-Case 'a leftover DIFFUSIONNEXUS_CATALOG_RELEASES does not steer the seed ch
 }
 
 # ------------------------------------------------------------------------------- the edit
+Test-Case 'an edit gh calls failed that GitHub shows as done is a promotion, with gh''s error as a warning' {
+    $f = New-PromoteFixture
+    $global:Fake.EditGets = 'All'
+    Assert-Promoted (Invoke-Promote $f) '*gh release edit v3.1.0 failed (gh exit 1)*HTTP 502*GitHub shows v3.1.0 as Stable and the latest release all the same*Promoted v3.1.0 to Stable*'
+}
+
 Test-Case 'a failed edit reports what GitHub shows afterwards, read back, never a guess' {
     $f = New-PromoteFixture
     $cases = [ordered]@{
         'None'    = '*gh release edit v3.1.0 failed*HTTP 502*v3.1.0 is still a pre-release*'
         'Flag'    = '*gh release edit v3.1.0 failed*v3.1.0 is no longer a pre-release, but GitHub''s latest release is v3.0.10*Re-run this script*'
-        'All'     = '*gh release edit v3.1.0 failed*GitHub shows v3.1.0 as Stable and the latest release all the same*'
     }
     foreach ($gets in $cases.Keys) {
         $global:Fake.Releases['v3.1.0'].Prerelease = $true; $global:Fake.Latest = 'v3.0.10'

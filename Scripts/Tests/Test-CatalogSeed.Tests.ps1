@@ -232,6 +232,15 @@ Test-Case 'build-info''s sdkPackages: the names as listed; missing, empty or not
     }
 }
 
+Test-Case 'Step 1c: the shipped SDK packages are exactly the pinned ones, both ways, so release and promotion judge one set' {
+    . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
+    $pinned = @('DiffusionNexus.Installer.SDK.Models', 'DiffusionNexus.Installer.SDK.Catalog')
+    Assert-Equal @(Get-SdkPackageMismatch $pinned @('DiffusionNexus.Installer.SDK.Catalog', 'DiffusionNexus.Installer.SDK.Models')).Count 0 'differences for the same set in another order'
+    Assert-Equal (@(Get-SdkPackageMismatch $pinned @('DiffusionNexus.Installer.SDK.Models')) -join ' | ') 'pinned but not shipped: DiffusionNexus.Installer.SDK.Catalog' 'a pinned package missing'
+    # A package that came in only transitively: Step 0c never walked it, promotion would.
+    Assert-Equal (@(Get-SdkPackageMismatch $pinned ($pinned + 'DiffusionNexus.Installer.SDK.Abstractions')) -join ' | ') 'shipped but not pinned (Step 0c never checked it): DiffusionNexus.Installer.SDK.Abstractions' 'an unpinned package shipped'
+}
+
 Test-Case 'a manifest is read as the SDK reads it: trailing commas and comments pass, non-JSON and non-objects are refused clearly' {
     . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
     $c = 'a' * 40; $sha = 'b' * 64

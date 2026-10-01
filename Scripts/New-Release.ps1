@@ -233,11 +233,11 @@ try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
 if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
-# Promote-Release judges the SDK commits in exactly the packages this list names, so every package the
-# projects pin has to be on it: one missing would never be walked.
+# Step 0c walked the pinned SDK packages; Promote-Release walks the ones this list names. They must be
+# one set: a package that comes in only transitively would pass here and be refused at promotion.
 $sdkPackages = Read-BuildInfoSdkPackages $buildInfoText "the packaged app's --build-info answer"
-$unlisted = @($sdkRefs | ForEach-Object Include | Where-Object { $_ -notin $sdkPackages })
-if ($unlisted.Count -gt 0) { throw "The packaged app does not list the pinned SDK package(s) $($unlisted -join ', ') among its sdkPackages ($($sdkPackages -join ', ')). This build does not contain what was checked." }
+$packageMismatch = @(Get-SdkPackageMismatch @($sdkRefs | ForEach-Object Include) $sdkPackages)
+if ($packageMismatch.Count -gt 0) { throw "The SDK packages the packaged app ships are not the ones the projects pin:`n  $($packageMismatch -join "`n  ")`nPin every shipped SDK package in the Electron project. This build does not contain what was checked." }
 # The seed from the text, not from $buildInfo: ConvertFrom-Json turns generatedAt into a local date.
 $packagedSeed = Read-BuildInfoSeed $buildInfoText "the packaged app's --build-info answer"
 $seedDifferences = @(Compare-CatalogSeed $packagedSeed $seed)

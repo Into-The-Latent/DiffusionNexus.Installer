@@ -243,7 +243,15 @@ scripts' own `gh` calls use the token.
 5. Step 2 again (the gates take a while; another promotion may have landed), then
    `gh release edit vX --prerelease=false --latest` under the resolved token, then a read-back. The
    message says what GitHub shows afterwards: still a pre-release, un-marked but not latest
-   (re-run to finish), or promoted; a success gh reports that GitHub does not show is a failure.
+   (re-run to finish), or promoted. What GitHub shows decides the outcome, not gh's exit code: a
+   success GitHub does not show (after a few reads a second apart, as `releases/latest` can trail
+   the edit) is a failure, and a gh failure GitHub shows as done is a promotion with a warning.
+   A refusal in step 4 says what the release stays as: a pre-release, or un-marked but not latest.
+
+Since promotion walks the packages the build ships, `Test-SdkPin.ps1` treats a package folder the
+pin has but SDK `develop` removed or renamed as behind (the removing commit is listed, exit 3),
+not as unchecked; and Step 1c requires the shipped and the pinned SDK packages to be one set, both
+ways, so release and promotion judge the same packages.
 
 Promotion never rebuilds: Stable gets exactly the binaries testers ran. The README, the
 `New-Release.ps1` help and its final hint point at this script instead of the hand-typed command.

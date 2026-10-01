@@ -228,6 +228,17 @@ Test-Case '-Packages that name no SDK package, or a folder SDK develop lacks, ar
     Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', 'DiffusionNexus.Installer.SDK.Gone')) 2 -Contains 'package folder DiffusionNexus.Installer.SDK.Gone does not exist'
 }
 
+Test-Case 'a package the pin ships that develop has since removed is "behind", listing the removal - never "not checked"' {
+    # Promotion walks the packages a shipped build lists. One that SDK develop later folded away must not
+    # make that build unpromotable for good (exit 2 has no override): the removal is a commit the pin lacks.
+    $f = New-SdkFixture
+    Invoke-FixtureGit $f.Author @('rm', '-r', '--quiet', 'DiffusionNexus.Installer.SDK.Services')
+    Invoke-FixtureGit $f.Author @('commit', '--quiet', '-m', 'refactor: fold Services into Models')
+    Invoke-FixtureGit $f.Author @('push', '--quiet', 'origin', 'develop')
+    Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.0.0-preview.1', '-Packages', 'DiffusionNexus.Installer.SDK.Models,DiffusionNexus.Installer.SDK.Services')) 3 -Contains 'refactor: fold Services into Models'
+    Assert-Result (Invoke-SdkPinCheck $f) 3 -Contains 'refactor: fold Services into Models'
+}
+
 Test-Case '-Pin with no tag is "not checked"' {
     $f = New-SdkFixture
     Assert-Result (Invoke-SdkPinCheck $f -ExtraArgs @('-Pin', '2.5.0')) 2 -Contains 'the pinned version 2.5.0 has no tag v2.5.0'

@@ -90,15 +90,21 @@ function Get-ReleaseFacts {
     [pscustomobject]@{ Release = $release; LatestTag = $latestTag }
 }
 
-# What promoting vX means, given those facts: 'promote', or 'done' (nothing to do; says why). Throws
-# when it must not happen.
+# What promoting vX means, given those facts. Prints nothing, so each step words it for itself:
+#   Promote  $true, or $false when there is nothing to do
+#   Reason   why there is nothing to do ("vX is ..."), when Promote is $false
+#   Unmarked vX is no pre-release any more but not GitHub's latest release (a half-done promotion, a
+#            hand edit): promoting finishes it, and a refusal must not call it a pre-release
+#   Latest   the latest tag, for messages
+# Throws when the promotion must not happen.
 function Get-PromotionVerdict($Facts) {
     $release = $Facts.Release
     $latestTag = $Facts.LatestTag
+    $verdict = [pscustomobject]@{ Promote = $false; Reason = $null; Unmarked = $false; Latest = $latestTag }
     if ($release.isDraft) { throw "$tag is a draft, not a published Preview release: testers never ran it." }
     if ($latestTag -eq $tag) {
-        Write-Host "$tag is already GitHub's latest Stable release: nothing to promote." -ForegroundColor Green
-        return 'done'
+        $verdict.Reason = "$tag is already GitHub's latest Stable release"
+        return $verdict
     }
     if ($null -ne $latestTag) {
         # A guard against moving Stable backwards compares, or refuses: a tag it cannot read is no "go".
@@ -108,15 +114,13 @@ function Get-PromotionVerdict($Facts) {
         }
         if ($latestVersion -gt [version]$Version) {
             if (-not $release.isPrerelease) {
-                Write-Host "$tag is an older Stable release; $latestTag is the latest: nothing to promote." -ForegroundColor Green
-                return 'done'
+                $verdict.Reason = "$tag is an older Stable release; $latestTag is the latest"
+                return $verdict
             }
             throw "$latestTag is already Stable and newer than $tag. Promoting $tag would make GitHub's latest release go backwards."
         }
     }
-    if (-not $release.isPrerelease) {
-        Write-Warning "$tag is no longer a pre-release but is not GitHub's latest release ($(if ($latestTag) { "that is $latestTag" } else { 'there is none' })), so Stable installs are not offered it. Promoting it again makes it the latest."
-    }
+    $verdict.Unmarked = -not $release.isPrerelease
     $missing = @(foreach ($name in $requiredAssets) {
         $asset = @($release.assets | Where-Object name -eq $name) | Select-Object -First 1
         if (-not $asset) { "$name (missing)" }
@@ -125,7 +129,20 @@ function Get-PromotionVerdict($Facts) {
     if ($missing.Count -gt 0) {
         throw "$tag does not carry every release asset:`n  $($missing -join "`n  ")`nAs the latest release it would send every Stable install to a file that is not there. Cut a new Preview with New-Release.ps1 -Prerelease (a release made before build-info.json existed has none either)."
     }
-    'promote'
+    $verdict.Promote = $true
+    $verdict
+}
+
+# After a successful edit releases/latest may trail it for a moment: read until GitHub shows vX as
+# Stable and latest, a few times a second apart, before calling the edit not done. $null = unreadable.
+function Read-AfterEdit([bool]$EditSucceeded) {
+    $tries = if ($EditSucceeded) { 5 } else { 1 }
+    for ($try = 1; $try -le $tries; $try++) {
+        if ($try -gt 1) { Start-Sleep -Seconds 1 }
+        try { $facts = Get-ReleaseFacts } catch { $facts = $null; continue }
+        if (-not $facts.Release.isPrerelease -and $facts.LatestTag -eq $tag) { break }
+    }
+    $facts
 }
 
 # ------------------------------------------------------------------------------- 1. the account
@@ -136,7 +153,16 @@ if (-not $releaseToken) { throw "$(Get-NoReleaseAccountMessage $ghRepo) Nothing 
 # ------------------------------------------------------------------------------- 2. the release
 Write-Host "Step 2: release $tag can become GitHub's latest release" -ForegroundColor Cyan
 try { $verdict = Get-PromotionVerdict (Get-ReleaseFacts) } catch { throw "$($_.Exception.Message)`nNothing was changed." }
-if ($verdict -eq 'done') { return }
+if (-not $verdict.Promote) {
+    Write-Host "$($verdict.Reason): nothing to promote." -ForegroundColor Green
+    return
+}
+if ($verdict.Unmarked) {
+    Write-Warning "$tag is no longer a pre-release but is not GitHub's latest release ($(if ($verdict.Latest) { "that is $($verdict.Latest)" } else { 'there is none' })), so Stable installs are not offered it. Promoting it again makes it the latest."
+}
+# What a refusal leaves behind, as Step 2 found it.
+$unchanged = if ($verdict.Unmarked) { "$tag stays un-marked but not GitHub's latest release: Stable installs are not offered it. Mark it a pre-release again, or promote a newer build." }
+             else { "$tag is still a pre-release." }
 
 # ------------------------------------------------------------------------- 3. what the build is
 Write-Host "Step 3: build-info.json of $tag" -ForegroundColor Cyan
@@ -190,24 +216,27 @@ switch ($LASTEXITCODE) {
 }
 
 if ($refusals.Count -gt 0) {
-    throw "$tag was NOT promoted:`n  $($refusals -join "`n  ")`nNothing was changed: $tag is still a pre-release."
+    throw "$tag was NOT promoted:`n  $($refusals -join "`n  ")`nNothing was changed: $unchanged"
 }
 
 # ------------------------------------------------------------------------------- 5. promote
 # The checks took a while: judge what GitHub says now, not what Step 2 read.
 Write-Host "Step 5: promoting $tag to Stable" -ForegroundColor Cyan
 try { $verdict = Get-PromotionVerdict (Get-ReleaseFacts) } catch { throw "While the checks ran, GitHub changed: $($_.Exception.Message)`nNothing was changed." }
-if ($verdict -eq 'done') { return }
+if (-not $verdict.Promote) {
+    Write-Host "While the checks ran, $($verdict.Reason -replace '^(\S+) is already', '$1 became'): nothing left to promote." -ForegroundColor Green
+    return
+}
 $edit = Invoke-ReleaseGh @('release', 'edit', $tag, '--repo', $ghRepo, '--prerelease=false', '--latest')
-# Read back either way, and say what the release is now, not what it probably is.
-try { $after = Get-ReleaseFacts } catch { $after = $null }
+# Read back either way, and say what the release is now, not what it probably is. What GitHub shows
+# decides the outcome, not gh's exit code.
+$after = Read-AfterEdit ($edit.ExitCode -eq 0)
 $state = if ($null -eq $after) { "Its state could not be read back: check it on GitHub, then re-run this script, which finishes a half-done promotion." }
          elseif ($after.Release.isPrerelease) { "$tag is still a pre-release." }
          elseif ($after.LatestTag -ne $tag) { "$tag is no longer a pre-release, but GitHub's latest release is $(if ($after.LatestTag) { $after.LatestTag } else { 'none' }), so Stable installs are not offered it. Re-run this script: it makes $tag the latest." }
          else { $null }
 if ($edit.ExitCode -ne 0) {
-    $outcome = if ($state) { $state } else { "GitHub shows $tag as Stable and the latest release all the same." }
-    throw "gh release edit $tag failed (gh exit $($edit.ExitCode)):`n$($edit.Err)`n$outcome"
-}
-if ($state) { throw "gh release edit $tag reported success, but: $state" }
+    if ($state) { throw "gh release edit $tag failed (gh exit $($edit.ExitCode)):`n$($edit.Err)`n$state" }
+    Write-Warning "gh release edit $tag failed (gh exit $($edit.ExitCode)): $($edit.Err) GitHub shows $tag as Stable and the latest release all the same."
+} elseif ($state) { throw "gh release edit $tag reported success, but: $state" }
 Write-Host "Promoted $tag to Stable: installs on Stable are offered it on their next update check." -ForegroundColor Green
