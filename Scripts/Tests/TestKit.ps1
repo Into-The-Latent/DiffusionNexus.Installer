@@ -109,12 +109,25 @@ function Invoke-SdkPinCheck($Fixture, [string]$SdkPath = $Fixture.Sdk, [string[]
 #   <Releases>\download\vN\{manifest.json,catalog.zip}   = the assets of release vN
 #   <Releases>\latest                                    = a text file naming the tag releases/latest
 #                                                          redirects to, as GitHub does (302)
-function Start-ReleaseServer([string]$Root) {
-    $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-    $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
-    $listener = [System.Net.HttpListener]::new()
-    $listener.Prefixes.Add("http://127.0.0.1:$port/")
-    $listener.Start()
+# -Port is the first port tried (0: probe a free one). Another process can take a probed port before
+# the listener binds it, on a busy runner or with test files running in parallel, so a bind that
+# fails moves to a newly probed port instead of failing the case.
+function Start-ReleaseServer([string]$Root, [int]$Port = 0) {
+    $listener = $null
+    for ($attempt = 1; -not $listener; $attempt++) {
+        if (-not $Port) {
+            $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $probe.Start(); $Port = $probe.LocalEndpoint.Port; $probe.Stop()
+        }
+        $candidate = [System.Net.HttpListener]::new()
+        $candidate.Prefixes.Add("http://127.0.0.1:$Port/")
+        try { $candidate.Start(); $listener = $candidate; $port = $Port }
+        catch [System.Net.HttpListenerException] {
+            $candidate.Close()
+            if ($attempt -ge 10) { throw "no free port for the fixture release server after $attempt attempts: $($_.Exception.Message)" }
+            $Port = 0
+        }
+    }
     # A runspace of its own, not Start-ThreadJob: thread jobs are throttled to five at a time, and
     # every server here blocks in GetContext for the whole run, so the sixth fixture would never
     # be served and every download from it would time out.

@@ -177,6 +177,26 @@ Test-Case '-Expect judges the values given and reads nothing on disk: no seed, n
     Assert-Result (Invoke-CatalogSeedCheck $f -ExtraArgs @('-Expect', "5 $c5 $sha")) 2 -Contains 'NOT checked', '-Expect takes five values'
 }
 
+Test-Case 'the fixture release server moves to another port when its port is taken before it binds' {
+    # Another process can take the probed port between the probe and the bind, on a busy runner.
+    $holder = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $holder.Start()
+    try {
+        $taken = $holder.LocalEndpoint.Port
+        $root = Join-Path ([IO.Path]::GetTempPath()) ("relsrv-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Join-Path $root 'releases') -Force | Out-Null
+        # A free port it is given is the port it takes: -Port is the first attempt.
+        $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $probe.Start(); $free = $probe.LocalEndpoint.Port; $probe.Stop()
+        Assert-Equal (Start-ReleaseServer $root -Port $free).Url "http://127.0.0.1:$free/releases" 'url on a free port'
+        $server = Start-ReleaseServer $root -Port $taken
+        Assert-Like $server.Url 'http://127.0.0.1:*/releases' 'url'
+        if ($server.Url -like "*:$taken/*") { throw "the server claims the taken port $taken" }
+        $status = try { (Invoke-WebRequest -Uri "$($server.Url)/download/v1/manifest.json" -SkipHttpErrorCheck -TimeoutSec 10).StatusCode } catch { $_.Exception.Message }
+        Assert-Equal $status 404 'a missing asset from the moved server'
+    } finally { $holder.Stop() }
+}
+
 Test-Case 'Step 1c reads build-info''s catalogSeed and names every field that differs, sha256 included' {
     . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
     $c = 'a' * 40; $sha = 'b' * 64; $other = 'c' * 64
