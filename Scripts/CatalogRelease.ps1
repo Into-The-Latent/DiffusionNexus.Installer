@@ -50,15 +50,24 @@ function New-CatalogSeed([string]$Version, [string]$Commit, [string]$Sha256, [st
     }
 }
 
-# The seed a manifest's text describes. generatedAt is read as the text it is: ConvertFrom-Json would
-# turn it into a local DateTime first.
+# The seed a manifest's text describes, parsed once and as leniently as the SDK's reader
+# (CatalogSchema.Json: trailing commas, comments). Every value is read as the text it is: ConvertFrom-Json
+# would turn generatedAt into a local DateTime first.
 function Read-CatalogManifest([string]$Text, [string]$What) {
-    try { $json = $Text | ConvertFrom-Json }
-    catch { throw "$What is not JSON ($($_.Exception.Message))" }
-    $doc = [System.Text.Json.JsonDocument]::Parse($Text.TrimStart([char]0xFEFF))
-    try { $packed = "$(@($doc.RootElement.EnumerateObject() | Where-Object Name -eq 'generatedAt' | ForEach-Object { $_.Value.ToString() })[0])" }
-    finally { $doc.Dispose() }
-    New-CatalogSeed "$($json.catalogVersion)" "$($json.commit)" "$($json.archive.sha256)" "$($json.channel)" $packed $What
+    $options = [System.Text.Json.JsonDocumentOptions]@{ AllowTrailingCommas = $true; CommentHandling = 'Skip' }
+    try { $doc = [System.Text.Json.JsonDocument]::Parse($Text.TrimStart([char]0xFEFF), $options) }
+    catch { throw "$What is not JSON ($($_.InnerException.Message ?? $_.Exception.Message))" }
+    try {
+        $fields = @{}
+        if ($doc.RootElement.ValueKind -eq 'Object') {
+            foreach ($property in $doc.RootElement.EnumerateObject()) {
+                if ($property.Name -eq 'archive' -and $property.Value.ValueKind -eq 'Object') {
+                    foreach ($field in $property.Value.EnumerateObject()) { if ($field.Name -eq 'sha256') { $fields['sha256'] = $field.Value.ToString() } }
+                } else { $fields[$property.Name] = $property.Value.ToString() }
+            }
+        }
+    } finally { $doc.Dispose() }
+    New-CatalogSeed $fields['catalogVersion'] $fields['commit'] $fields['sha256'] $fields['channel'] $fields['generatedAt'] $What
 }
 
 # The catalogSeed a build-info.json reports, as a seed (New-Release Step 1c, Promote-Release).

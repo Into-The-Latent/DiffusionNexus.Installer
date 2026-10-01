@@ -218,6 +218,17 @@ Test-Case 'Step 1c reads build-info''s catalogSeed and names every field that di
     try { & $missing; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message '*build-info.json reports no catalogSeed*' 'no seed' }
 }
 
+Test-Case 'a manifest is read as the SDK reads it: trailing commas and comments pass, non-JSON and non-objects are refused clearly' {
+    . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
+    $c = 'a' * 40; $sha = 'b' * 64
+    $lenient = "{ // packed by dn-catalog`n ""catalogVersion"": 5, ""channel"": ""Stable"", ""commit"": ""$c"", ""generatedAt"": ""2026-09-25T14:15:43.8266732+00:00"",`n ""archive"": { ""sha256"": ""$sha"", }, }"
+    $seed = Read-CatalogManifest $lenient 'm'
+    Assert-Equal "$($seed.Version) $($seed.Commit) $($seed.Sha256) $($seed.Channel)" "5 $c $sha Stable" 'seed'
+    try { Read-CatalogManifest '{ "catalogVersion": 5' 'm'; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message 'm is not JSON (*' 'truncated' }
+    try { Read-CatalogManifest 'null' 'm'; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message 'm has no catalogVersion*' 'null' }
+    try { Read-CatalogManifest '[1]' 'm'; throw 'expected a refusal' } catch { Assert-Like $_.Exception.Message 'm has no catalogVersion*' 'an array' }
+}
+
 Test-Case 'Step 1c keeps the packaged app''s refusal reason from stderr, and only stdout as the answer' {
     . (Join-Path $PSScriptRoot '..' 'CatalogRelease.ps1')
     $dir = Join-Path ([IO.Path]::GetTempPath()) ("buildinfo " + [guid]::NewGuid().ToString('N').Substring(0, 8))
