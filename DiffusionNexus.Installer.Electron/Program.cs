@@ -14,10 +14,11 @@ using BlazorApp = DiffusionNexus.Installer.Electron.Components.App;
 
 // The release script asks the PACKAGED app what it contains and ships the answer as
 // build-info.json. Before any host, logger or window exists: this must print one JSON object and
-// nothing else, and exit 0.
+// nothing else, and exit 0 - or, for a build that must not be released, its reason on stderr and
+// exit 1.
 if (BuildInfo.Handles(args))
 {
-    Console.Out.Write(BuildInfo.ToJson());
+    Environment.ExitCode = BuildInfo.Run(Console.Out, Console.Error, BuildInfo.Create);
     return;
 }
 

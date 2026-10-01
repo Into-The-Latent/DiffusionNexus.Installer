@@ -93,7 +93,36 @@ public class BuildInfoTests
 
         noZip.Should().Throw<InvalidOperationException>().WithMessage("*catalog.zip*missing*");
         otherZip.Should().Throw<InvalidOperationException>().WithMessage("*catalog.zip*sha256*manifest says*");
-        BuildInfo.Create(location, EmbeddedManifest, EmbeddedArchive).CatalogSeed.Sha256.Should().Be(BuildInfo.Create().CatalogSeed.Sha256);
+        BuildInfo.Create(location, EmbeddedManifest, EmbeddedArchive).CatalogSeed.Sha256.Should().MatchRegex("^[0-9a-f]{64}$");
+    }
+
+    [Fact]
+    public void A_refused_answer_is_a_message_on_stderr_and_exit_1_never_a_crash()
+    {
+        // An unhandled exception would abort the process with a stack trace, a crash dump and, on some
+        // machines, a "stopped working" dialog that leaves the release script waiting.
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var exit = BuildInfo.Run(output, error, () => throw new InvalidOperationException("The embedded catalog.zip has sha256 x; its manifest says y."));
+
+        exit.Should().Be(1);
+        output.ToString().Should().BeEmpty("a refused build prints no document");
+        error.ToString().Should().Contain("its manifest says y").And.NotContain(" at ", "a message, not a stack trace");
+    }
+
+    [Fact]
+    public void An_answer_is_the_json_on_stdout_and_exit_0()
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var exit = BuildInfo.Run(output, error, BuildInfo.Create);
+
+        exit.Should().Be(0);
+        error.ToString().Should().BeEmpty();
+        using var doc = JsonDocument.Parse(output.ToString());
+        doc.RootElement.GetProperty("app").GetString().Should().Be(AppVersion.Display);
     }
 
     private static Stream? EmbeddedManifest() => typeof(BuildInfo).Assembly.GetManifestResourceStream("manifest.json");
@@ -106,6 +135,7 @@ public class BuildInfoTests
         // New-Release.ps1 reads .app, .sdk and .catalogSchema from this text with ConvertFrom-Json,
         // and the catalog repo's gate reads .catalogSchema. The names are a contract.
         var text = BuildInfo.ToJson();
+        var expected = BuildInfo.Create();   // once: every Create hashes the embedded archive
 
         using var doc = JsonDocument.Parse(text);
         var root = doc.RootElement;
@@ -114,12 +144,12 @@ public class BuildInfoTests
         root.GetProperty("sdk").GetString().Should().NotContain("+");
         root.GetProperty("catalogSchema").GetInt32().Should().Be(CatalogSchema.Supported);
         var seed = root.GetProperty("catalogSeed");
-        seed.GetProperty("version").GetInt32().Should().Be(BuildInfo.Create().CatalogSeed.Version);
-        seed.GetProperty("commit").GetString().Should().Be(BuildInfo.Create().CatalogSeed.Commit);
-        seed.GetProperty("sha256").GetString().Should().Be(BuildInfo.Create().CatalogSeed.Sha256);
+        seed.GetProperty("version").GetInt32().Should().Be(expected.CatalogSeed.Version);
+        seed.GetProperty("commit").GetString().Should().Be(expected.CatalogSeed.Commit);
+        seed.GetProperty("sha256").GetString().Should().Be(expected.CatalogSeed.Sha256);
         seed.GetProperty("channel").GetString().Should().Be("Stable", "the channel is written as its name, never its enum number");
-        seed.GetProperty("generatedAt").GetDateTimeOffset().Should().Be(BuildInfo.Create().CatalogSeed.GeneratedAt);
-        root.GetProperty("builtAt").GetDateTimeOffset().Should().Be(BuildInfo.Create().BuiltAt);
+        seed.GetProperty("generatedAt").GetDateTimeOffset().Should().Be(expected.CatalogSeed.GeneratedAt);
+        root.GetProperty("builtAt").GetDateTimeOffset().Should().Be(expected.BuiltAt);
         text.Should().NotContain("\"App\"", "property names are camelCase");
     }
 }

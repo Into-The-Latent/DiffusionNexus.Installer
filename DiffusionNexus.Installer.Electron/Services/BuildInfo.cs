@@ -91,4 +91,23 @@ public static class BuildInfo
     }
 
     public static string ToJson() => JsonSerializer.Serialize(Create(), Json);
+
+    /// <summary>The `--build-info` run: the document on <paramref name="output"/> and exit 0, or, for a
+    /// build that must not be released, its reason on <paramref name="error"/> and exit 1. Never an
+    /// unhandled exception: that aborts with a stack trace, a crash dump and on some machines a
+    /// "stopped working" dialog that leaves the release script waiting.</summary>
+    public static int Run(TextWriter output, TextWriter error, Func<BuildInfoDocument> create)
+    {
+        try
+        {
+            var text = JsonSerializer.Serialize(create(), Json);
+            output.Write(text);
+            return 0;
+        }
+        catch (InvalidOperationException e)
+        {
+            error.WriteLine(e.Message);
+            return 1;
+        }
+    }
 }
