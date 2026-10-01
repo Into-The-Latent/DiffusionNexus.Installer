@@ -71,6 +71,10 @@ the catalog reaches those lists correctly.
    packed from — then regenerate the embedded seed with `--version 2`. Note that this is needed not
    only to reach upgraders but to stop the fix being undone on the machines that *did* get it.
    Until then, both steps above are expected to "fail".
+
+   Since #38 the seed is no longer hand-made: `pwsh Scripts/Update-CatalogSeed.ps1` embeds the
+   latest stable release, and `New-Release.ps1` (Step 0d, `Scripts/Test-CatalogSeed.ps1`) refuses a
+   seed that is not that release, so a build cannot ship the drift described above.
 7. **Expect:** the type filter is the only filter on this screen. There is deliberately no software
    filter — the welcome screen already answered which software, so a second control for it would be
    a dead one.

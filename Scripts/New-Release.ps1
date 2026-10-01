@@ -43,7 +43,8 @@
 
     To promote a Preview build to everyone, un-mark it - no rebuild, same binaries. Today that is
     the gh command below; Promote-Release.ps1 (issue #30) will check the SDK pin and the catalog
-    seed against what is current first.
+    seed against what is current first. Because promotion never rebuilds, a Preview build embeds
+    the stable catalog seed too (Step 0d), never a preview one.
         gh release edit v3.0.9 --repo Into-The-Latent/DiffusionNexus.Installer --prerelease=false --latest
 
 .PARAMETER AllowOlderSdk
@@ -51,6 +52,21 @@
     version does not contain - a deliberate hold-back, such as a Stable hotfix while newer SDK work
     is meant for Preview only. The commits left out are still listed. It does not override a check
     that could not run (no SDK checkout, a failed fetch, pins that disagree).
+
+.PARAMETER AllowOlderCatalog
+    Release even though Scripts/Test-CatalogSeed.ps1 found the embedded catalog seed to be an older
+    stable release rather than the latest - a deliberate hold-back of the seed, after
+    Update-CatalogSeed.ps1 -Version N. What differs is still listed, and the release notes name the
+    seed that ships. It does not override a seed that is no stable release at all (ahead of stable,
+    another catalog under stable's number, a Preview manifest; exit 4), nor a check that could not
+    run (no download, an uncommitted or corrupt seed; exit 2).
+
+.PARAMETER CatalogReleases
+    The catalog releases page Step 0d judges the seed against. Default: the real one,
+    https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases. For the script tests,
+    which serve a fixture. Only this parameter counts: DIFFUSIONNEXUS_CATALOG_RELEASES, which the
+    standalone seed scripts honour, is ignored here, so a value left in the environment cannot
+    steer a release. Any other value is announced before the check.
 
 .EXAMPLE
     .\Scripts\New-Release.ps1 -Version 3.0.5 -Notes "Fixes the shortcut launch."
@@ -64,7 +80,9 @@ param(
     [string]$Notes = "",
     [switch]$SkipUpload,
     [switch]$Prerelease,
-    [switch]$AllowOlderSdk
+    [switch]$AllowOlderSdk,
+    [switch]$AllowOlderCatalog,
+    [string]$CatalogReleases
 )
 
 $ErrorActionPreference = 'Stop'
@@ -124,6 +142,34 @@ switch ($LASTEXITCODE) {
     }
     default { throw "The SDK pin could not be checked (see above). Nothing was built or changed." }
 }
+
+# Step 0d. The embedded catalog seed must be the latest stable catalog: a seed ahead of it ships
+# content the stable channel does not serve, one behind it ships stale content to every fresh
+# machine, and until now only a manual commit before each release kept it current. A Preview build
+# embeds stable too: promotion never rebuilds. The fix is Scripts/Update-CatalogSeed.ps1 and a
+# commit; this script never writes the seed.
+Write-Host "Step 0d: the embedded catalog seed is the latest stable catalog" -ForegroundColor Cyan
+# The releases page is passed explicitly, so the check never falls back to
+# DIFFUSIONNEXUS_CATALOG_RELEASES: a value left in the environment must not steer a release.
+. (Join-Path $PSScriptRoot 'CatalogRelease.ps1')
+if (-not $CatalogReleases) { $CatalogReleases = $DefaultCatalogReleases }
+if ($CatalogReleases.TrimEnd('/') -ne $DefaultCatalogReleases) {
+    Write-Warning "Step 0d reads $CatalogReleases, not the real catalog releases (-CatalogReleases)."
+}
+pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-CatalogSeed.ps1') -RepoRoot $repoRoot -ReleaseBase $CatalogReleases
+switch ($LASTEXITCODE) {
+    0 { }
+    3 {
+        if (-not $AllowOlderCatalog) {
+            throw "The embedded catalog seed is not the latest stable catalog (listed above). Run pwsh Scripts/Update-CatalogSeed.ps1 and commit, or re-run with -AllowOlderCatalog to ship this seed on purpose. Nothing was built or changed."
+        }
+        Write-Warning "Releasing WITHOUT the latest stable catalog seed (-AllowOlderCatalog)."
+    }
+    4 { throw "The embedded catalog seed is not a stable catalog release -AllowOlderCatalog may ship (listed above). Run pwsh Scripts/Update-CatalogSeed.ps1 and commit. Nothing was built or changed." }
+    default { throw "The embedded catalog seed could not be checked (see above). Nothing was built or changed." }
+}
+# What Step 0d judged, for Step 1c: the packaged app must report exactly this seed.
+$seed = Read-CatalogManifest (Get-Content -LiteralPath (Join-Path $repoRoot $CatalogSeedFolder 'manifest.json') -Raw) 'the embedded seed manifest'
 
 Write-Host "Setting version to $Version" -ForegroundColor Cyan
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
@@ -185,18 +231,23 @@ if ($LASTEXITCODE -ne 0) { throw "THIRD-PARTY-NOTICES.txt is stale. Run pwsh Scr
 Write-Host "Step 1c: build-info.json from the packaged app" -ForegroundColor Cyan
 $entryPoint = Join-Path $publish 'bin\DiffusionNexus.Installer.Electron.exe'
 if (-not (Test-Path -LiteralPath $entryPoint)) { throw "Packaged entry point missing: $entryPoint" }
-$buildInfoText = (& $entryPoint --build-info | ForEach-Object { "$_" }) -join "`n"
-if ($LASTEXITCODE -ne 0) { throw "The packaged app did not answer --build-info (exit $LASTEXITCODE):`n$buildInfoText" }
+$buildInfoText = Get-BuildInfoText $entryPoint
 try { $buildInfo = $buildInfoText | ConvertFrom-Json }
 catch { throw "The packaged app's --build-info answer is not JSON:`n$buildInfoText" }
 if ($buildInfo.app -ne $Version) { throw "The packaged app says it is version '$($buildInfo.app)', not $Version." }
 if ($buildInfo.sdk -ne $sdkPin) { throw "The packaged app says it was built with SDK $($buildInfo.sdk); the projects pin $sdkPin. This build does not contain what was checked." }
+# The seed from the text, not from $buildInfo: ConvertFrom-Json turns generatedAt into a local date.
+$packagedSeed = Read-BuildInfoSeed $buildInfoText "the packaged app's --build-info answer"
+$seedDifferences = @(Compare-CatalogSeed $packagedSeed $seed)
+if ($seedDifferences.Count -gt 0) {
+    throw "The packaged app's catalog seed is not the one Step 0d checked (packaged vs checked):`n  $($seedDifferences -join "`n  ")`nThis build does not contain what was checked."
+}
 # builtAt is null only when the app cannot date its own assembly file (a single-file publish). The
 # shipped app is never that, and promotion reads this asset as fact, so a null here is a broken build.
 if (-not $buildInfo.builtAt) { throw "The packaged app reports no builtAt: it could not find its own assembly file to date. This build is not what the release script expects." }
 $buildInfoPath = Join-Path $publish 'build-info.json'
 Set-Content -LiteralPath $buildInfoPath -Value $buildInfoText -Encoding utf8 -NoNewline
-Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog schema $($buildInfo.catalogSchema)" -ForegroundColor Green
+Write-Host "  app $($buildInfo.app), SDK $($buildInfo.sdk), catalog schema $($buildInfo.catalogSchema), catalog seed v$($seed.Version) ($($seed.Short))" -ForegroundColor Green
 
 Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)" -ForegroundColor Cyan
 
@@ -246,8 +297,8 @@ foreach ($f in @($setup, "$setup.blockmap", (Join-Path $publish 'latest.yml'), $
 }
 # The notes end with what the build contains, generated from the same data as build-info.json.
 # Human lines only; nothing reads them back.
-$sdkLine = "Built with Installer SDK $($buildInfo.sdk)"
-$notesWithBuild = if ($Notes.Trim()) { "$($Notes.TrimEnd())`n`n$sdkLine" } else { $sdkLine }
+$buildLines = "Built with Installer SDK $($buildInfo.sdk)`nBundled catalog v$($seed.Version) ($($seed.Channel.ToLowerInvariant()))"
+$notesWithBuild = if ($Notes.Trim()) { "$($Notes.TrimEnd())`n`n$buildLines" } else { $buildLines }
 # latest.yml for both channels: electron-updater reads it for any tag without a suffix, even
 # with allowPrerelease set, so a Preview build needs no separately named channel file and a
 # promoted one is already complete.

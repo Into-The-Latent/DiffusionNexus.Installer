@@ -83,7 +83,7 @@ Everything under "Step 0" runs before `Directory.Build.props` is touched.
 | 0a | `GITHUB_PACKAGES_TOKEN` is set (moved up from after the version write) | — |
 | 0b | A signed-in `gh` account can write to the repo (`ReleaseAccount.ps1`, skipped with `-SkipUpload`) | — |
 | 0c | SDK pin is current (`Test-SdkPin.ps1`) | `-AllowOlderSdk`, exit 3 only |
-| 0d | Embedded catalog seed equals the latest stable catalog (`Test-CatalogSeed.ps1`) | `-AllowOlderCatalog`, exit 3 only |
+| 0d | Embedded catalog seed equals the latest stable catalog (`Test-CatalogSeed.ps1`) | `-AllowOlderCatalog`, exit 3 only (an older stable release) |
 | 1 | Write version, clear publish folder, `dotnet publish -p:UseLocalSDK=false` | — |
 | 1a | Packaged SDK DLLs are byte-identical to the pinned packages (exists) | — |
 | 1b | Third-party notices current (exists) | — |
@@ -122,11 +122,30 @@ installer build embeds stable too, because promotion never rebuilds and a promot
 not carry a preview seed to Stable users.
 
 - Downloads `manifest.json` from `https://github.com/Into-The-Latent/DiffusionNexus.Catalog/releases/latest/download/manifest.json`
-  (public, no token). Cannot download → exit 2.
-- `-Expect <version> <commit> <sha256>` compares a given seed instead of the working tree's (for
-  promotion).
-- Exit 3 when the seed differs, with the exact command to fix it:
-  `pwsh Scripts/Update-CatalogSeed.ps1` then commit. Exit 2 when the seed or the release cannot be
+  (public, no token). Cannot download → exit 2. The releases page is `-ReleaseBase`, else
+  `$env:DIFFUSIONNEXUS_CATALOG_RELEASES`, else that URL (the script tests serve a fixture there);
+  the URL read is printed with the answer. `Update-CatalogSeed.ps1` takes the same parameter.
+  `New-Release.ps1` (and `Promote-Release.ps1`) never rely on the environment variable: they pass
+  `-ReleaseBase` explicitly (their own `-CatalogReleases`, default the real page), so a value left
+  in a developer's environment cannot steer a release.
+  `Scripts/CatalogRelease.ps1` (dot-sourced by both scripts and by `New-Release.ps1`) holds the
+  seed folder, the download and the manifest reader.
+- `-Expect "<version> <commit> <sha256> <channel> <generatedAt>"` (one string, because `pwsh -File`
+  hands a script literal strings and cannot fill an array parameter) compares a given seed instead
+  of the working tree's (for promotion: the `catalogSeed` of `build-info.json`); nothing on disk is
+  read. A channel other than Stable is exit 4; `generatedAt` is compared as an instant. Both
+  paths validate through one `New-CatalogSeed` in `CatalogRelease.ps1`.
+- In the working tree the whole seed manifest must be the release's (parsed, so line endings do
+  not count): the SDK records the seed's channel and pack time as where the installed catalog came
+  from, so a Preview stamp or a hand-made `generatedAt` over the right archive is a wrong seed.
+- Exit 3 when the seed is an older stable release: behind the latest, and exactly the release of
+  its own number (`<releases>/download/v<N>/manifest.json`), with the exact command to fix it:
+  `pwsh Scripts/Update-CatalogSeed.ps1` then commit. Only exit 3 is overridable: the override is for
+  a deliberate hold-back, which `Update-CatalogSeed.ps1 -Version N` produces.
+- Exit 4 when the seed is no stable catalog release: ahead of the latest (content the stable channel
+  does not serve), another catalog under the latest's number, not the release of its own number,
+  or not a Stable manifest. Listed the same way; no flag ships it.
+- Exit 2 when the seed or a release cannot be
   read, when `git status --porcelain -- Assets/Catalog` is not empty (uncommitted seed files must
   never ship), or when the zip's hash does not match its manifest.
 
@@ -150,7 +169,8 @@ exits 0 before any host or window is created.
   "app": "3.0.11",
   "sdk": "2.0.0",
   "catalogSchema": 1,
-  "catalogSeed": { "version": 5, "commit": "51e1684cfa48d22344e82e7037e8e97018be72bd", "sha256": "e7d3…" },
+  "catalogSeed": { "version": 5, "commit": "51e1684cfa48d22344e82e7037e8e97018be72bd", "sha256": "e7d3…",
+                   "channel": "Stable", "generatedAt": "2026-09-25T14:15:43.8266732+00:00" },
   "builtAt": "2026-09-30T18:00:00Z"
 }
 ```
@@ -161,7 +181,10 @@ build that reports `null`, so readers of the uploaded asset may rely on a timest
 
 - `app`: `AppVersion`. `sdk`: the informational version of the packaged
   `DiffusionNexus.Installer.SDK.Catalog` assembly, with any `+sha` stripped. `catalogSchema`:
-  `CatalogSchema.Supported`. `catalogSeed`: read from the embedded `manifest.json`.
+  `CatalogSchema.Supported`. `catalogSeed`: read from the embedded `manifest.json` (channel by
+  name, `generatedAt` as in the manifest: the SDK records both from the seed), and `sha256` is
+  checked against the embedded `catalog.zip` bytes; no seed, or bytes that are not the manifest's,
+  gets no document and a non-zero exit.
 - Step 1c runs it against the **packaged** app in the publish folder, so the asset is what the
   binary says, not what the script assumed. The script then requires `sdk` = the csproj pin and
   `catalogSeed` = what step 0d confirmed, and refuses on any mismatch: that is a build that does
@@ -201,9 +224,10 @@ scripts' own `gh` calls use the token.
 3. Downloads `build-info.json` from that release. Missing (a release made before this design) →
    refused with "cut a new Preview".
 4. `Test-SdkPin.ps1 -Pin <sdk>` and `Test-CatalogSeed.ps1 -Expect <seed>`, judged against SDK
-   `develop` and the latest stable catalog **as of now**, not as of the build. Exit 3 on either
+   `develop` and the latest stable catalog **as of now**, not as of the build; `<seed>` is the five
+   `catalogSeed` values, read from the asset's text (`Read-BuildInfoSeed`). Exit 3 on either
    → refused with the list and "cut a new Preview", unless the matching `-AllowOlder*` flag is
-   given. Exit 2 → refused, no override.
+   given. Exit 2, and the seed gate's exit 4 (no stable release at all) → refused, no override.
 5. `gh release edit vX --prerelease=false --latest` under the resolved token. If that fails, the
    message says the release is still a pre-release.
 
@@ -310,7 +334,10 @@ Branches: `feature/release-gates-sdk`, `feature/release-gates-catalog`,
   `gh` function stands in for the CLI). #29's 15 cases, #30's 13 + 2 account cases and the 9 `ReleaseAccount` cases are
   reused as posted; `Test-CatalogSeed` and `Update-CatalogSeed` get their own cases (match, wrong
   version, wrong commit, wrong hash, zip disagrees with its manifest, uncommitted seed, download
-  fails → 2, `-Expect`). CI runs every `Scripts/Tests/*.Tests.ps1` and fails on any failed case.
+  fails → 2, `-Expect`). The seed cases serve a fixture "GitHub Releases" folder over a local
+  `HttpListener` in its own runspace (a 302 for `releases/latest`, as GitHub answers; a 404 for a
+  missing asset), so the download path under test is the real one and no case touches the network.
+  CI runs every `Scripts/Tests/*.Tests.ps1` and fails on any failed case.
 - `--build-info`: one unit test runs the entry point's build-info path in-process and parses the
   JSON; `New-Release.ps1 -SkipUpload` is the packaged proof.
 - Runtime: coordinator tests for preview-then-switch, warning only when the diff is non-empty,
