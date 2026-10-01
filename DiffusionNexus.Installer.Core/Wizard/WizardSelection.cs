@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 
 namespace DiffusionNexus.Installer.Core.Wizard;
@@ -10,6 +11,13 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 public sealed class WizardSelection
 {
     public required InstallationConfiguration Workload { get; init; }
+
+    /// <summary>
+    /// The catalog <see cref="Workload"/> was read from, taken right after reading it (spec 7.2).
+    /// The install report names this, not what is installed when Install is pressed: a channel
+    /// switch can apply another catalog while the wizard is open. Null: read at install start.
+    /// </summary>
+    public InstalledCatalogReading? Catalog { get; init; }
 
     /// <summary>Where the workload gets installed. Set by the InstallFolder module.</summary>
     public string TargetFolder { get; set; } = string.Empty;

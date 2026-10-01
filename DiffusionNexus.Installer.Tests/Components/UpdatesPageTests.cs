@@ -132,12 +132,29 @@ public class UpdatesPageTests : BunitContext
         Register(InstallPhase.Idle);
         _catalog.Installed = new LocalCatalogState
         {
-            Channel = CatalogChannel.Stable,
-            Workloads = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)),
-            Workflows = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)),
+            Channel = CatalogChannel.Preview,
+            Workloads = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)) { Channel = CatalogChannel.Stable },
+            Workflows = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)) { Channel = CatalogChannel.Stable },
         };
 
+        // The section's recorded channel, not the stamp: one rule with the "still from" line and
+        // the install report (PR #43 review).
         Render<UpdatesPage>().Find(".catalog-installed").TextContent.Should().Contain("v3 (Stable), applied 2026-09-15");
+    }
+
+    // A state written by SDK 2.0.0 records no channel per section; its stamp can name a channel
+    // whose content never landed, so the row names none.
+    [Fact]
+    public void An_installed_catalog_without_a_recorded_channel_shows_only_its_version()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Installed = new LocalCatalogState
+        {
+            Channel = CatalogChannel.Preview,
+            Workloads = new SectionState(3, "abc", new DateTimeOffset(2026, 9, 15, 19, 0, 0, TimeSpan.Zero)),
+        };
+
+        Render<UpdatesPage>().Find(".catalog-installed").TextContent.Trim().Should().Be("v3, applied 2026-09-15");
     }
 
     [Fact]
@@ -334,7 +351,7 @@ public class UpdatesPageTests : BunitContext
     }
 
     [Fact]
-    public void Picking_a_channel_saves_it_and_checks_both_on_the_new_channel()
+    public void Picking_a_channel_switches_it_and_checks_the_app_on_the_new_channel()
     {
         Register(InstallPhase.Idle, appUpdateReady: false);
         var page = Render<UpdatesPage>();
@@ -343,9 +360,10 @@ public class UpdatesPageTests : BunitContext
 
         _catalog.ChannelSet.Should().Be(CatalogChannel.Preview);
         page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeTrue());
-        // A switch forgets the last check, so without a fresh one the page would say nothing.
-        page.WaitForAssertion(() => _catalog.Checks.Should().Be(1));
-        _appUpdater.Calls.Should().Equal(["allowPrerelease=True", "check"]);
+        // The switch previewed and applied the catalog itself; a second catalog check would only
+        // repeat it. The app follows the same channel and checks on its own.
+        page.WaitForAssertion(() => _appUpdater.Calls.Should().Equal(["allowPrerelease=True", "check"]));
+        _catalog.Checks.Should().Be(0);
         page.FindAll(".validation-error").Should().BeEmpty();
     }
 
@@ -431,6 +449,231 @@ public class UpdatesPageTests : BunitContext
         _appUpdater.CheckGate.SetResult();
 
         page.WaitForAssertion(() => page.Find(Radio(CatalogChannel.Stable)).HasAttribute("disabled").Should().BeFalse());
+    }
+
+    // ----- channel switch (#39): warn before, switch, keep, fall through -----
+
+    private static string Normalized(AngleSharp.Dom.IElement element) =>
+        System.Text.RegularExpressions.Regex.Replace(element.TextContent, @"\s+", " ").Trim();
+
+    private static CatalogChannelSwitch StableSwitch(IReadOnlyList<WorkloadChange>? workloads = null, IReadOnlyList<WorkflowChange>? workflows = null)
+    {
+        var preview = CatalogChecks.Available(4, CatalogChannel.Stable,
+            workloads ?? [CatalogChecks.WorkloadRemoved("Qwen-Image-2.1", "V1.0")],
+            workflows ??
+            [
+                CatalogChecks.WorkflowUpdated("Upscale", "V2", "V1", "Krea-2-Turbo"),
+                CatalogChecks.WorkflowUpdated("Inpaint", "V2", "V1", "Krea-2-Turbo"),
+                CatalogChecks.WorkflowUpdated("Outpaint", "V2", "V1", "Krea-2-Turbo"),
+            ]);
+        return new CatalogChannelSwitch(preview, ChannelSwitchWarning.For(preview)!);
+    }
+
+    private void OnPreviewWithPendingSwitch(CatalogChannelSwitch? pending = null)
+    {
+        _catalog.Channel = CatalogChannel.Preview;
+        _catalog.ChannelSource = CatalogChannelSource.Setting;
+        _catalog.PendingSwitch = pending ?? StableSwitch();
+    }
+
+    [Fact]
+    public void A_pending_switch_says_what_goes_away_before_anything_changes()
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        var warning = page.Find(".channel-switch-warning");
+        Normalized(warning.QuerySelector("p")!).Should().Be(
+            "Stable is at v4. Switching removes Qwen-Image-2.1 and changes 3 workflows. Software you have already installed is not affected.");
+        warning.QuerySelectorAll("strong").Select(s => s.TextContent).Should().Equal("Qwen-Image-2.1");
+        warning.QuerySelectorAll("button").Select(b => b.TextContent.Trim()).Should().Equal("Switch to Stable", "Keep Preview");
+        // The details under it are the same change list an update shows.
+        warning.TextContent.Should().Contain("Krea-2-Turbo – Upscale").And.Contain("V2 → V1");
+    }
+
+    [Fact]
+    public void While_a_switch_waits_the_radios_show_the_choice_and_cannot_be_changed()
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("disabled").Should().BeTrue();
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeTrue();
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Check for updates").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void While_a_switch_waits_the_old_channels_update_is_not_offered()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+        page.FindAll(".catalog-changes").Should().OnlyContain(c => c.Closest(".channel-switch-warning") != null);
+    }
+
+    [Theory]
+    [InlineData(2, 0, "Stable is at v4. Switching removes A and B. Software you have already installed is not affected.")]
+    [InlineData(3, 0, "Stable is at v4. Switching removes A, B and C. Software you have already installed is not affected.")]
+    [InlineData(0, 1, "Stable is at v4. Switching changes 1 workflow. Software you have already installed is not affected.")]
+    public void The_warning_reads_as_a_sentence(int removed, int changed, string expected)
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch(StableSwitch(
+            [.. new[] { "A", "B", "C" }.Take(removed).Select(n => CatalogChecks.WorkloadRemoved(n, "V1"))],
+            [.. Enumerable.Range(0, changed).Select(i => CatalogChecks.WorkflowUpdated($"F{i}", "V2", "V1"))]));
+
+        var page = Render<UpdatesPage>();
+
+        Normalized(page.Find(".channel-switch-warning p")).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Switch_confirms_and_then_checks_the_app_on_the_new_channel()
+    {
+        Register(InstallPhase.Idle, appUpdateReady: false);
+        OnPreviewWithPendingSwitch();
+        var page = Render<UpdatesPage>();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Switch to Stable").Click();
+
+        _catalog.Confirms.Should().Be(1);
+        page.WaitForAssertion(() => _appUpdater.Calls.Should().Equal(["allowPrerelease=False", "check"]));
+        page.FindAll(".channel-switch-warning").Should().BeEmpty();
+        page.Find(Radio(CatalogChannel.Stable)).HasAttribute("checked").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Keep_drops_the_warning_saves_nothing_and_snaps_the_radio_back()
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch();
+        var page = Render<UpdatesPage>();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Keep Preview").Click();
+
+        _catalog.Keeps.Should().Be(1);
+        _catalog.Confirms.Should().Be(0);
+        page.FindAll(".channel-switch-warning").Should().BeEmpty();
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeTrue();
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("disabled").Should().BeFalse();
+        _appUpdater.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_switch_that_fails_to_save_says_so_and_keeps_the_channel()
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch();
+        _catalog.ChannelSaveFailure = new IOException("settings.json is locked");
+        var page = Render<UpdatesPage>();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Switch to Stable").Click();
+
+        page.Markup.Should().Contain("The channel could not be saved: settings.json is locked");
+        page.Find(Radio(CatalogChannel.Preview)).HasAttribute("checked").Should().BeTrue();
+        _appUpdater.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Picking_a_channel_that_needs_an_answer_waits_for_it()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Channel = CatalogChannel.Preview;
+        _catalog.PendingOnSwitch = StableSwitch();
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Stable)).Change("Stable");
+
+        page.WaitForAssertion(() => page.FindAll(".channel-switch-warning").Should().ContainSingle());
+        page.FindAll(".validation-error").Should().BeEmpty("waiting for an answer is not a refusal");
+        _appUpdater.Calls.Should().BeEmpty();
+    }
+
+    private void IncompleteSwitchToStable(CatalogUpdateCheck lastCheck)
+    {
+        _catalog.Channel = CatalogChannel.Stable;
+        _catalog.ChannelSource = CatalogChannelSource.Setting;
+        _catalog.SwitchIncompleteReason = "The installed catalog is still from Preview (v5).";
+        _catalog.Installed = new LocalCatalogState
+        {
+            Channel = CatalogChannel.Preview,
+            Workloads = new SectionState(5, "51e1684", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Preview },
+            Workflows = new SectionState(5, "51e1684", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Preview },
+        };
+        _catalog.LastCheck = lastCheck;
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+    }
+
+    [Fact]
+    public void An_incomplete_switch_says_what_is_still_installed_and_offers_a_retry()
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "No such host is known."));
+        var page = Render<UpdatesPage>();
+
+        var line = page.Find(".catalog-switch-incomplete");
+        Normalized(line).Should().StartWith("You follow Stable. The installed catalog is still from Preview (v5).");
+        line.QuerySelector("button")!.TextContent.Trim().Should().Be("Retry");
+
+        line.QuerySelector("button")!.Click();
+
+        _catalog.Checks.Should().Be(1);
+    }
+
+    [Fact]
+    public void An_incomplete_switch_with_an_update_to_apply_offers_apply_as_the_retry()
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Available(4, CatalogChannel.Stable));
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-switch-incomplete").QuerySelector("button").Should().BeNull();
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // The wording is InstalledCatalogDescription's (its tests cover the sections); the page puts
+    // the channel followed in front of the coordinator's reason, nothing of its own.
+    [Fact]
+    public void The_incomplete_line_is_the_coordinators_reason_after_the_channel_followed()
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Available(4, CatalogChannel.Stable));
+        _catalog.SwitchIncompleteReason = "The installed workflows (v5) are not from Stable yet.";
+
+        Normalized(Render<UpdatesPage>().Find(".catalog-switch-incomplete")).Should()
+            .StartWith("You follow Stable. The installed workflows (v5) are not from Stable yet.");
+    }
+
+    [Theory]
+    [InlineData(CatalogUpdatePhase.Checking)]
+    [InlineData(CatalogUpdatePhase.Applying)]
+    public void The_incomplete_line_waits_while_the_coordinator_works(CatalogUpdatePhase phase)
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Available(4, CatalogChannel.Stable));
+        _catalog.Phase = phase;
+
+        Render<UpdatesPage>().FindAll(".catalog-switch-incomplete").Should().BeEmpty();
+        _catalog.IncompleteReads.Should().Be(0, "not computed on every progress re-render either (PR #43 review)");
+    }
+
+    [Fact]
+    public void A_completed_switch_shows_no_incomplete_line()
+    {
+        Register(InstallPhase.Idle);
+        IncompleteSwitchToStable(CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate));
+        _catalog.SwitchIncompleteReason = null;
+
+        Render<UpdatesPage>().FindAll(".catalog-switch-incomplete").Should().BeEmpty();
     }
 
     // ----- the app row, next to the catalog row -----

@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
@@ -19,6 +20,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
     private readonly IInstallationOrchestrator _orchestrator;
     private readonly TimeSpan _flushInterval;
+    private readonly ICatalogProvenance? _catalog;
     private readonly Lock _gate = new();
     private readonly Queue<InstallLogLine> _log = new();
     private readonly List<InstallReportEntry> _reportRows = [];
@@ -28,10 +30,18 @@ public sealed class InstallSession : IInstallSession, IDisposable
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _skipDownloadCts;
 
-    public InstallSession(IInstallationOrchestrator orchestrator, TimeSpan? flushInterval = null)
+    // The current run's catalog row (spec 7.2), kept so the finished report cannot drop it.
+    private InstallReportEntry? _catalogRow;
+
+    /// <param name="catalog">
+    /// Reads the catalog line for a plan whose selection did not capture one. Null, and a plan
+    /// without one records no catalog line.
+    /// </param>
+    public InstallSession(IInstallationOrchestrator orchestrator, TimeSpan? flushInterval = null, ICatalogProvenance? catalog = null)
     {
         _orchestrator = orchestrator;
         _flushInterval = flushInterval ?? DefaultFlushInterval;
+        _catalog = catalog;
         _flushTimer = new Timer(_ => Flush(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
@@ -113,6 +123,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             _truncatedLogLines = 0;
             _log.Clear();
             _reportRows.Clear();
+            _catalogRow = null;
         }
 
         try
@@ -122,6 +133,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             // never observe a torn or stale value -- see Cancel().
             lock (_gate) _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             lock (_gate) _skipDownloadCts = new CancellationTokenSource();
+            RecordCatalog(plan);
             NotifyNow();
             _flushTimer.Change(_flushInterval, _flushInterval);
 
@@ -150,7 +162,15 @@ public sealed class InstallSession : IInstallSession, IDisposable
             // catch blocks below -- leaves the streamed rows alone rather than blanking a table
             // the user watched fill up.
             if (result.Report.Count > 0)
-                lock (_gate) { _reportRows.Clear(); _reportRows.AddRange(result.Report); }
+            {
+                lock (_gate)
+                {
+                    _reportRows.Clear();
+                    // The SDK's report knows nothing of the catalog row; it stays first.
+                    if (_catalogRow is not null) _reportRows.Add(_catalogRow);
+                    _reportRows.AddRange(result.Report);
+                }
+            }
 
             Result = result;
             Phase = result.IsCancelled ? InstallPhase.Cancelled
@@ -182,6 +202,36 @@ public sealed class InstallSession : IInstallSession, IDisposable
             WriteLogFile(plan);
 
             NotifyNow();
+        }
+    }
+
+    /// <summary>
+    /// Spec 7.2: one log line and one report row naming the catalog this run's workload came from
+    /// -- captured by the wizard when it read the workload, else read now -- so a support question
+    /// is answered from the report. A capture that could not read the state is read again: what
+    /// held the file then (the switch's apply writing it, an AV scan) has usually let go by now
+    /// (PR #43 review). A catalog that cannot be read is a warning row, never a reason not to install.
+    /// </summary>
+    private void RecordCatalog(WizardPlan plan)
+    {
+        var captured = plan.Selection.Catalog;
+        var reading = captured is { Failed: false } ? captured : _catalog?.Read() ?? captured;
+        if (reading is null) return;
+        var (text, warning) = (reading.Text, reading.Failed);
+
+        var row = new InstallReportEntry
+        {
+            PlannedOperation = text,
+            Category = InstallReportCategory.Step,
+            Outcome = warning ? InstallReportOutcome.Skipped : InstallReportOutcome.Success,
+            Comment = "The catalog this install reads.",
+            IsWarning = warning,
+        };
+        Append(new InstallLogLine(DateTimeOffset.Now, text, warning ? SdkLogLevel.Warning : SdkLogLevel.Info));
+        lock (_gate)
+        {
+            _catalogRow = row;
+            _reportRows.Add(row);
         }
     }
 

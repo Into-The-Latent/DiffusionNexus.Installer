@@ -87,6 +87,39 @@ public class DependencyInjectionTests
         first.Should().BeSameAs(second);
     }
 
+    // Spec 7.2: the app's session names its catalog. The constructor parameter is optional, so
+    // nothing but this test notices a registration that stops passing it.
+    [Fact]
+    public async Task The_install_session_names_the_catalog_the_app_reads()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped(_ => Mock.Of<IJSRuntime>());
+        services.AddInstallationServices();
+        services.AddDiffusionNexusUserSettings(Path.Combine(Path.GetTempPath(), $"dn-{Guid.NewGuid():N}.json"));
+        services.AddDiffusionNexusCatalog(o =>
+            o.InstalledCatalogPath = Path.Combine(Path.GetTempPath(), $"dn-catalog-{Guid.NewGuid():N}"));
+        services.AddInstallerCore();
+        services.AddInstallerHostServices();
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(InstallationResult.Success("done"));
+        services.AddSingleton(orchestrator.Object);
+        using var provider = services.BuildServiceProvider();
+        var session = provider.GetRequiredService<IInstallSession>();
+        var plan = await provider.GetRequiredService<WizardModuleRegistry>()
+            .BuildPlanAsync(new WizardSelection { Workload = new InstallationConfiguration { Name = "Fooocus" } });
+        plan.Selection.TargetFolder = Path.Combine(Path.GetTempPath(), $"dn-{Guid.NewGuid():N}", "missing");
+
+        await session.StartAsync(plan);
+
+        session.LogLines[0].Message.Should().Be("Catalog: none recorded (no catalog-state.json)");
+    }
+
     [Fact]
     public void Gallery_builder_resolves()
     {

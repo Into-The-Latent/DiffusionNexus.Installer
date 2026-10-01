@@ -265,9 +265,10 @@ can lag a minute after the release appears). Stable is what users follow.
    hash-based; a Preview client returning to Stable is simply offered what Stable has).
 6. In a **Release** build open `/updates` (Developer tools no longer has a channel panel).
    **Expect:** an Update channel panel with Stable and Preview radios; the saved one is checked.
-   Pick the other. **Expect:** the radios grey out while both checks run on the new channel and
-   the App and Catalog rows update without pressing anything. Quit and relaunch. **Expect:** the
-   choice stuck. With the environment variable set, the radios are disabled and the hint says so.
+   Pick the other. **Expect:** the radios grey out while the new channel is previewed, then the
+   switch goes ahead or asks first (section 7a), and the App and Catalog rows update without
+   pressing anything. Quit and relaunch. **Expect:** the choice stuck. With the environment
+   variable set, the radios are disabled and the hint says so.
    Then make `%LocalAppData%\DiffusionNexus\user_settings.json` read-only and pick the other channel.
    **Expect:** "The channel could not be saved: …" and the dot jumps back to the channel still
    in effect (not provable in bUnit — the browser keeps its own checked state). Clear the
@@ -282,6 +283,51 @@ can lag a minute after the release appears). Stable is what users follow.
    …" on `/updates`, nothing on the welcome screen, and the top bar still says "Check for Updates".
 10. Run with `DIFFUSIONNEXUS_CATALOG_PATH` pointing at a catalog checkout. **Expect:** "Update
     check skipped: a local catalog override is active at <path>." and no Apply button.
+
+## 7a. Switching channels applies that channel's catalog (#39)
+
+Needs content on both sides: Preview ahead of Stable with at least one workload or workflow that
+Stable does not have or has in another version (publish one with the editor's **Preview** and
+do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no catalog override.
+
+1. Follow Preview and apply its update, so the Catalog row on `/updates` reads "vP (Preview)".
+2. Pick **Stable**. **Expect:** "Checking the catalog…" with the radios greyed, then under the
+   radios: "Stable is at vS. Switching removes **<name>** and changes N workflows. Software you
+   have already installed is not affected." (only the parts that apply), the change list below
+   it, and **Switch to Stable** / **Keep Preview**. The Stable dot is set, both radios and Check
+   for updates are disabled, and the Catalog row says "Switching to Stable waits for your answer
+   above." `%LocalAppData%\DiffusionNexus\user_settings.json` still says Preview.
+3. Press **Keep Preview**. **Expect:** the warning goes, the Preview dot comes back, the radios
+   work again, and the settings file and Catalog row are unchanged.
+4. Pick Stable again and press **Switch to Stable**. **Expect:** the settings file says Stable
+   before the download ends, "Downloading… NN%", then "Catalog updated to vS." The Catalog row
+   reads "vS (Stable)" and `%LocalAppData%\DiffusionNexus\catalog\catalog-state.json` has
+   `"channel": "Stable"` at the top and in the workloads section. A workload the warning named as
+   removed is gone from the gallery; a copy of it you installed earlier is untouched on disk.
+5. Disconnect the network and pick Preview. **Expect:** no warning (the preview failed), "The
+   catalog check failed: …" and "You follow Preview. The installed catalog is still from Stable
+   (vS)." with **Retry**. Relaunch (still offline). **Expect:** Preview is still checked (the
+   choice was saved) and, once the startup check has failed, the same "still from" line: it is
+   read from `catalog-state.json`, not remembered.
+   Reconnect and press **Retry**. **Expect:** the Preview diff with **Apply catalog update**
+   (the Retry button gives way to it); Apply, and the "still from" line goes.
+6. Right after an editor **Release** (both channels serve the same content), switch channels.
+   **Expect:** no warning, no download, "The catalog is up to date.", and the choice saved.
+   `catalog_channel_confirmations.json` next to `user_settings.json` names the new channel.
+   Disconnect the network and relaunch. **Expect:** the startup check fails, and there is no
+   "still from" line: the content was found current on this channel, whatever
+   `catalog-state.json` still records.
+7. Start an install, open `/updates` while it runs and switch channels (answer Switch if asked).
+   **Expect:** the choice saved, no download, "It can be applied once <workload> has finished."
+   and the "still from" line. Let the install finish. **Expect:** Apply appears without leaving
+   the page.
+8. Start any install. **Expect:** the first log line and the first row of the result table read
+   "Catalog vS (Stable, <first 7 of the commit in catalog-state.json>)", and the log file the
+   install writes into its folder carries the same line. On a state written before this build
+   (no channel per section) it reads "Catalog vN (channel not recorded, …)".
+9. Open a workload's wizard, use the top bar to go to `/updates`, switch channels so content is
+   applied, go back and install. **Expect:** the report names the catalog the wizard was opened
+   on, not the one applied meanwhile: the plan installs what the wizard read.
 
 ## 8. App updates on the Preview channel
 

@@ -28,10 +28,24 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     private bool _channelResolved;
     private bool _installRunning;
 
-    // True from the moment SetChannelAsync passes its guard until its state mutation is done
-    // (success or failure). Blocks CheckAsync/ApplyAsync so a check cannot straddle a channel
-    // switch's own await -- see the "channel switch" tests for the race this closes.
+    // True while a channel switch is inside its awaits (settings, preview, save). Blocks CheckAsync
+    // and ApplyAsync so a check cannot straddle them -- see the "channel switch" tests for the race
+    // this closes. A switch waiting for Switch or Keep is PendingSwitch, not this: the time a person
+    // takes to answer is never spent holding a flag that a missed release would leave stuck.
     private bool _switching;
+
+    // A switch in this process whose content did not land: the channel the content was from when
+    // it began, and the channel switched to. Consulted only for a section known by nothing else (a
+    // state written before SDK 2.1.0 records no channel per section). Cleared by a landed apply, a
+    // current check, or a switch back to the channel the content never left (PR #43 review).
+    private (CatalogChannel From, CatalogChannel To)? _notLanded;
+
+    // Which content a check found current, per channel; kept across restarts (PR #43 review).
+    private readonly CatalogChannelConfirmations _confirmations;
+
+    // Whether the SDK reads an override folder, probed with Installed (each check, apply, switch)
+    // rather than on every read of SwitchIncompleteReason, which a page does on each render.
+    private bool _overrideActive;
 
     public CatalogUpdateCoordinator(
         ICatalogUpdateService updates,
@@ -39,8 +53,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         IUserSettingsRepository settings,
         IInstallSession session,
         Func<string?> readEnvironment,
-        ILogger<CatalogUpdateCoordinator>? logger = null)
+        ILogger<CatalogUpdateCoordinator>? logger = null,
+        CatalogChannelConfirmations? confirmations = null)
     {
+        _confirmations = confirmations ?? new CatalogChannelConfirmations(null, logger);
         _updates = updates;
         _options = options;
         _settings = settings;
@@ -61,8 +77,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public CatalogDownloadProgress? Progress { get; private set; }
     public CatalogApplyResult? LastApply { get; private set; }
 
+    // Not while a switch waits for an answer: the last check describes the channel being left,
+    // and its update could not be applied until Switch or Keep (PR #43 review).
     public bool UpdateAvailable =>
-        LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
+        PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
 
     // Reads the session live rather than the cached flag: the flag only decides when to re-raise.
     public bool CanApply => UpdateAvailable && Phase == CatalogUpdatePhase.Checked && !InstallRunning;
@@ -80,7 +98,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         Task inFlight;
         lock (_gate)
         {
-            if (_switching)
+            if (_switching || PendingSwitch is not null)
             {
                 _logger.LogInformation("Catalog check refused: a channel switch is in progress");
                 return Task.CompletedTask;
@@ -116,13 +134,19 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
             var check = await _updates.CheckAsync(ct).ConfigureAwait(false);
             var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+            var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
 
+            bool current;
             lock (_gate)
             {
                 LastCheck = check;
                 Installed = installed;
+                _overrideActive = overrideActive;
                 Phase = CatalogUpdatePhase.Checked;
+                current = check.Outcome == CatalogUpdateOutcome.UpToDate && check.Channel == Channel;
+                if (current) _notLanded = null;
             }
+            if (current) _confirmations.Confirm(check.Channel, installed);
             _logger.LogInformation("Catalog update check: {Outcome} (remote v{Remote}, installed v{Installed}, {Workloads} workload / {Workflows} workflow changes){Error}",
                 check.Outcome, check.Remote?.CatalogVersion, installed.HighestCatalogVersion, check.Workloads.Count, check.Workflows.Count,
                 check.Error is null ? string.Empty : ": " + check.Error);
@@ -178,14 +202,17 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         {
             var result = await _updates.ApplyAsync(check, CatalogSections.All, new ProgressRelay(this), ct).ConfigureAwait(false);
             var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+            var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
             var succeeded = result.Failed == CatalogSections.None && result.Error is null;
 
             lock (_gate)
             {
                 LastApply = result;
                 Installed = installed;
+                _overrideActive = overrideActive;
                 Progress = null;
                 Phase = succeeded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
+                if (succeeded) _notLanded = null;
             }
             _logger.LogInformation("Catalog apply finished: applied={Applied} failed={Failed} installed v{Installed}{Error}",
                 result.Applied, result.Failed, installed.HighestCatalogVersion, result.Error is null ? string.Empty : ": " + result.Error);
@@ -244,43 +271,256 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             : (long)Math.Round(value.BytesReceived / 104_857.6);
     }
 
-    public async Task SetChannelAsync(CatalogChannel channel, CancellationToken ct = default)
+    public CatalogChannelSwitch? PendingSwitch { get; private set; }
+
+    public bool SwitchIncomplete => SwitchIncompleteReason is not null;
+
+    public string? SwitchIncompleteReason
     {
+        get
+        {
+            LocalCatalogState? installed;
+            CatalogUpdateCheck? check;
+            CatalogChannel channel;
+            CatalogChannel? notLandedTo;
+            lock (_gate)
+            {
+                if (PendingSwitch is not null || _overrideActive) return null;
+                (installed, check, channel, notLandedTo) = (Installed, LastCheck, Channel, _notLanded?.To);
+            }
+
+            // An override supersedes both channels.
+            if (installed is null || check is { Outcome: CatalogUpdateOutcome.OverrideActive }) return null;
+
+            // From catalog-state.json (each section's recorded channel) and the confirmations file,
+            // so a restart does not forget that the content and the preference disagree; a section
+            // known by neither falls back to this run's own switch that did not land.
+            return InstalledCatalogDescription.Lagging(installed, channel,
+                new CatalogSourceEvidence { Confirmed = _confirmations.Current, NotLandedTo = notLandedTo });
+        }
+    }
+
+    public async Task SwitchChannelAsync(CatalogChannel target, CancellationToken ct = default)
+    {
+        CatalogUpdatePhase phaseBefore;
         lock (_gate)
         {
-            if (_switching || Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
+            if (_switching || PendingSwitch is not null || Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
             {
-                _logger.LogInformation("Catalog channel change to {Channel} refused while {Phase}", channel, Phase);
+                _logger.LogInformation("Catalog channel switch to {Channel} refused while {Phase}{Pending}",
+                    target, Phase, PendingSwitch is null ? string.Empty : ", a switch to " + PendingSwitch.Target + " waiting for an answer");
                 return;
             }
             // Claimed in the same critical section as the guard above so a check that starts during
-            // the await below (GetOrCreateForCurrentUserAsync / SaveAsync) sees _switching and backs
-            // off, instead of resolving the channel this method is about to change out from under it.
+            // the awaits below (settings, preview, save) sees _switching and backs off, instead of
+            // resolving the channel this method is about to change out from under it. Held for the
+            // awaits only and released by the finally on every path; a switch waiting for an
+            // answer is PendingSwitch, which the guards test on their own.
             _switching = true;
+            phaseBefore = Phase;
         }
 
         try
         {
-            var settings = await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
-            settings.CatalogChannel = channel.ToString();
-            await _settings.SaveAsync(settings, ct).ConfigureAwait(false);
-            _logger.LogInformation("Catalog channel preference saved: {Channel}", channel);
+            await EnsureChannelAsync(ct).ConfigureAwait(false);
+            CatalogChannel current;
+            CatalogChannelSource source;
+            lock (_gate) { (current, source) = (Channel, ChannelSource); }
+
+            if (source == CatalogChannelSource.Environment)
+            {
+                // The environment decides what this run follows and installs. Previewing or applying
+                // another channel would contradict it, so the preference is saved for the runs
+                // without the variable, and nothing else changes.
+                var saved = await SavePreferenceAsync(target, ct).ConfigureAwait(false);
+                lock (_gate)
+                {
+                    ApplyResolution(_readEnvironment(), saved);
+                    _channelResolved = true;
+                }
+                return;
+            }
+
+            if (current == target)
+            {
+                _logger.LogInformation("Catalog channel switch to {Channel}: already followed, nothing to do", target);
+                return;
+            }
 
             lock (_gate)
             {
-                ApplyResolution(_readEnvironment(), settings.CatalogChannel);
-                _channelResolved = true;
-                LastCheck = null;
-                LastApply = null;
+                Phase = CatalogUpdatePhase.Checking;
                 Progress = null;
-                Phase = CatalogUpdatePhase.Idle;
             }
+            Raise();
+
+            var preview = await PreviewAsync(target, ct).ConfigureAwait(false);
+            lock (_gate) Phase = phaseBefore;
+
+            if (ChannelSwitchWarning.For(preview) is { } warning)
+            {
+                lock (_gate) PendingSwitch = new CatalogChannelSwitch(preview, warning);
+                _logger.LogInformation("Catalog channel switch to {Channel} waits for an answer: v{Version} removes {Removed} and {Changes}",
+                    target, warning.Version, warning.Removed.Count, warning.ChangesText ?? "changes nothing");
+                return;
+            }
+
+            await CommitSwitchAsync(preview, phaseBefore, ct).ConfigureAwait(false);
         }
         finally
         {
-            lock (_gate) { _switching = false; }
+            lock (_gate)
+            {
+                _switching = false;
+                if (Phase == CatalogUpdatePhase.Checking) Phase = phaseBefore;
+            }
+            Raise();
+        }
+    }
+
+    public async Task ConfirmSwitchAsync(CancellationToken ct = default)
+    {
+        CatalogChannelSwitch pending;
+        CatalogUpdatePhase phaseBefore;
+        lock (_gate)
+        {
+            if (PendingSwitch is null || _switching)
+            {
+                _logger.LogInformation("Catalog channel switch confirmed with no switch waiting; nothing to do");
+                return;
+            }
+            pending = PendingSwitch;
+            PendingSwitch = null;
+            _switching = true;
+            phaseBefore = Phase;
+        }
+
+        _logger.LogInformation("Catalog channel switch to {Channel} confirmed", pending.Target);
+        try
+        {
+            await CommitSwitchAsync(pending.Preview, phaseBefore, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate) _switching = false;
+            Raise();
+        }
+    }
+
+    public void KeepChannel()
+    {
+        lock (_gate)
+        {
+            if (PendingSwitch is null) return;
+            _logger.LogInformation("Catalog channel switch to {Channel} declined; nothing was saved", PendingSwitch.Target);
+            PendingSwitch = null;
         }
         Raise();
+    }
+
+    /// <summary>A check of <paramref name="target"/> that leaves <see cref="CatalogOptions.Channel"/> alone. Never throws.</summary>
+    private async Task<CatalogUpdateCheck> PreviewAsync(CatalogChannel target, CancellationToken ct)
+    {
+        _logger.LogInformation("Catalog channel switch: previewing {Channel}", target);
+        try
+        {
+            var check = await _updates.CheckAsync(target, ct).ConfigureAwait(false);
+            _logger.LogInformation("Catalog channel preview: {Outcome} (remote v{Remote}, {Workloads} workload / {Workflows} workflow changes){Error}",
+                check.Outcome, check.Remote?.CatalogVersion, check.Workloads.Count, check.Workflows.Count,
+                check.Error is null ? string.Empty : ": " + check.Error);
+            return check;
+        }
+        catch (Exception ex)
+        {
+            // The SDK's check never throws; this keeps a broken one from ending the switch without
+            // the preference being saved -- a failed preview falls through like any other.
+            _logger.LogError(ex, "Catalog channel preview failed unexpectedly");
+            return new CatalogUpdateCheck(CatalogUpdateOutcome.Failed, target, null, LocalCatalogState.Load(_options.InstalledCatalogPath), [], [], ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Saves the preference, then starts the apply of <paramref name="preview"/> when it has
+    /// something to apply and no install runs, and returns: the choice is made once it is saved,
+    /// and the download reports through <see cref="Changed"/> like a manual apply. The caller holds
+    /// <see cref="_switching"/>. Only a failed save throws, and then nothing was changed.
+    /// </summary>
+    private async Task CommitSwitchAsync(CatalogUpdateCheck preview, CatalogUpdatePhase phaseBefore, CancellationToken ct)
+    {
+        var target = preview.Channel;
+        string saved;
+        try
+        {
+            saved = await SavePreferenceAsync(target, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Catalog channel {Channel} could not be saved; nothing was changed", target);
+            lock (_gate) Phase = phaseBefore;
+            throw;
+        }
+
+        // Saved before the download starts: a stalled or failed apply must not lose the choice
+        // (rule 1), and the next check then offers the same diff with Apply.
+        var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+        var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
+        var applying = false;
+        var current = false;
+        lock (_gate)
+        {
+            var left = Channel;
+            ApplyResolution(_readEnvironment(), saved);
+            _channelResolved = true;
+            Installed = installed;
+            _overrideActive = overrideActive;
+            LastApply = null;
+            Progress = null;
+            if (Channel != target)
+            {
+                // The variable is read live, so it can appear between the preview and here. It
+                // decides, exactly as in SwitchChannelAsync.
+                LastCheck = null;
+                Phase = CatalogUpdatePhase.Idle;
+            }
+            else
+            {
+                LastCheck = preview;
+                current = preview.Outcome == CatalogUpdateOutcome.UpToDate;
+                _notLanded = current || preview.Outcome == CatalogUpdateOutcome.OverrideActive ? null
+                    // The content is still from where the first switch that did not land left it;
+                    // switching back there is complete, whatever this preview answered.
+                    : _notLanded is { From: var from } ? (from == target ? null : (from, target))
+                    : (left, target);
+                if (preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable && !InstallRunning)
+                {
+                    // Not under the caller's token: the switch has returned by the time the download
+                    // runs, and a caller that cancels afterwards (a page going away) does not own it.
+                    Phase = CatalogUpdatePhase.Applying;
+                    _inFlight = Task.Run(() => ApplyCoreAsync(preview, CancellationToken.None), CancellationToken.None);
+                    applying = true;
+                }
+                else
+                {
+                    // Up to date: same content, only the preference changes. Anything else keeps the
+                    // installed content and says so; during an install the Apply button waits for it.
+                    Phase = CatalogUpdatePhase.Checked;
+                }
+            }
+        }
+        if (current) _confirmations.Confirm(target, installed);
+        _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
+            applying ? "applying v" + preview.Remote?.CatalogVersion
+            : preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable ? "the apply waits for the running install"
+            : preview.Outcome.ToString());
+    }
+
+    private async Task<string> SavePreferenceAsync(CatalogChannel channel, CancellationToken ct)
+    {
+        var settings = await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+        settings.CatalogChannel = channel.ToString();
+        await _settings.SaveAsync(settings, ct).ConfigureAwait(false);
+        _logger.LogInformation("Catalog channel preference saved: {Channel}", channel);
+        return settings.CatalogChannel;
     }
 
     public async Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default)
