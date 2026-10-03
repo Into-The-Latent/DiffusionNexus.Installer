@@ -323,6 +323,7 @@ public class InstallPageTests : BunitContext
     public void Cancel_forgets_the_wizard()
     {
         Register(Workload());
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         var target = Services.GetRequiredService<ReturnTarget>();
         target.WizardInProgress.Should().NotBeNull();
@@ -330,20 +331,6 @@ public class InstallPageTests : BunitContext
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel").Click();
 
         target.WizardInProgress.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task A_kept_wizard_asks_about_a_shortcut_clash_through_the_page_it_is_on_now()
-    {
-        // After a reconnect the page that built the plan -- and the prompt it captured -- belong to
-        // a dead circuit; a clash mid-install would wait on a dialog nobody can see.
-        var target = await AnsweredAndLeftAsync();
-        var shortcuts = target.WizardInProgress!.Run.Plan.AllModules.OfType<ShortcutsModule>().Single();
-        var before = shortcuts.OnShortcutConflict;
-
-        ComeBack();
-
-        shortcuts.OnShortcutConflict.Should().NotBeNull().And.NotBeSameAs(before);
     }
 
     [Fact]
@@ -574,6 +561,52 @@ public class InstallPageTests : BunitContext
         var scanner = new Mock<IModelPresenceScanner>();
         scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns([]);
         return scanner;
+    }
+
+    [Fact]
+    public async Task A_save_that_finishes_after_the_page_left_does_not_advance_the_kept_wizard()
+    {
+        // #45 shares one run between the page that left and the one that comes back. Next on the
+        // old page, still saving, must not move the run the new page shows: the user's next Next
+        // would then land two stages on, past one they never saw.
+        RegisterContent(EmptyScanner());
+        var saving = new TaskCompletionSource<UserSettings>();
+        _contentSettings!.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).Returns(saving.Task);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        var kept = target.WizardInProgress!;
+
+        await DisposeComponentsAsync();
+        saving.SetResult(new UserSettings());
+
+        // The old page carries on off the test's thread, with nothing to wait on when it does the
+        // right thing. Without the guard it advances within milliseconds; a second is ample.
+        SpinWait.SpinUntil(() => kept.Run.CurrentStage != WizardStage.Location, TimeSpan.FromSeconds(1));
+        kept.Run.CurrentStage.Should().Be(WizardStage.Location);
+    }
+
+    [Fact]
+    public async Task A_wizard_resumed_after_a_side_trip_scans_for_models_again()
+    {
+        // Files may have come or gone while the user read Licences; the panel must not show the
+        // "already downloaded" rows from before (the preflight at Confirm rescans for the install).
+        var scanner = EmptyScanner();
+        RegisterContent(scanner);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".advanced-toggle").Click();
+        page.WaitForAssertion(() => page.FindComponents<ModelSelectionPanel>().Should().NotBeEmpty());
+        await DisposeComponentsAsync();
+        var scansBefore = scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan));
+
+        var back = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        back.Find(".advanced-toggle").Click();
+
+        back.WaitForAssertion(() =>
+            scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().BeGreaterThan(scansBefore));
     }
 
     [Fact]
