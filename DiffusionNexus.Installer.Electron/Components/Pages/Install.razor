@@ -182,6 +182,8 @@
         var returning = Return.IsAt(Nav.ToBaseRelativePath(Nav.Uri));
         var onScreen = Return.InstallOnScreen;
         Return.InstallOnScreen = null;
+        var kept = Return.WizardInProgress;
+        Return.WizardInProgress = null;
 
         if (Session.Phase == InstallPhase.Running && Session.Plan is { } running)
         {
@@ -218,6 +220,44 @@
             return;
         }
 
+        // The same for a wizard left before its install started (#45): the answers live in its
+        // modules, so coming Back to this URL -- or a reconnect -- carries on where the user was
+        // rather than asking everything again. Under the same rule as the finished run: only when
+        // returning, so picking the workload again from the gallery gets the new wizard it asked
+        // for, and never after a catalog apply, when IsAt says "not returning" and the wizard is
+        // rebuilt from the new content.
+        if (returning
+            && kept is { } left
+            && left.Run.Plan.Selection.Workload.Id == WorkloadId)
+        {
+            _run = left.Run;
+            _onlyWorkloadOfItsSoftware = left.OnlyWorkloadOfItsSoftware;
+            _readUnder = left.ReadUnder;
+
+            // Kept again at once, not after the probes below: a resumed wizard has answers, and the
+            // probes take a second or two (nvidia-smi, then WMI) with the wizard already on screen.
+            // Left again in that time, it is kept for the next Back; a flow screen visited meanwhile
+            // releases it through Remember; a Next that reaches Install clears it. A KeepWizard after
+            // the probes respected none of that: it dropped the answers, or kept a run at Install.
+            KeepWizard();
+
+            // What the machine may have changed during the trip (a model file, the VC++ runtime, a
+            // GPU driver); each module knows its own detections, and never touches the user's answers.
+            // The token once, up front: Dispose releases the source, and a continuation that read
+            // it again would throw.
+            var resumeToken = _pageCts.Token;
+            try
+            {
+                foreach (var module in _run.Plan.AllModules)
+                    await module.RefreshAfterResumeAsync(resumeToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Left again while the probes ran; whoever shows the run next refreshes again.
+            }
+            return;
+        }
+
         // The catalog line is taken with the workloads, from the same catalog load, for the install
         // report (spec 7.2): a channel switch from the top bar can apply another catalog while this
         // wizard is open, and the plan installs what was read here, not what is installed when
@@ -241,7 +281,24 @@
         _onlyWorkloadOfItsSoftware = software?.SingleWorkload?.Workload.Id == workload.Id;
 
         var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload, Catalog = catalog });
+        WireShortcutPrompt(plan, Prompt, Session);
 
+        _run = new WizardRun(plan);
+
+        // Left while "Preparing..." showed: the screen it would be kept for is no longer Back's
+        // target, and no answer has been given that a side trip could lose.
+        if (_pageCts.IsCancellationRequested) return;
+        KeepWizard();
+    }
+
+    // What a side trip from here comes back to (#45). Cleared once the Install stage is reached,
+    // where InstallOnScreen takes over, and by Done/Cancel.
+    private void KeepWizard() => Return.WizardInProgress = new KeptWizard(_run!, _onlyWorkloadOfItsSoftware, _readUnder);
+
+    // Static, from the two singletons: the callback lives as long as the plan, which a kept wizard
+    // (#45) holds past this page -- capturing the page would keep it and its render tree alive.
+    private static void WireShortcutPrompt(WizardPlan plan, IUserPrompt prompt, IInstallSession session)
+    {
         // Without this the SDK's OnShortcutConflict callback is always null and a name clash is
         // silently overwritten -- wire it to a user prompt before the run starts so a conflict
         // mid-install can actually ask.
@@ -253,19 +310,17 @@
                 // no token of its own, so a Cancel while the dialog is open would otherwise leave
                 // the pipeline thread parked on an answer that can never arrive. Cancelling
                 // completes it false, which maps to "skip the shortcut" -- a safe answer.
-                var overwrite = await Prompt.ConfirmAsync(
+                var overwrite = await prompt.ConfirmAsync(
                     "Shortcut already exists",
                     $"A shortcut named \"{name}\" already exists in {location}. Replace it?",
                     "Replace",
                     "Keep the existing one",
-                    Session.RunToken);
+                    session.RunToken);
 
                 return new ShortcutConflictResult(
                     overwrite ? ShortcutConflictResolution.Overwrite : ShortcutConflictResolution.Cancel);
             };
         }
-
-        _run = new WizardRun(plan);
     }
 
     private async Task Next()
@@ -278,6 +333,11 @@
         // A notice about the previous stage's save must not follow the user any further.
         _settingsNotice = null;
 
+        // The token once, before the first await: Dispose releases the source, and a continuation
+        // that read it again -- Confirm's, after the preflight -- threw ObjectDisposedException out
+        // of the event handler and took the circuit down.
+        var token = _pageCts.Token;
+
         if (_run!.CurrentStage == WizardStage.Confirm)
         {
             // 1.x checks already-present files when Install is pressed. Here that is Confirm's
@@ -287,7 +347,7 @@
             _preflightNotice = null;
             try
             {
-                var result = await Preflight.RunAsync(_run.Plan, _pageCts.Token);
+                var result = await Preflight.RunAsync(_run.Plan, token);
                 _preflightWarning = result.Warning;
                 if (!result.Proceed)
                 {
@@ -315,7 +375,7 @@
             try
             {
                 foreach (var module in _run.CurrentModules)
-                    await module.PersistAsync(_pageCts.Token);
+                    await module.PersistAsync(token);
             }
             catch (OperationCanceledException)
             {
@@ -333,11 +393,19 @@
             }
         }
 
+        // The page went away during the save (a side trip, #45): the run is kept and may already be
+        // on screen in the page that replaced this one. Advancing it from here would skip the user
+        // past a stage they never saw.
+        if (token.IsCancellationRequested) return;
+
         _run.TryNext();
 
         // From here a side trip and Back must find this run again, finished or not.
         if (_run.CurrentStage == WizardStage.Install)
+        {
             Return.InstallOnScreen = _run.Plan;
+            Return.WizardInProgress = null;
+        }
     }
 
     public void Dispose()
@@ -371,6 +439,7 @@
     {
         // Done, Cancel: the user is finished with this run's screen, so nothing re-opens it.
         Return.InstallOnScreen = null;
+        Return.WizardInProgress = null;
         Nav.NavigateTo("/");
     }
 

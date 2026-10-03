@@ -98,6 +98,12 @@
 
     private bool _scanning;
 
+    // A kept wizard (#45) shares the module with the page that left: this panel's scan loop may still
+    // be running when its page is gone, and the module, resumed elsewhere, reads as stale to it too.
+    // Disposed, it finishes the scan in flight and does nothing further -- neither a scan the live
+    // panel is already running, nor an estimate on a cancellation source Dispose has released.
+    private bool _disposed;
+
     protected override async Task OnInitializedAsync()
     {
         // The install folder may have changed since the module was initialized on the Location
@@ -110,7 +116,9 @@
     {
         // A sibling panel edits the tier. Its Changed re-renders the page, which re-renders this
         // panel with the same parameters -- that render is when the moved tier becomes visible.
-        if (!_scanning && ScanIsStale())
+        // Blazor also calls this once OnInitializedAsync completes, which for a disposed panel is
+        // right after its loop gave up: the resumed module still reads as stale, and must not be scanned.
+        if (!_disposed && !_scanning && ScanIsStale())
         {
             await RescanAsync();
             ScheduleEstimate();
@@ -140,7 +148,7 @@
             {
                 await Task.Run(Module.RefreshPresence);
             }
-            while (ScanIsStale());
+            while (!_disposed && ScanIsStale());
         }
         finally
         {
@@ -158,6 +166,7 @@
     /// <summary>Cancels the previous estimate and starts a debounced new one. Only the latest writes back.</summary>
     private void ScheduleEstimate()
     {
+        if (_disposed) return;
         _estimateCts?.Cancel();
         _estimateCts?.Dispose();
         var cts = new CancellationTokenSource();
@@ -186,6 +195,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         _estimateCts?.Cancel();
         _estimateCts?.Dispose();
     }

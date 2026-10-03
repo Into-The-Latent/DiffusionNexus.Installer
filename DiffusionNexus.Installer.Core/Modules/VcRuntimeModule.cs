@@ -34,6 +34,13 @@ public sealed class VcRuntimeModule(IVcRuntimeDetectionService detection) : IWiz
     public bool IsOutdated => _state == VcRuntimeState.Outdated;
 
     /// <summary>
+    /// Installed since the wizard was built (#45): the user ran vc_redist themselves during a side
+    /// trip. The module stays in the plan -- applicability is decided once, at build -- so the
+    /// panel says there is nothing left to do, and nothing is skipped or prompted for.
+    /// </summary>
+    public bool IsPresent => _state == VcRuntimeState.Present;
+
+    /// <summary>
     /// Default true: the silent, unattended behaviour is to provision, matching the pipeline's own
     /// default. Unticking it records that the user was shown the consequence and declined.
     /// </summary>
@@ -68,8 +75,23 @@ public sealed class VcRuntimeModule(IVcRuntimeDetectionService detection) : IWiz
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Detected again after a side trip, so an install the user ran meanwhile is seen. An
+    /// inconclusive probe keeps the earlier answer rather than guessing.
+    /// </summary>
+    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
+    {
+        var result = detection.Detect();
+        if (result.State == VcRuntimeState.Unknown) return Task.CompletedTask;
+        _state = result.State;
+        InstalledVersion = result.InstalledVersion;
+        return Task.CompletedTask;
+    }
+
+    // A runtime found present is never "skipped": an earlier decline was about a runtime that was
+    // missing, and the pipeline's own step finds it in place and does nothing.
     public void Contribute(InstallationOptionsDraft draft) =>
-        draft.SkipVcRuntimeProvisioning = !InstallRuntime;
+        draft.SkipVcRuntimeProvisioning = !InstallRuntime && !IsPresent;
 
     /// <summary>Never blocks: declining is a supported outcome, not an error.</summary>
     public ModuleValidation Validate() => ModuleValidation.Ok();

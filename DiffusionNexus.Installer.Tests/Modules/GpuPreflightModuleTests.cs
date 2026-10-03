@@ -25,6 +25,55 @@ public class GpuPreflightModuleTests
         return new GpuPreflightModule(gpu.Object);
     }
 
+    private static GpuPreflightModule Module(params GpuDetectionResult[] detections)
+    {
+        var gpu = new Mock<IGpuDetectionService>();
+        var sequence = gpu.SetupSequence(g => g.DetectAsync(It.IsAny<CancellationToken>()));
+        foreach (var d in detections) sequence = sequence.ReturnsAsync(d);
+        return new GpuPreflightModule(gpu.Object);
+    }
+
+    [Fact]
+    public async Task A_gpu_made_usable_during_a_side_trip_is_seen_on_resume()
+    {
+        // #45: the System stage said "no usable GPU", the user installed the driver, read Licences,
+        // came Back. A consent to the CPU build given for a machine without a GPU must not put the
+        // CPU wheel on a machine that now has one; the stage must not block on it either.
+        var module = Module(new GpuDetectionResult(GpuDetectionState.NvidiaGpuWithoutDriver),
+                            new GpuDetectionResult(GpuDetectionState.CudaCapable, "RTX 4090"));
+        var selection = Selection(RepositoryType.ComfyUI);
+        await module.InitializeAsync(selection);
+        module.AcceptCpuOnly = true;
+
+        await module.RefreshAfterResumeAsync();
+
+        module.GpuFound.Should().BeTrue();
+        module.GpuName.Should().Be("RTX 4090");
+        module.AcceptCpuOnly.Should().BeFalse("the consent was about a machine without a GPU");
+        module.Validate().IsValid.Should().BeTrue();
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.CpuTorch.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_inconclusive_probe_on_resume_keeps_the_earlier_answer()
+    {
+        var module = Module(new GpuDetectionResult(GpuDetectionState.NoNvidiaGpu),
+                            new GpuDetectionResult(GpuDetectionState.Unknown));
+        var selection = Selection(RepositoryType.ComfyUI);
+        await module.InitializeAsync(selection);
+        module.AcceptCpuOnly = true;
+
+        await module.RefreshAfterResumeAsync();
+
+        module.GpuFound.Should().BeFalse();
+        module.AcceptCpuOnly.Should().BeTrue("nothing new was learned, so nothing the user said is dropped");
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.CpuTorch.Should().BeTrue();
+    }
+
     [Fact]
     public async Task Does_not_apply_when_a_cuda_capable_gpu_is_present()
     {
