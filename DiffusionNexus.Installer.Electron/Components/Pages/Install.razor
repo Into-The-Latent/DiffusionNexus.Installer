@@ -234,10 +234,17 @@
             _onlyWorkloadOfItsSoftware = left.OnlyWorkloadOfItsSoftware;
             _readUnder = left.ReadUnder;
 
+            // Kept again at once, not after the probes below: a resumed wizard has answers, and the
+            // probes take a second or two (nvidia-smi, then WMI) with the wizard already on screen.
+            // Left again in that time, it is kept for the next Back; a flow screen visited meanwhile
+            // releases it through Remember; a Next that reaches Install clears it. A KeepWizard after
+            // the probes respected none of that: it dropped the answers, or kept a run at Install.
+            KeepWizard();
+
             // What the machine may have changed during the trip (a model file, the VC++ runtime, a
             // GPU driver); each module knows its own detections, and never touches the user's answers.
             // The token once, up front: Dispose releases the source, and a continuation that read
-            // it again would throw instead of reaching the check below.
+            // it again would throw.
             var resumeToken = _pageCts.Token;
             try
             {
@@ -246,12 +253,8 @@
             }
             catch (OperationCanceledException)
             {
-                return;
+                // Left again while the probes ran; whoever shows the run next refreshes again.
             }
-
-            // Left again while the probes ran: nothing of this page's is kept (see below).
-            if (resumeToken.IsCancellationRequested) return;
-            KeepWizard();
             return;
         }
 
@@ -330,6 +333,11 @@
         // A notice about the previous stage's save must not follow the user any further.
         _settingsNotice = null;
 
+        // The token once, before the first await: Dispose releases the source, and a continuation
+        // that read it again -- Confirm's, after the preflight -- threw ObjectDisposedException out
+        // of the event handler and took the circuit down.
+        var token = _pageCts.Token;
+
         if (_run!.CurrentStage == WizardStage.Confirm)
         {
             // 1.x checks already-present files when Install is pressed. Here that is Confirm's
@@ -339,7 +347,7 @@
             _preflightNotice = null;
             try
             {
-                var result = await Preflight.RunAsync(_run.Plan, _pageCts.Token);
+                var result = await Preflight.RunAsync(_run.Plan, token);
                 _preflightWarning = result.Warning;
                 if (!result.Proceed)
                 {
@@ -357,7 +365,6 @@
             }
         }
 
-        var saveToken = _pageCts.Token;   // once: Dispose releases the source mid-loop
         {
             // The classic installer's Folder Settings window had a Save button. Here every module
             // of the stage being left is asked to remember its answers (IWizardModule.PersistAsync,
@@ -368,7 +375,7 @@
             try
             {
                 foreach (var module in _run.CurrentModules)
-                    await module.PersistAsync(saveToken);
+                    await module.PersistAsync(token);
             }
             catch (OperationCanceledException)
             {
@@ -389,7 +396,7 @@
         // The page went away during the save (a side trip, #45): the run is kept and may already be
         // on screen in the page that replaced this one. Advancing it from here would skip the user
         // past a stage they never saw.
-        if (saveToken.IsCancellationRequested) return;
+        if (token.IsCancellationRequested) return;
 
         _run.TryNext();
 

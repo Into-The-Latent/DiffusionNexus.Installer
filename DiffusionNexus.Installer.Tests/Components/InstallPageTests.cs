@@ -610,11 +610,9 @@ public class InstallPageTests : BunitContext
         target.WizardInProgress.Should().BeNull();
     }
 
-    [Fact]
-    public async Task A_wizard_left_again_while_its_resume_probes_run_is_not_kept()
+    /// <summary>A wizard left on a side trip and come Back to, with its GPU probe still running.</summary>
+    private async Task<(ReturnTarget Target, KeptWizard Kept, TaskCompletionSource<GpuDetectionResult> Probing)> ResumedWhileProbingAsync()
     {
-        // The GPU probe is async; a page that goes away while it runs must not keep a wizard for a
-        // screen that is no longer Back's target (the same rule as a page left while preparing).
         var probing = new TaskCompletionSource<GpuDetectionResult>();
         var gpu = new Mock<IGpuDetectionService>();
         gpu.SetupSequence(g => g.DetectAsync(It.IsAny<CancellationToken>()))
@@ -625,14 +623,74 @@ public class InstallPageTests : BunitContext
         Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         var target = Services.GetRequiredService<ReturnTarget>();
         await DisposeComponentsAsync();                       // the side trip
-        target.WizardInProgress.Should().NotBeNull();
+        var kept = target.WizardInProgress!;
+        kept.Should().NotBeNull();
         Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));   // Back: resume, probe blocks
+        return (target, kept, probing);
+    }
+
+    [Fact]
+    public async Task A_wizard_left_again_while_its_resume_probes_run_stays_kept()
+    {
+        // Round 4: the probes take a second or two (nvidia-smi, then WMI) with the wizard already on
+        // screen, and the page kept the wizard only after them. Licences, Back, Licences again within
+        // that time dropped every answer -- the #45 bug in a smaller window. A resumed wizard has
+        // answers, so it is kept before the probes.
+        var (target, kept, probing) = await ResumedWhileProbingAsync();
+        target.WizardInProgress.Should().NotBeNull("kept before the probes, not after them");
 
         await DisposeComponentsAsync();                       // left again while probing
         probing.SetResult(new GpuDetectionResult(GpuDetectionState.CudaCapable));
 
+        // Nothing to wait on when it does the right thing; the probe's continuation runs within ms.
+        SpinWait.SpinUntil(() => target.WizardInProgress is null, TimeSpan.FromSeconds(1));
+        target.WizardInProgress.Should().NotBeNull().And.Subject.As<KeptWizard>().Run.Should().BeSameAs(kept.Run);
+    }
+
+    [Fact]
+    public async Task A_flow_screen_visited_while_the_resume_probes_run_releases_the_wizard_for_good()
+    {
+        // The counterpart: moving on in the flow during the probes releases the wizard through
+        // Remember, and the probes' end must not keep it again (nor a run a Next took to Install).
+        var (target, _, probing) = await ResumedWhileProbingAsync();
+
+        target.Remember("software/comfyui");                  // home -> a software screen, meanwhile
+        await DisposeComponentsAsync();
+        probing.SetResult(new GpuDetectionResult(GpuDetectionState.CudaCapable));
+
         SpinWait.SpinUntil(() => target.WizardInProgress is not null, TimeSpan.FromSeconds(1));
         target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_preflight_that_finishes_after_the_page_left_starts_nothing_and_throws_nothing()
+    {
+        // Round 4: Confirm's Next read _pageCts.Token again after awaiting the preflight. A side trip
+        // in that gap had disposed the source, and the read threw ObjectDisposedException out of the
+        // event handler, which takes the circuit down.
+        RegisterContent(EmptyScanner());
+        Services.AddSingleton(Mock.Of<IMismatchedFilePrompt>());
+        var preflightTcs = new TaskCompletionSource<PreflightResult>();
+        Mock.Get(Services.GetRequiredService<IModelPreflight>())
+            .Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .Returns(preflightTcs.Task);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".checkbox input").Change(true); // disclaimer
+        var kept = target.WizardInProgress!;
+        var start = page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation").ClickAsync(new MouseEventArgs());
+
+        await DisposeComponentsAsync();                       // the side trip, mid-preflight
+        preflightTcs.SetResult(new PreflightResult(true, null));
+        await start;
+
+        // A throw out of an event handler is routed to the renderer, not to the click's task.
+        Renderer.UnhandledException.IsCompleted.Should().BeFalse("nothing threw out of the event handler");
+        kept.Run.CurrentStage.Should().Be(WizardStage.Confirm, "the kept run is not advanced by a page that left");
+        target.InstallOnScreen.Should().BeNull();
     }
 
     [Fact]
