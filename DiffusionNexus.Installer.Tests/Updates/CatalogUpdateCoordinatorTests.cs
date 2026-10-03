@@ -412,6 +412,42 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task An_apply_that_throws_after_both_sections_landed_is_no_longer_offered()
+    {
+        // The content is installed; offering it again would put the dot back for nothing.
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
+        _service.ApplyFailure = new InvalidOperationException("cleanup: unexpected");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, "cleanup: unexpected"));
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.UpdateAvailable.Should().BeFalse();
+        coordinator.CanApply.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_failing_cache_refresh_after_a_throw_does_not_strand_the_apply()
+    {
+        // No update deadlock: an escape from the last-chance catch would leave the phase on
+        // Applying with no Raise, and every later check and apply refused until a restart.
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
+        _service.ApplyFailure = new InvalidOperationException("workflows: unexpected");
+        _catalog.Setup(c => c.Invalidate()).Throws(new InvalidOperationException("cache gone"));
+        using var coordinator = await CheckedWithUpdateAsync();
+        var raised = 0;
+        coordinator.Changed += () => raised++;
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().NotBe(CatalogUpdatePhase.Applying);
+        raised.Should().BeGreaterThanOrEqualTo(2, "entering Applying and leaving it");
+        await coordinator.CheckAsync();
+        _service.CheckCalls.Should().Be(2, "a later check runs");
+    }
+
+    [Fact]
     public async Task A_check_requested_while_applying_is_a_no_op_that_does_not_wait_for_the_download()
     {
         // Handing back the apply's task would leave "Check for updates" stuck on "Checking..."

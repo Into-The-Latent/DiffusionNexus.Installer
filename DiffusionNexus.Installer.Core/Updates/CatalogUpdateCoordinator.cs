@@ -253,7 +253,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // its swap, so the state file says what landed. Unreadable: assume something did.
             var after = TryReadState();
             CatalogSections? landed = before is null || after is null ? null : LandedBetween(before, after);
-            if (landed != CatalogSections.None) _catalog.Invalidate();
+            if (landed != CatalogSections.None) TryInvalidate();
+
+            // Both swapped in before the throw: the update is installed, so it is no longer offered.
+            var allLanded = landed == CatalogSections.All;
 
             var result = new CatalogApplyResult(landed ?? CatalogSections.None, CatalogSections.All & ~(landed ?? CatalogSections.None), ex.Message);
             lock (_gate)
@@ -263,23 +266,39 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 LastApply = result;
                 _uncertainApply = landed is null ? result : null;
                 Progress = null;
-                Phase = CatalogUpdatePhase.Checked;
+                Phase = allLanded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
+                if (allLanded) _notLanded = null;
             }
             _logger.LogInformation("Catalog apply after the failure: landed={Landed}", landed?.ToString() ?? "unknown");
         }
         Raise();
     }
 
+    // Both never throw: they run around and inside the apply's last-chance catch, and an escape
+    // there would leave the phase on Applying with no Raise -- every later check and apply refused
+    // until a restart (no update deadlock, ever). Read handles only JsonException itself.
     private LocalCatalogState? TryReadState()
     {
         try
         {
             return LocalCatalogState.Read(_options.InstalledCatalogPath);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
             _logger.LogWarning("Catalog state could not be read: {Message}", ex.Message);
             return null;
+        }
+    }
+
+    private void TryInvalidate()
+    {
+        try
+        {
+            _catalog.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Catalog cache could not be invalidated after a failed apply");
         }
     }
 
