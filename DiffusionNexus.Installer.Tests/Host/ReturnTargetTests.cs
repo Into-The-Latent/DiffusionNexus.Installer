@@ -88,6 +88,25 @@ public class ReturnTargetTests
     }
 
     [Fact]
+    public async Task A_kept_wizard_is_released_when_another_flow_screen_is_remembered()
+    {
+        // Left by the top bar's home link: never restored again, so not held for the session.
+        var workload = new DiffusionNexus.Installer.SDK.Models.Configuration.InstallationConfiguration { Name = "Fooocus" };
+        var plan = await new Core.Wizard.WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new Core.Wizard.WizardSelection { Workload = workload });
+        var target = new ReturnTarget(new StubCatalogUpdateCoordinator())
+        {
+            WizardInProgress = new KeptWizard(new Core.Wizard.WizardRun(plan), false, 0),
+        };
+
+        target.Remember($"install/{workload.Id}");
+        target.WizardInProgress.Should().NotBeNull("the wizard's own screen keeps it");
+
+        target.Remember("");
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
     public void Listens_to_the_catalog_only_while_someone_listens_to_it()
     {
         var catalog = new StubCatalogUpdateCoordinator();

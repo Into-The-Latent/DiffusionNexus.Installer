@@ -96,7 +96,8 @@ public sealed class ReturnTarget
     /// The wizard the user left mid-configuration (#45), so a side trip and Back -- or a circuit
     /// reconnect -- picks it up with every answer instead of starting over. Set by the install page
     /// while its run is short of the Install stage, where <see cref="InstallOnScreen"/> takes over;
-    /// taken (and cleared) by the next install page. Only restored when that page is returned to
+    /// taken (and cleared) by the next install page, and released when another flow screen is
+    /// remembered (<see cref="Remember"/>). Only restored when that page is returned to
     /// (<see cref="IsAt"/>), which is never the case once the catalog has changed since: a wizard
     /// built from the old catalog is rebuilt from the new one.
     /// </summary>
@@ -110,8 +111,15 @@ public sealed class ReturnTarget
     /// pass it: taken here, after the read, an apply landing in between would stamp stale content
     /// as current.
     /// </param>
-    public void Remember(string baseRelativePath, long? readUnder = null) =>
-        _at = new(Normalize(baseRelativePath), readUnder ?? Generation);
+    public void Remember(string baseRelativePath, long? readUnder = null)
+    {
+        var path = Normalize(baseRelativePath);
+        _at = new(path, readUnder ?? Generation);
+
+        // Kept only while it is the screen Back leads to (#45): moving on to another flow screen
+        // (home, a software screen, another wizard) releases it and every module it holds.
+        if (WizardInProgress is { } kept && !SamePath(path, InstallPath(kept.Run.Plan))) WizardInProgress = null;
+    }
 
     /// <summary>
     /// True when <paramref name="baseRelativePath"/> is the screen Back would lead to -- i.e. the
@@ -126,9 +134,11 @@ public sealed class ReturnTarget
     // A run's progress or report does not depend on the catalog, so an apply leaves the way back
     // to it alone. Only when it is the screen remembered: InstallOnScreen is not cleared when the
     // user leaves a report by the top bar, and must not shield the screen they went on to.
-    private bool IsInstallOnScreen(string path) =>
-        InstallOnScreen is { } plan
-        && string.Equals(path, Normalize($"install/{plan.Selection.Workload.Id}"), StringComparison.OrdinalIgnoreCase);
+    private bool IsInstallOnScreen(string path) => InstallOnScreen is { } plan && SamePath(path, InstallPath(plan));
+
+    private static string InstallPath(WizardPlan plan) => Normalize($"install/{plan.Selection.Workload.Id}");
+
+    private static bool SamePath(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     private void OnCatalogChanged()
     {

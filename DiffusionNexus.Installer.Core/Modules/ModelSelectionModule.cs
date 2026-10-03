@@ -93,6 +93,16 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         if (Rows.FirstOrDefault(r => r.Id == id) is { } row) row.IsSelected = selected;
     }
 
+    /// <summary>
+    /// Makes the panel scan again on its next render, whatever the tier and folder: for a wizard
+    /// resumed after a side trip (#45), when files may have come or gone since the last scan.
+    /// </summary>
+    public void InvalidatePresence()
+    {
+        LastScannedTier = -1;
+        LastScannedFolder = null;
+    }
+
     /// <summary>Filesystem only, synchronous. Nothing to scan until an install folder is known.</summary>
     public void RefreshPresence()
     {

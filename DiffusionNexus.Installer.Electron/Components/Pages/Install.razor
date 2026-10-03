@@ -228,14 +228,17 @@
         // rebuilt from the new content.
         if (returning
             && kept is { } left
-            && left.Run.Plan.Selection.Workload.Id == WorkloadId
-            && left.Run.CurrentStage != WizardStage.Install)
+            && left.Run.Plan.Selection.Workload.Id == WorkloadId)
         {
             _run = left.Run;
             _onlyWorkloadOfItsSoftware = left.OnlyWorkloadOfItsSoftware;
             _readUnder = left.ReadUnder;
-            // The prompt it held was the page that built it; after a reconnect, a dead circuit's.
-            WireShortcutPrompt(_run.Plan);
+
+            // Files may have come or gone during the trip; a fresh wizard would have scanned, so
+            // the Content stage scans again instead of showing "already downloaded" from before.
+            foreach (var models in _run.Plan.AllModules.OfType<ModelSelectionModule>())
+                models.InvalidatePresence();
+
             KeepWizard();
             return;
         }
@@ -263,7 +266,7 @@
         _onlyWorkloadOfItsSoftware = software?.SingleWorkload?.Workload.Id == workload.Id;
 
         var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload, Catalog = catalog });
-        WireShortcutPrompt(plan);
+        WireShortcutPrompt(plan, Prompt, Session);
 
         _run = new WizardRun(plan);
         KeepWizard();
@@ -273,7 +276,9 @@
     // where InstallOnScreen takes over, and by Done/Cancel.
     private void KeepWizard() => Return.WizardInProgress = new KeptWizard(_run!, _onlyWorkloadOfItsSoftware, _readUnder);
 
-    private void WireShortcutPrompt(WizardPlan plan)
+    // Static, from the two singletons: the callback lives as long as the plan, which a kept wizard
+    // (#45) holds past this page -- capturing the page would keep it and its render tree alive.
+    private static void WireShortcutPrompt(WizardPlan plan, IUserPrompt prompt, IInstallSession session)
     {
         // Without this the SDK's OnShortcutConflict callback is always null and a name clash is
         // silently overwritten -- wire it to a user prompt before the run starts so a conflict
@@ -286,12 +291,12 @@
                 // no token of its own, so a Cancel while the dialog is open would otherwise leave
                 // the pipeline thread parked on an answer that can never arrive. Cancelling
                 // completes it false, which maps to "skip the shortcut" -- a safe answer.
-                var overwrite = await Prompt.ConfirmAsync(
+                var overwrite = await prompt.ConfirmAsync(
                     "Shortcut already exists",
                     $"A shortcut named \"{name}\" already exists in {location}. Replace it?",
                     "Replace",
                     "Keep the existing one",
-                    Session.RunToken);
+                    session.RunToken);
 
                 return new ShortcutConflictResult(
                     overwrite ? ShortcutConflictResolution.Overwrite : ShortcutConflictResolution.Cancel);
@@ -363,6 +368,11 @@
                 _savingSettings = false;
             }
         }
+
+        // The page went away during the save (a side trip, #45): the run is kept and may already be
+        // on screen in the page that replaced this one. Advancing it from here would skip the user
+        // past a stage they never saw.
+        if (_pageCts.IsCancellationRequested) return;
 
         _run.TryNext();
 
