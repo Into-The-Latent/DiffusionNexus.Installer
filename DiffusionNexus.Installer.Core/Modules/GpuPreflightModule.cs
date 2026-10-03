@@ -31,6 +31,13 @@ public sealed class GpuPreflightModule(IGpuDetectionService gpuDetection) : IWiz
     public bool AcceptCpuOnly { get; set; }
 
     /// <summary>
+    /// A working GPU found since the wizard was built (#45): the user installed the driver during a
+    /// side trip. The module stays in the plan -- applicability is decided once, at build -- so the
+    /// panel says there is nothing left to answer, and no CPU build is installed.
+    /// </summary>
+    public bool GpuFound => _state == GpuDetectionState.CudaCapable;
+
+    /// <summary>
     /// The probe result, not the selection, decides this — so it is computed once and read from
     /// both AppliesTo and Contribute rather than passing a fake selection around.
     /// </summary>
@@ -51,6 +58,20 @@ public sealed class GpuPreflightModule(IGpuDetectionService gpuDetection) : IWiz
         _state = result.State;
         GpuName = result.GpuName;
         CanOfferCpuFallback = selection.Workload.Repository.Type == RepositoryType.ComfyUI;
+    }
+
+    /// <summary>
+    /// Detected again after a side trip, so a driver installed meanwhile is seen. An inconclusive
+    /// probe keeps the earlier answer; a GPU that is now usable drops a consent given for a machine
+    /// that had none, since the CPU build would be installed on a machine that no longer needs it.
+    /// </summary>
+    public async Task RefreshAfterResumeAsync(CancellationToken ct = default)
+    {
+        var result = await gpuDetection.DetectAsync(ct).ConfigureAwait(false);
+        if (result.State == GpuDetectionState.Unknown) return;
+        _state = result.State;
+        GpuName = result.GpuName;
+        if (GpuFound) AcceptCpuOnly = false;
     }
 
     public void Contribute(InstallationOptionsDraft draft)

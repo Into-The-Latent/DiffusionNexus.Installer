@@ -41,6 +41,83 @@ public class ModelSelectionModuleTests
     private static ModelSelectionModule Module(Mock<IModelPresenceScanner>? scanner = null, IDiskSpaceEstimator? estimator = null) =>
         new((scanner ?? Scanner()).Object, estimator ?? Mock.Of<IDiskSpaceEstimator>());
 
+    // ----- #45: one module, two pages for a moment -----
+
+    /// <summary>The first call is InitializeAsync's; the one numbered <paramref name="held"/> waits for the gate.</summary>
+    private static Mock<IModelPresenceScanner> HeldScanner(int held, ManualResetEventSlim gate, Func<int, ModelPresence[]> answer, Counter calls)
+    {
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns(() =>
+        {
+            var call = Interlocked.Increment(ref calls.Value);
+            if (call == held) gate.Wait(TimeSpan.FromSeconds(5));
+            return answer(call);
+        });
+        return scanner;
+    }
+
+    private sealed class Counter { public int Value; }
+
+    [Fact]
+    public async Task A_scan_that_began_before_a_resume_does_not_commit()
+    {
+        // The page that left was scanning; its answer predates the trip. The restored panel must
+        // still see the scan as stale and run its own.
+        using var gate = new ManualResetEventSlim();
+        var calls = new Counter();
+        var module = Module(HeldScanner(2, gate, _ => [Present(Vae, @"C:\AI\ComfyUI\models\vae\ae.safetensors")], calls));
+        await module.InitializeAsync(Selection(Vae));
+        var stale = Task.Run(module.RefreshPresence);
+        SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 2000).Should().BeTrue();
+
+        await module.RefreshAfterResumeAsync();
+        gate.Set();
+        await stale;
+
+        module.LastScannedFolder.Should().BeNull("the panel scans again");
+        module.LastScannedTier.Should().Be(-1);
+    }
+
+    [Fact]
+    public async Task An_older_scan_finishing_last_does_not_overwrite_a_newer_one()
+    {
+        // Two panels on one module: whichever finished last used to win, old rows and all.
+        using var gate = new ManualResetEventSlim();
+        var calls = new Counter();
+        var module = Module(HeldScanner(2, gate, call => call == 2
+            ? [Present(Vae, @"C:\AI\ComfyUI\models\vae\ae.safetensors")]
+            : [Absent(Vae)], calls));
+        await module.InitializeAsync(Selection(Vae));
+        var older = Task.Run(module.RefreshPresence);
+        SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 2000).Should().BeTrue();
+
+        module.RefreshPresence();
+        gate.Set();
+        await older;
+
+        module.Rows.Single().IsExisting.Should().BeFalse("the newer scan's answer stands");
+    }
+
+    [Fact]
+    public async Task An_older_estimate_finishing_last_does_not_overwrite_a_newer_one()
+    {
+        var olderAnswer = new TaskCompletionSource<DiskSpaceEstimate>();
+        var newer = new DiskSpaceEstimate(2, 20, true, []);
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.SetupSequence(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(olderAnswer.Task)
+            .ReturnsAsync(newer);
+        var module = Module(estimator: estimator.Object);
+        await module.InitializeAsync(Selection(Vae));
+
+        var older = module.RefreshEstimateAsync();
+        await module.RefreshEstimateAsync();
+        olderAnswer.SetResult(new DiskSpaceEstimate(1, 10, true, []));
+        await older;
+
+        module.Estimate.Should().BeSameAs(newer);
+    }
+
     [Fact]
     public async Task A_duplicated_model_id_in_the_catalog_is_a_data_smell_not_a_crash()
     {

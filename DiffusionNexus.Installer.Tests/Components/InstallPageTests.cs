@@ -13,6 +13,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Hardware;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using DiffusionNexus.Installer.Tests.Support;
@@ -258,6 +259,81 @@ public class InstallPageTests : BunitContext
                 "re-opening a report must never start an install");
     }
 
+    // ----- #45: a wizard left mid-configuration -----
+
+    private const string Folder = @"C:\Installs\Fooocus";
+
+    /// <summary>Opens the wizard at its URL (so its shell records it as Back's target) and types a folder.</summary>
+    private async Task<ReturnTarget> AnsweredAndLeftAsync()
+    {
+        Register(Workload());
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.Find(".path-row input").Input(Folder);
+
+        // The side trip: the page goes away; /licenses and /updates wear no shell and record nothing.
+        await DisposeComponentsAsync();
+        return Services.GetRequiredService<ReturnTarget>();
+    }
+
+    private IRenderedComponent<InstallPage> ComeBack() => Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+    private static bool NextEnabled(IRenderedComponent<InstallPage> page) =>
+        !page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").HasAttribute("disabled");
+
+    [Fact]
+    public async Task Coming_back_from_a_side_trip_keeps_the_answers_already_given()
+    {
+        // Issue #45: every return used to build a new WizardRun, so a look at Licences reset the
+        // whole wizard -- no catalog change needed.
+        await AnsweredAndLeftAsync();
+
+        var page = ComeBack();
+
+        page.Find(".path-row input").GetAttribute("value").Should().Be(Folder);
+        NextEnabled(page).Should().BeTrue("the folder answer is still there, so the stage still validates");
+    }
+
+    [Fact]
+    public async Task A_wizard_left_before_a_catalog_apply_starts_over()
+    {
+        // Built from the old catalog: Back leads home after an apply (#32), and a way back here
+        // (a reconnect, a remembered link) must not revive it either.
+        var target = await AnsweredAndLeftAsync();
+        ((StubCatalogUpdateCoordinator)Services.GetRequiredService<ICatalogUpdateCoordinator>()).ContentGeneration++;
+
+        var page = ComeBack();
+
+        page.Find(".path-row input").GetAttribute("value").Should().BeNullOrEmpty();
+        target.WizardInProgress.Should().NotBeNull("the new wizard is kept in its place")
+            .And.Subject.As<KeptWizard>().ReadUnder.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Picking_the_workload_again_from_the_gallery_starts_a_new_wizard()
+    {
+        var target = await AnsweredAndLeftAsync();
+        target.Remember("software/Fooocus");
+
+        var page = ComeBack();
+
+        page.Find(".path-row input").GetAttribute("value").Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Cancel_forgets_the_wizard()
+    {
+        Register(Workload());
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.WizardInProgress.Should().NotBeNull();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel").Click();
+
+        target.WizardInProgress.Should().BeNull();
+    }
+
     [Fact]
     public async Task Picking_the_same_workload_again_starts_a_new_wizard_not_the_old_report()
     {
@@ -486,6 +562,157 @@ public class InstallPageTests : BunitContext
         var scanner = new Mock<IModelPresenceScanner>();
         scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns([]);
         return scanner;
+    }
+
+    [Fact]
+    public async Task A_save_that_finishes_after_the_page_left_does_not_advance_the_kept_wizard()
+    {
+        // #45 shares one run between the page that left and the one that comes back. Next on the
+        // old page, still saving, must not move the run the new page shows: the user's next Next
+        // would then land two stages on, past one they never saw.
+        RegisterContent(EmptyScanner());
+        var saving = new TaskCompletionSource<UserSettings>();
+        _contentSettings!.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).Returns(saving.Task);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        var kept = target.WizardInProgress!;
+
+        await DisposeComponentsAsync();
+        saving.SetResult(new UserSettings());
+
+        // The old page carries on off the test's thread, with nothing to wait on when it does the
+        // right thing. Without the guard it advances within milliseconds; a second is ample.
+        SpinWait.SpinUntil(() => kept.Run.CurrentStage != WizardStage.Location, TimeSpan.FromSeconds(1));
+        kept.Run.CurrentStage.Should().Be(WizardStage.Location);
+    }
+
+    [Fact]
+    public async Task A_wizard_left_while_preparing_is_not_kept()
+    {
+        // The home shell remembered "/" before this page finished building, so nothing released
+        // it; keeping it afterwards would hold a wizard no screen leads back to.
+        Register(Workload());
+        var reading = new TaskCompletionSource<IReadOnlyList<InstallationConfiguration>>();
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>())).Returns(reading.Task);
+        Services.AddSingleton(source.Object);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+
+        await DisposeComponentsAsync();
+        reading.SetResult([Workload()]);
+
+        // Nothing to wait on when it does the right thing; a kept wizard would appear within ms.
+        SpinWait.SpinUntil(() => target.WizardInProgress is not null, TimeSpan.FromSeconds(1));
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    /// <summary>A wizard left on a side trip and come Back to, with its GPU probe still running.</summary>
+    private async Task<(ReturnTarget Target, KeptWizard Kept, TaskCompletionSource<GpuDetectionResult> Probing)> ResumedWhileProbingAsync()
+    {
+        var probing = new TaskCompletionSource<GpuDetectionResult>();
+        var gpu = new Mock<IGpuDetectionService>();
+        gpu.SetupSequence(g => g.DetectAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GpuDetectionResult(GpuDetectionState.NoNvidiaGpu))
+            .Returns(probing.Task);
+        RegisterContent(EmptyScanner(), new GpuPreflightModule(gpu.Object));
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        await DisposeComponentsAsync();                       // the side trip
+        var kept = target.WizardInProgress!;
+        kept.Should().NotBeNull();
+        Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));   // Back: resume, probe blocks
+        return (target, kept, probing);
+    }
+
+    [Fact]
+    public async Task A_wizard_left_again_while_its_resume_probes_run_stays_kept()
+    {
+        // Round 4: the probes take a second or two (nvidia-smi, then WMI) with the wizard already on
+        // screen, and the page kept the wizard only after them. Licences, Back, Licences again within
+        // that time dropped every answer -- the #45 bug in a smaller window. A resumed wizard has
+        // answers, so it is kept before the probes.
+        var (target, kept, probing) = await ResumedWhileProbingAsync();
+        target.WizardInProgress.Should().NotBeNull("kept before the probes, not after them");
+
+        await DisposeComponentsAsync();                       // left again while probing
+        probing.SetResult(new GpuDetectionResult(GpuDetectionState.CudaCapable));
+
+        // Nothing to wait on when it does the right thing; the probe's continuation runs within ms.
+        SpinWait.SpinUntil(() => target.WizardInProgress is null, TimeSpan.FromSeconds(1));
+        target.WizardInProgress.Should().NotBeNull().And.Subject.As<KeptWizard>().Run.Should().BeSameAs(kept.Run);
+    }
+
+    [Fact]
+    public async Task A_flow_screen_visited_while_the_resume_probes_run_releases_the_wizard_for_good()
+    {
+        // The counterpart: moving on in the flow during the probes releases the wizard through
+        // Remember, and the probes' end must not keep it again (nor a run a Next took to Install).
+        var (target, _, probing) = await ResumedWhileProbingAsync();
+
+        target.Remember("software/comfyui");                  // home -> a software screen, meanwhile
+        await DisposeComponentsAsync();
+        probing.SetResult(new GpuDetectionResult(GpuDetectionState.CudaCapable));
+
+        SpinWait.SpinUntil(() => target.WizardInProgress is not null, TimeSpan.FromSeconds(1));
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_preflight_that_finishes_after_the_page_left_starts_nothing_and_throws_nothing()
+    {
+        // Round 4: Confirm's Next read _pageCts.Token again after awaiting the preflight. A side trip
+        // in that gap had disposed the source, and the read threw ObjectDisposedException out of the
+        // event handler, which takes the circuit down.
+        RegisterContent(EmptyScanner());
+        Services.AddSingleton(Mock.Of<IMismatchedFilePrompt>());
+        var preflightTcs = new TaskCompletionSource<PreflightResult>();
+        Mock.Get(Services.GetRequiredService<IModelPreflight>())
+            .Setup(p => p.RunAsync(It.IsAny<WizardPlan>(), It.IsAny<CancellationToken>()))
+            .Returns(preflightTcs.Task);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        while (!page.Markup.Contains("Ready to install"))
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".checkbox input").Change(true); // disclaimer
+        var kept = target.WizardInProgress!;
+        var start = page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation").ClickAsync(new MouseEventArgs());
+
+        await DisposeComponentsAsync();                       // the side trip, mid-preflight
+        preflightTcs.SetResult(new PreflightResult(true, null));
+        await start;
+
+        // A throw out of an event handler is routed to the renderer, not to the click's task.
+        Renderer.UnhandledException.IsCompleted.Should().BeFalse("nothing threw out of the event handler");
+        kept.Run.CurrentStage.Should().Be(WizardStage.Confirm, "the kept run is not advanced by a page that left");
+        target.InstallOnScreen.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_wizard_resumed_after_a_side_trip_scans_for_models_again()
+    {
+        // Files may have come or gone while the user read Licences; the panel must not show the
+        // "already downloaded" rows from before (the preflight at Confirm rescans for the install).
+        var scanner = EmptyScanner();
+        RegisterContent(scanner);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        page.Find(".advanced-toggle").Click();
+        page.WaitForAssertion(() => page.FindComponents<ModelSelectionPanel>().Should().NotBeEmpty());
+        await DisposeComponentsAsync();
+        var scansBefore = scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan));
+
+        var back = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        back.Find(".advanced-toggle").Click();
+
+        back.WaitForAssertion(() =>
+            scanner.Invocations.Count(i => i.Method.Name == nameof(IModelPresenceScanner.Scan)).Should().BeGreaterThan(scansBefore));
     }
 
     [Fact]

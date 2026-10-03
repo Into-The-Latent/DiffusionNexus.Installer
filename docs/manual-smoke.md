@@ -117,6 +117,11 @@ the catalog reaches those lists correctly.
 7. Pick Ideogram-4.0. **Expect:** the dropdown offers exactly 24 and 32 GB, 24 preselected.
 8. On the Content screen, point the install folder (Back, then edit) at a folder that already
    holds one of the listed models. **Expect:** that row shows "already downloaded".
+9. Pick Krea-2-Turbo, type an install folder, press Next, and change the VRAM tier. Open
+   **Licenses** from the top bar and press **← Back**. **Expect:** the Content screen again, with
+   your tier and your folder (Back to Location) still there (#45). Repeat via **Check for
+   Updates** without applying anything: same result. Then cancel the wizard and pick Krea-2-Turbo
+   again. **Expect:** a fresh wizard on Location.
 
 **Confirm stage:** the primary button reads "Start installation" (every earlier stage says
 "Next").
