@@ -11,13 +11,16 @@
 @inject IInstallSession Session
 @inject ICatalogUpdateCoordinator Catalog
 @inject AppUpdateChecker AppUpdates
+@inject ReturnTarget Return
 @implements IDisposable
 
 <PageTitle>Easy Workload Installer - Into the Latent</PageTitle>
 
 <div class="shell">
     <header>
-        <BackLink />
+        @* Keyed on the target: an apply can move it (OnCatalogChanged), and a parameterless child
+           is not re-rendered by its parent. *@
+        <BackLink @key="Return.Path" />
         <h1>Easy Workload Installer</h1>
         <p class="host">@HostDescription</p>
     </header>
@@ -201,11 +204,35 @@
         // would still say it after X finished, with the user sitting on this page watching nothing
         // happen.
         Session.Changed += OnLogChanged;
-        Catalog.Changed += OnLogChanged;
+        Catalog.Changed += OnCatalogChanged;
+        _catalogPhase = Catalog.Phase;
     }
 
     // Fires on Electron's socket thread, so hop back onto the circuit before re-rendering.
     private void OnLogChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private CatalogUpdatePhase _catalogPhase;
+
+    // An apply that lands here sends Back home (#32): the screen the user came from was built from
+    // the old catalog -- a wizard rebuilt from the new one would drop every answer without a word,
+    // and the gallery showing the change is where they want to be. A run on screen keeps its way
+    // back: its report or progress does not depend on the catalog. The phase is read here, on the
+    // event's thread, so a quick Applied -> Checking cannot hide the transition.
+    private void OnCatalogChanged()
+    {
+        var phase = Catalog.Phase;
+        _ = InvokeAsync(() =>
+        {
+            if (phase == CatalogUpdatePhase.Applied && _catalogPhase != CatalogUpdatePhase.Applied
+                && Return.InstallOnScreen is null)
+            {
+                Return.Remember("");
+            }
+
+            _catalogPhase = phase;
+            StateHasChanged();
+        });
+    }
 
     private async Task CheckForUpdatesAsync()
     {
@@ -387,7 +414,7 @@
         // The session outlives every component on the circuit, so a handler left on it keeps this
         // page alive for the life of the app.
         Session.Changed -= OnLogChanged;
-        Catalog.Changed -= OnLogChanged;
+        Catalog.Changed -= OnCatalogChanged;
     }
 
     // Worded like the catalog row beside it, so the two read as one list.

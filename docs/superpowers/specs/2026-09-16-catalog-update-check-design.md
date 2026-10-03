@@ -306,7 +306,8 @@ The catalog section renders, top to bottom:
      once **<workload>** has finished."
 5. **Progress** while Applying: "Downloading… 42%" when the total is known, otherwise
    "Downloading… 3.1 MB".
-6. **Result** after Applied: "Catalog updated to v4. [Back to all software](/)". On a
+6. **Result** after Applied: "Catalog updated to v4." -- no link after it (#32): the page's
+   **← Back** is the way home, and an apply sends it there (see the rules below). On a
    partial or failed apply: "The catalog update failed: `<error>`. Nothing was changed."
    or, when one section landed and one did not, "Workloads were updated; workflows
    failed: `<error>`." with the Apply button back for a retry. The all-failed line folds
@@ -339,8 +340,11 @@ leaving them showing the click the user just made.
   current catalog; swapping content under it has no upside.
 - Allowed while a wizard is mid-configuration but not running. Every page reads the
   catalog through `IWorkloadSource` on navigation and the SDK invalidates its cache on
-  apply, so the next screen reflects the new content. The `/updates` result line offers
-  "Back to all software" rather than forcing a reload.
+  apply, so the next screen reflects the new content. An apply that lands on `/updates`
+  points the page's **← Back** at `/` rather than forcing a reload (#32): the wizard the
+  user came from was built from the old catalog, and returning to it would rebuild it from
+  the new one, dropping their answers. A finished install on screen
+  (`ReturnTarget.InstallOnScreen`) keeps its way back; its report does not depend on the catalog.
 - No automatic re-check after apply. The SDK reloads the catalog lazily; the coordinator
   reloads `Installed` from the state file so the section shows the new version at once.
 
@@ -391,7 +395,7 @@ leaving them showing the click the user just made.
    dot within seconds, the Welcome notice with the right counts, and `/updates` listing
    the exact change the editor showed.
 3. Apply. Expect progress, "Catalog updated to vN", and the gallery showing the change
-   after "Back to all software".
+   after **← Back**.
 4. Launch without the variable. Expect Stable, up to date against `v3`, no notice.
 5. Press Release in the editor. After a minute, launch on Stable: expect the same update
    offered and applied.

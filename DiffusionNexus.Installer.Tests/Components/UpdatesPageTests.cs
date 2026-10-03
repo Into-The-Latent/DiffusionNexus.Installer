@@ -215,9 +215,67 @@ public class UpdatesPageTests : BunitContext
 
         var page = Render<UpdatesPage>();
 
-        page.Find(".catalog-outcome").TextContent.Should().Contain("Catalog updated to v4.");
-        page.FindAll(".catalog-outcome a").Should().BeEmpty("the page's Back button already leads home (#32)");
+        // The whole cell: no "Back to all software" after it, as a link, a button or text (#32).
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v4.");
         page.FindAll(".catalog-changes").Should().BeEmpty("what changed is now what is installed");
+    }
+
+    private static string Wizard => "install/6f9619ff-8b86-d011-b42d-00cf4fc964ff";
+
+    [Fact]
+    public void An_apply_opened_from_a_wizard_sends_Back_home()
+    {
+        // The wizard was built from the old catalog; returning to it would rebuild it from the new
+        // one and drop every answer. Back is the only way home now that the link is gone (#32).
+        Register(InstallPhase.Idle);
+        Available();
+        Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        var page = Render<UpdatesPage>();
+        page.Find("a.back-link").GetAttribute("href").Should().Be("/" + Wizard);
+
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _catalog.RaiseChanged();
+
+        page.WaitForAssertion(() => page.Find("a.back-link").GetAttribute("href").Should().Be("/"));
+    }
+
+    [Fact]
+    public async Task An_apply_keeps_Back_on_an_install_that_is_on_screen()
+    {
+        // A run's report or progress does not depend on the catalog: leaving it behind would lose it.
+        var workload = new InstallationConfiguration { Name = "Krea-2-Turbo" };
+        var plan = await new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = workload });
+        Register(InstallPhase.Completed, plan);
+        Available();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember(Wizard);
+        target.InstallOnScreen = plan;
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        var page = Render<UpdatesPage>();
+
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.RaiseChanged();
+
+        page.WaitForAssertion(() => page.Find("a.back-link").GetAttribute("href").Should().Be("/" + Wizard));
+    }
+
+    [Fact]
+    public void An_earlier_apply_does_not_move_Back()
+    {
+        // Applied hours ago, then into a wizard built from that catalog, then here again: the
+        // wizard is current, and an unrelated re-render must not take the way back to it away.
+        Register(InstallPhase.Idle);
+        Available();
+        Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        var page = Render<UpdatesPage>();
+
+        _catalog.RaiseChanged();
+
+        page.WaitForAssertion(() => page.Find("a.back-link").GetAttribute("href").Should().Be("/" + Wizard));
     }
 
     [Fact]
