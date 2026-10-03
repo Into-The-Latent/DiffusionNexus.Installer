@@ -76,7 +76,8 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public LocalCatalogState? Installed { get; private set; }
     public CatalogDownloadProgress? Progress { get; private set; }
     public CatalogApplyResult? LastApply { get; private set; }
-    public long ContentGeneration { get; private set; }
+    public long ContentGeneration => Interlocked.Read(ref _contentGeneration);
+    private long _contentGeneration;
 
     // Not while a switch waits for an answer: the last check describes the channel being left,
     // and its update could not be applied until Switch or Keep (PR #43 review).
@@ -212,7 +213,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 Installed = installed;
                 _overrideActive = overrideActive;
                 Progress = null;
-                if (result.Applied != CatalogSections.None) ContentGeneration++;
+                if (result.Applied != CatalogSections.None) Interlocked.Increment(ref _contentGeneration);
                 Phase = succeeded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
                 if (succeeded) _notLanded = null;
             }
@@ -235,6 +236,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             _logger.LogError(ex, "Catalog apply failed unexpectedly");
             lock (_gate)
             {
+                // The SDK catches only I/O errors per section; anything else escapes after an
+                // earlier section may already have been swapped in. Counted as content changed.
+                Interlocked.Increment(ref _contentGeneration);
                 LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, ex.Message);
                 Progress = null;
                 Phase = CatalogUpdatePhase.Checked;

@@ -1,6 +1,7 @@
 using Bunit;
 using DiffusionNexus.Installer.Electron.Components.Pages;
 using DiffusionNexus.Installer.Electron.Services;
+using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -34,7 +35,7 @@ public class LicensesPageTests : BunitContext
     [Fact]
     public void The_page_shows_the_notices_and_a_way_back()
     {
-        Services.AddSingleton<ReturnTarget>();
+        Services.AddSingleton(new ReturnTarget(new StubCatalogUpdateCoordinator()));
 
         var cut = Render<Licenses>();
 
@@ -47,7 +48,7 @@ public class LicensesPageTests : BunitContext
     {
         // Opened from the top bar in the middle of an install: Back must return there, where the
         // singleton session rejoins the run, not drop the user on the welcome screen.
-        var target = new ReturnTarget();
+        var target = new ReturnTarget(new StubCatalogUpdateCoordinator());
         target.Remember("install/6f9619ff-8b86-d011-b42d-00cf4fc964ff");
         Services.AddSingleton(target);
 

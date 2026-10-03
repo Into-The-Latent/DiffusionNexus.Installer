@@ -260,26 +260,6 @@ public class UpdatesPageTests : BunitContext
     }
 
     [Fact]
-    public void A_switch_that_applies_nothing_does_not_move_Back()
-    {
-        // Applied hours ago, then into a wizard built from that catalog, then here: a channel
-        // switch previews (Checking), the user keeps their channel, the phase returns to Applied.
-        // Nothing changed, so the wizard is still current.
-        Register(InstallPhase.Idle);
-        Available();
-        Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
-        _catalog.Phase = CatalogUpdatePhase.Applied;
-        var page = Render<UpdatesPage>();
-
-        _catalog.Phase = CatalogUpdatePhase.Checking;
-        _catalog.RaiseChanged();
-        _catalog.Phase = CatalogUpdatePhase.Applied;
-        _catalog.RaiseChanged();
-
-        page.WaitForAssertion(() => BackHref(page).Should().Be("/" + Wizard));
-    }
-
-    [Fact]
     public async Task An_apply_keeps_Back_on_an_install_that_is_on_screen()
     {
         // A run's report or progress does not depend on the catalog: leaving it behind would lose it.

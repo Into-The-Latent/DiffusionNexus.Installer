@@ -18,6 +18,9 @@ internal sealed class FakeCatalogUpdateService : ICatalogUpdateService
     public TaskCompletionSource? HoldApply { get; set; }
     public bool ThrowCancelledOnApply { get; set; }
 
+    /// <summary>Thrown by an apply: what escapes the SDK when a section fails with something other than I/O.</summary>
+    public Exception? ApplyFailure { get; set; }
+
     public int CheckCalls { get; private set; }
     public List<CatalogChannel> PreviewedChannels { get; } = [];
     public int ApplyCalls { get; private set; }
@@ -52,6 +55,7 @@ internal sealed class FakeCatalogUpdateService : ICatalogUpdateService
         Progress = progress;
         if (HoldApply is not null) await HoldApply.Task.WaitAsync(ct);   // the SDK lets a cancel through
         if (ThrowCancelledOnApply) throw new OperationCanceledException();
+        if (ApplyFailure is not null) throw ApplyFailure;
         return NextApply();
     }
 }

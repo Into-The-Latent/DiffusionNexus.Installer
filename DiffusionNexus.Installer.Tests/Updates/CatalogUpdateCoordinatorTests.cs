@@ -351,6 +351,21 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task An_apply_that_throws_counts_as_changed_content()
+    {
+        // The SDK catches only I/O errors per section: anything else escapes after an earlier
+        // section may have been swapped in. A needless "Back goes home" is cheap; a missed one is #32.
+        _service.ApplyFailure = new InvalidOperationException("state save failed");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply!.Applied.Should().Be(CatalogSections.None);
+        coordinator.ContentGeneration.Should().Be(1);
+    }
+
+    [Fact]
     public async Task A_check_requested_while_applying_is_a_no_op_that_does_not_wait_for_the_download()
     {
         // Handing back the apply's task would leave "Check for updates" stuck on "Checking..."
@@ -999,6 +1014,49 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         VerifyNothingSaved();
         _service.ApplyCalls.Should().Be(0);
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Idle);
+    }
+
+    // Applied, as after an earlier apply: the phase a switch that applies nothing passes back to.
+    private async Task<CatalogUpdateCoordinator> AppliedOnPreviewAsync()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Preview);
+        var coordinator = CreateOnPreview();
+        await coordinator.CheckAsync();
+        await coordinator.ApplyAsync();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.ContentGeneration.Should().Be(1);
+        return coordinator;
+    }
+
+    [Fact]
+    public async Task A_kept_switch_from_applied_does_not_count_as_changed_content()
+    {
+        // The phase goes Applied -> Checking -> Applied; nothing landed (PR #44 review).
+        using var coordinator = await AppliedOnPreviewAsync();
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        coordinator.PendingSwitch.Should().NotBeNull();
+
+        coordinator.KeepChannel();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.ContentGeneration.Should().Be(1);
+        _service.ApplyCalls.Should().Be(1, "only the earlier apply");
+    }
+
+    [Fact]
+    public async Task A_switch_whose_save_fails_from_applied_does_not_count_as_changed_content()
+    {
+        using var coordinator = await AppliedOnPreviewAsync();
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("settings.json is locked"));
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        var confirm = () => coordinator.ConfirmSwitchAsync();
+
+        await confirm.Should().ThrowAsync<IOException>();
+        coordinator.ContentGeneration.Should().Be(1);
+        _service.ApplyCalls.Should().Be(1, "only the earlier apply");
     }
 
     [Fact]

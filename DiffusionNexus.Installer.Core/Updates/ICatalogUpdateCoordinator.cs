@@ -39,7 +39,9 @@ public interface ICatalogUpdateCoordinator
     /// least one section, a partial one included. A screen built from the catalog compares it
     /// with the value it was built under to know it is stale (#32). No phase says this: a partial
     /// apply ends in Checked, and a switch that applies nothing passes through Checking back to
-    /// whatever phase it found, Applied included.
+    /// whatever phase it found, Applied included. An apply that throws counts too: a section may
+    /// have moved before the throw, and a needless "go home" is cheap where a missed one is #32.
+    /// Safe to read from any thread without the coordinator's lock.
     /// </summary>
     long ContentGeneration { get; }
 
