@@ -81,13 +81,7 @@
         <div class="update-row">
             <span class="update-row-label">Catalog</span>
             <span class="update-row-version catalog-installed">@InstalledText</span>
-            <span class="update-row-status catalog-outcome">
-                @OutcomeText
-                @if (Catalog.Phase == CatalogUpdatePhase.Applied)
-                {
-                    <a href="/">Back to all software</a>
-                }
-            </span>
+            <span class="update-row-status catalog-outcome">@OutcomeText</span>
         </div>
 
         @* Rule 1: a switch whose content did not land still saved the choice. Say what is installed,

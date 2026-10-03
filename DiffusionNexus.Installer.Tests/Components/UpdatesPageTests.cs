@@ -216,7 +216,7 @@ public class UpdatesPageTests : BunitContext
         var page = Render<UpdatesPage>();
 
         page.Find(".catalog-outcome").TextContent.Should().Contain("Catalog updated to v4.");
-        page.Find(".catalog-outcome a[href='/']").TextContent.Should().Be("Back to all software");
+        page.FindAll(".catalog-outcome a").Should().BeEmpty("the page's Back button already leads home (#32)");
         page.FindAll(".catalog-changes").Should().BeEmpty("what changed is now what is installed");
     }
 

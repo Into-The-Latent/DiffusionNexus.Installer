@@ -84,7 +84,7 @@ the catalog reaches those lists correctly.
    **Expect:** the app still starts and falls back to the installed catalog. It must not crash.
 10. Navigate to `/updates`. **Expect:** the version/updater screen appears (version string,
    "Check for updates" button, updater log). **Expect:** the version it shows matches the one in
-   the top bar exactly — no `+<commit sha>` suffix on either. Click "Back to all software".
+   the top bar exactly — no `+<commit sha>` suffix on either. Press **← Back**.
    **Expect:** the welcome screen returns.
 
 ## 2. Wizard stages
@@ -255,9 +255,9 @@ can lag a minute after the release appears). Stable is what users follow.
    "vN (Stable), applied <date>" and "Catalog vN+1 is available on Preview.", one
    Updated row naming the workload you edited with its version text — the same row the editor's
    Release dialog would show — and an **Apply catalog update** button.
-4. Press Apply. **Expect:** "Downloading… NN%" ticking, then "Catalog updated to vN+1." with a
-   "Back to all software" link; the top bar is back to "Check for Updates" and the welcome
-   notice is gone. Follow the link and open
+4. Press Apply. **Expect:** "Downloading… NN%" ticking, then "Catalog updated to vN+1." and no
+   link after it (#32); the top bar is back to "Check for Updates" and the welcome
+   notice is gone. Press **← Back** and open
    the workload. **Expect:** the edited description.
 5. Quit. Launch again **without** the variable. **Expect:** `/updates` has Stable checked, the
    Catalog row still says vN+1 (Preview) — provenance, not preference — and the check
