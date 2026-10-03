@@ -234,11 +234,23 @@
             _onlyWorkloadOfItsSoftware = left.OnlyWorkloadOfItsSoftware;
             _readUnder = left.ReadUnder;
 
-            // What the machine may have changed during the trip (a model file, the VC++ runtime);
-            // each module knows its own detections, and never touches the user's answers.
-            foreach (var module in _run.Plan.AllModules)
-                module.RefreshAfterResume();
+            // What the machine may have changed during the trip (a model file, the VC++ runtime, a
+            // GPU driver); each module knows its own detections, and never touches the user's answers.
+            // The token once, up front: Dispose releases the source, and a continuation that read
+            // it again would throw instead of reaching the check below.
+            var resumeToken = _pageCts.Token;
+            try
+            {
+                foreach (var module in _run.Plan.AllModules)
+                    await module.RefreshAfterResumeAsync(resumeToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
 
+            // Left again while the probes ran: nothing of this page's is kept (see below).
+            if (resumeToken.IsCancellationRequested) return;
             KeepWizard();
             return;
         }
@@ -345,6 +357,7 @@
             }
         }
 
+        var saveToken = _pageCts.Token;   // once: Dispose releases the source mid-loop
         {
             // The classic installer's Folder Settings window had a Save button. Here every module
             // of the stage being left is asked to remember its answers (IWizardModule.PersistAsync,
@@ -355,7 +368,7 @@
             try
             {
                 foreach (var module in _run.CurrentModules)
-                    await module.PersistAsync(_pageCts.Token);
+                    await module.PersistAsync(saveToken);
             }
             catch (OperationCanceledException)
             {
@@ -376,7 +389,7 @@
         // The page went away during the save (a side trip, #45): the run is kept and may already be
         // on screen in the page that replaced this one. Advancing it from here would skip the user
         // past a stage they never saw.
-        if (_pageCts.IsCancellationRequested) return;
+        if (saveToken.IsCancellationRequested) return;
 
         _run.TryNext();
 

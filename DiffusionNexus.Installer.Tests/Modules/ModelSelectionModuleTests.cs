@@ -70,7 +70,7 @@ public class ModelSelectionModuleTests
         var stale = Task.Run(module.RefreshPresence);
         SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 2000).Should().BeTrue();
 
-        module.RefreshAfterResume();
+        await module.RefreshAfterResumeAsync();
         gate.Set();
         await stale;
 

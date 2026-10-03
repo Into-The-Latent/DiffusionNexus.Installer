@@ -109,7 +109,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     /// panel scans again on its next render, whatever the tier and folder, and a scan that began
     /// before the trip no longer commits.
     /// </summary>
-    public void RefreshAfterResume()
+    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
     {
         lock (_presenceGate)
         {
@@ -117,6 +117,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
             LastScannedTier = -1;
             LastScannedFolder = null;
         }
+        return Task.CompletedTask;
     }
 
     /// <summary>Filesystem only, synchronous. Nothing to scan until an install folder is known.</summary>

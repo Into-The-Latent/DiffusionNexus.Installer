@@ -167,7 +167,7 @@ public class ModuleStateResetTests
         await module.InitializeAsync(Selection());
         module.InstallRuntime = false;
 
-        module.RefreshAfterResume();
+        await module.RefreshAfterResumeAsync();
 
         module.IsPresent.Should().BeTrue();
         module.InstalledVersion.Should().Be(new Version(14, 44));
@@ -186,7 +186,7 @@ public class ModuleStateResetTests
         var module = new VcRuntimeModule(detection.Object);
         await module.InitializeAsync(Selection());
 
-        module.RefreshAfterResume();
+        await module.RefreshAfterResumeAsync();
 
         module.IsOutdated.Should().BeTrue();
         module.InstalledVersion.Should().Be(new Version(14, 20));

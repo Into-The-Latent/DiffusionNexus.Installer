@@ -13,6 +13,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services;
+using DiffusionNexus.Installer.SDK.Services.Hardware;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using DiffusionNexus.Installer.Tests.Support;
@@ -605,6 +606,31 @@ public class InstallPageTests : BunitContext
         reading.SetResult([Workload()]);
 
         // Nothing to wait on when it does the right thing; a kept wizard would appear within ms.
+        SpinWait.SpinUntil(() => target.WizardInProgress is not null, TimeSpan.FromSeconds(1));
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_wizard_left_again_while_its_resume_probes_run_is_not_kept()
+    {
+        // The GPU probe is async; a page that goes away while it runs must not keep a wizard for a
+        // screen that is no longer Back's target (the same rule as a page left while preparing).
+        var probing = new TaskCompletionSource<GpuDetectionResult>();
+        var gpu = new Mock<IGpuDetectionService>();
+        gpu.SetupSequence(g => g.DetectAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GpuDetectionResult(GpuDetectionState.NoNvidiaGpu))
+            .Returns(probing.Task);
+        RegisterContent(EmptyScanner(), new GpuPreflightModule(gpu.Object));
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        await DisposeComponentsAsync();                       // the side trip
+        target.WizardInProgress.Should().NotBeNull();
+        Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));   // Back: resume, probe blocks
+
+        await DisposeComponentsAsync();                       // left again while probing
+        probing.SetResult(new GpuDetectionResult(GpuDetectionState.CudaCapable));
+
         SpinWait.SpinUntil(() => target.WizardInProgress is not null, TimeSpan.FromSeconds(1));
         target.WizardInProgress.Should().BeNull();
     }
