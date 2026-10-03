@@ -41,7 +41,7 @@ public class VcRuntimePanelTests : BunitContext
         // #45: the module stays in the plan (applicability is decided at build), so the panel is
         // what tells the user the question no longer applies -- no checkbox, no UAC warning.
         var module = await ModuleAsync(VcRuntimeState.Missing, VcRuntimeState.Present);
-        module.RefreshAfterResume();
+        await module.RefreshAfterResumeAsync();
 
         var cut = Render<VcRuntimePanel>(p => p.Add(x => x.Module, module));
 

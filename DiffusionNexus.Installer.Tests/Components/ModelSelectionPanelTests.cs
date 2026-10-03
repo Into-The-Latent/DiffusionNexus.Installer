@@ -55,6 +55,40 @@ public class ModelSelectionPanelTests : BunitContext
             .Add(x => x.Changed, EventCallback.Factory.Create(this, () => onChanged?.Invoke())));
 
     [Fact]
+    public async Task A_panel_whose_page_left_finishes_its_scan_and_does_nothing_further()
+    {
+        // #45 shares the module with the page that left. Resumed elsewhere while this panel's scan was
+        // in flight, the module reads as stale to this panel too; it used to scan again beside the live
+        // panel and then schedule an estimate on the cancellation source Dispose had released.
+        using var gate = new ManualResetEventSlim();
+        var scans = 0;
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns(() =>
+        {
+            if (Interlocked.Increment(ref scans) == 2) gate.Wait(TimeSpan.FromSeconds(5));
+            return [];
+        });
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiskSpaceEstimate(1, 2, true, []));
+        var module = new ModelSelectionModule(scanner.Object, estimator.Object);
+        var selection = Selection();
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = @"C:\Elsewhere";   // stale, so the panel's first render scans (and blocks)
+        RenderPanel(module, selection);
+        SpinWait.SpinUntil(() => Volatile.Read(ref scans) == 2, 2000).Should().BeTrue();
+
+        await module.RefreshAfterResumeAsync();        // the restored page's panel takes over
+        await DisposeComponentsAsync();                // this one's page is gone
+        gate.Set();
+
+        // Nothing to wait on when it does the right thing; a third scan would start within milliseconds.
+        SpinWait.SpinUntil(() => Volatile.Read(ref scans) >= 3, 500);
+        scans.Should().Be(2, "the scan in flight finishes; no new one starts");
+        estimator.Invocations.Should().BeEmpty("nothing is scheduled on a disposed panel");
+    }
+
+    [Fact]
     public async Task Lists_every_model_ticked_under_its_folder_and_marks_the_one_already_on_disk()
     {
         var module = new ModelSelectionModule(Scanner(vaePresent: true).Object, Estimator());

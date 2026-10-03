@@ -79,12 +79,13 @@ public sealed class VcRuntimeModule(IVcRuntimeDetectionService detection) : IWiz
     /// Detected again after a side trip, so an install the user ran meanwhile is seen. An
     /// inconclusive probe keeps the earlier answer rather than guessing.
     /// </summary>
-    public void RefreshAfterResume()
+    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
     {
         var result = detection.Detect();
-        if (result.State == VcRuntimeState.Unknown) return;
+        if (result.State == VcRuntimeState.Unknown) return Task.CompletedTask;
         _state = result.State;
         InstalledVersion = result.InstalledVersion;
+        return Task.CompletedTask;
     }
 
     // A runtime found present is never "skipped": an earlier decline was about a runtime that was

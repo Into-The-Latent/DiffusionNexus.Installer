@@ -50,8 +50,9 @@ public interface IWizardModule
 
     /// <summary>
     /// The wizard is shown again after a side trip (#45) without being rebuilt. Refresh what the
-    /// machine may have changed meanwhile -- a detection, a scan -- never the user's answers.
-    /// Cheap and synchronous: it runs before the page's first render. A no-op by default.
+    /// machine may have changed meanwhile -- a detection, a scan -- never the user's answers. It
+    /// runs before the page's first render, so it must be quick; a probe that is not sure keeps
+    /// the earlier answer. A no-op by default.
     /// </summary>
-    void RefreshAfterResume() { }
+    Task RefreshAfterResumeAsync(CancellationToken ct = default) => Task.CompletedTask;
 }
