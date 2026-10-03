@@ -1,0 +1,51 @@
+@* A "use my own ... folder" switch: the folders page has two (issue #15 model, issue #27 output)
+   with one rule, so they share this markup instead of drifting apart. Off with a folder still
+   typed, the hint says what becomes of it: forgotten once the user continues, because the module
+   persists the empty folder on the stage's Next -- not the moment the switch flips.
+
+   Only the label text sits inside the <label>: everything in it becomes the control's accessible
+   name, and a screen reader would read the whole hint as the name -- a different one after every
+   flip. The hint is the switch's description instead, through aria-describedby. *@
+<label class="switch">
+    <input type="checkbox" role="switch" data-role="@Role" aria-describedby="@HintId"
+           checked="@Checked" @onchange="OnChanged" />
+    <span class="switch-track" aria-hidden="true"></span>
+    <span class="switch-text">@Label</span>
+</label>
+<p class="panel-hint switch-hint" id="@HintId">
+    @if (Checked)
+    {
+        @OnText
+    }
+    else
+    {
+        @OffText
+        @if (!string.IsNullOrWhiteSpace(Folder))
+        {
+            <text> Your @FolderNoun (<code>@Folder</code>) is not used, and will be forgotten when you continue unless you turn this back on.</text>
+        }
+    }
+</p>
+
+@code {
+    /// <summary>The input's data-role, which tests and the page's own selectors key on.</summary>
+    [Parameter, EditorRequired] public string Role { get; set; } = default!;
+
+    [Parameter, EditorRequired] public bool Checked { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+    [Parameter, EditorRequired] public string OnText { get; set; } = default!;
+    [Parameter, EditorRequired] public string OffText { get; set; } = default!;
+
+    /// <summary>The folder typed or remembered for this switch; named in the off hint when set.</summary>
+    [Parameter] public string? Folder { get; set; }
+
+    /// <summary>How the off hint names <see cref="Folder"/>: "library folder", "output folder".</summary>
+    [Parameter] public string FolderNoun { get; set; } = "folder";
+
+    [Parameter] public EventCallback<bool> OnChange { get; set; }
+
+    /// <summary>Unique on the page as long as <see cref="Role"/> is, which the page's selectors need anyway.</summary>
+    private string HintId => $"{Role}-hint";
+
+    private Task OnChanged(ChangeEventArgs e) => OnChange.InvokeAsync((bool)(e.Value ?? false));
+}

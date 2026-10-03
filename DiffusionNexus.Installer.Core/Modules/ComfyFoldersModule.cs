@@ -63,8 +63,8 @@ public sealed class AdditionalFolderRow
 /// this is a ComfyUI-only module -- see <see cref="AppliesTo"/>.
 /// </para>
 /// <para>
-/// Everything about model folders sits behind <see cref="UseModelLibraryFolder"/>, off by default.
-/// The output folder does not: it is not a model folder.
+/// Everything about model folders sits behind <see cref="UseModelLibraryFolder"/>, and the output
+/// folder behind its own <see cref="UseOwnOutputFolder"/>; both are off unless a folder is saved.
 /// </para>
 /// </summary>
 public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWizardModule
@@ -94,6 +94,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// folders below reach neither the selection nor the install and no extra_model_paths.yaml is
     /// written. Off also persists an EMPTY library folder (see <see cref="PersistAsync"/>): the
     /// switch derives from that field, so a folder left saved would switch it back on next start.
+    /// For the same reason on needs a library (<see cref="ModelFolderProblem"/>): on with an empty
+    /// box writes no YAML and is saved as off, and the next start would quietly drop any renamed
+    /// folder types along with it.
     /// </summary>
     public bool UseModelLibraryFolder
     {
@@ -106,6 +109,16 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         get => _modelBaseFolder;
         set { _modelBaseFolder = value; SyncSelection(); }
     }
+
+    /// <summary>
+    /// The "use my own output folder" switch (issue #27), the same rule as
+    /// <see cref="UseModelLibraryFolder"/>: a saved output folder means on, none means off. Off
+    /// means ComfyUI's own output folder, no --output-directory in the launcher, and an EMPTY
+    /// output folder persisted; the typed path is kept within the run. On needs a folder the
+    /// launcher can carry (see <see cref="OutputFolderProblem"/>): on with an empty box would
+    /// behave, and be saved, as off.
+    /// </summary>
+    public bool UseOwnOutputFolder { get; set; }
 
     public string OutputFolder { get; set; } = string.Empty;
     public bool OverwriteExtraModelPaths { get; set; }
@@ -136,23 +149,22 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
     /// <summary>
     /// Whether anything in the advanced section changes the install; the panel flags it on the
-    /// closed toggle. The library folder lives in that section too, so a saved library applied out
-    /// of sight counts. Nothing counts while the switch is off: none of it reaches the install.
+    /// closed toggle. The library folder no longer counts: it sits under the switch, in plain sight.
+    /// Nothing counts while the switch is off: none of it reaches the install.
     /// </summary>
     public bool HasCustomFolders =>
         UseModelLibraryFolder
-        && (!string.IsNullOrWhiteSpace(ModelBaseFolder)
-            || _folderTypes.Any(r => r.Override is not null)
+        && (_folderTypes.Any(r => r.Override is not null)
             || _additionalFolders.Any(r => r.IsComplete));
 
     /// <summary>
-    /// Where models land when the library box is left empty: the repository's own models folder,
-    /// which is what ModelDestinationResolver falls back to. Empty until an install folder is chosen.
-    /// Shown as grey placeholder text.
+    /// Where models land with the switch off: the repository's own models folder, which is what
+    /// ModelDestinationResolver falls back to. Empty until an install folder is chosen. Named in the
+    /// switch's off hint.
     /// </summary>
     public string DefaultModelsFolder => InstallSubfolder("models");
 
-    /// <summary>ComfyUI's own output folder, the fallback when the output box is left empty.</summary>
+    /// <summary>ComfyUI's own output folder, the fallback with the output switch off.</summary>
     public string DefaultOutputFolder => InstallSubfolder("output");
 
     private string InstallSubfolder(string name)
@@ -193,6 +205,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         _useModelLibraryFolder = !string.IsNullOrWhiteSpace(user.DefaultModelBaseFolder);
         ModelBaseFolder = user.DefaultModelBaseFolder;
         OutputFolder = user.OutputFolder;
+        UseOwnOutputFolder = !string.IsNullOrWhiteSpace(user.OutputFolder);
 
         var saved = UserModelFolderMap.Build(user);
         _folderTypes.Clear();
@@ -269,10 +282,11 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // before this one, and writing a stale object back would undo it.
         // Off saves an empty library folder. The switch IS that field on the next start, so a
         // folder left saved behind an "off" would be on again; within this run the typed path is
-        // kept so flipping the switch back on does not lose it.
+        // kept so flipping the switch back on does not lose it. The output folder's switch works
+        // the same way.
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
-        user.DefaultModelBaseFolder = UseModelLibraryFolder ? ModelBaseFolder.Trim() : string.Empty;
-        user.OutputFolder = OutputFolder.Trim();
+        user.DefaultModelBaseFolder = EffectiveModelBaseFolder ?? string.Empty;
+        user.OutputFolder = EffectiveOutputFolder ?? string.Empty;
 
         if (AdvancedEdited)
         {
@@ -301,9 +315,77 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
+    // What the install sees and what is remembered, from one place each: null when the switch is
+    // off or the box is blank, otherwise trimmed and without a trailing separator. A pasted
+    // " D:\Out" is not a rooted path, so an untrimmed value would send ComfyUI's output under its
+    // working directory; and "D:\My Output\" is quoted by the launcher as "D:\My Output\", where
+    // \" is a literal quote in argv. A drive root keeps its separator ("D:" alone is relative).
+
     /// <summary>The library folder as the install sees it: null when blank or when the switch is off.</summary>
-    private string? EffectiveModelBaseFolder =>
-        UseModelLibraryFolder && !string.IsNullOrWhiteSpace(_modelBaseFolder) ? _modelBaseFolder : null;
+    private string? EffectiveModelBaseFolder => Effective(UseModelLibraryFolder, _modelBaseFolder);
+
+    /// <summary>The output folder as the install sees it: null when blank or when the switch is off.</summary>
+    private string? EffectiveOutputFolder => Effective(UseOwnOutputFolder, OutputFolder);
+
+    private static string? Effective(bool on, string folder)
+    {
+        if (!on || string.IsNullOrWhiteSpace(folder)) return null;
+
+        var path = folder.Trim();
+        string trimmed;
+        while ((trimmed = Path.TrimEndingDirectorySeparator(path)) != path) path = trimmed;
+        return path;
+    }
+
+    /// <summary>
+    /// Characters the generated run_nvidia.bat cannot carry in --output-directory.
+    /// BatchScriptGenerator quotes the path only when it holds a space and runs the script under
+    /// enabledelayedexpansion: an unquoted &amp; ends the command, ^ escapes the next character,
+    /// ! and % are expanded away, and a " breaks the quoting. Refused here until the SDK's
+    /// launcher quotes and escapes properly; the install would otherwise succeed and ComfyUI start
+    /// writing somewhere else.
+    /// </summary>
+    private static readonly char[] LauncherBreakers = ['&', '!', '%', '^', '"'];
+
+    /// <summary>
+    /// Why the output folder cannot be used, or null. Only with the switch on: on with an empty box
+    /// would install and be saved as off while the screen says on; a relative path resolves under
+    /// the install (and is deleted with it); some characters break the start script.
+    /// </summary>
+    public string? OutputFolderProblem
+    {
+        get
+        {
+            if (!UseOwnOutputFolder) return null;
+            if (string.IsNullOrWhiteSpace(OutputFolder))
+                return "Choose an output folder, or turn off \"Use my own output folder\".";
+
+            var folder = OutputFolder.Trim();
+            if (!Path.IsPathFullyQualified(folder))
+                return @"Enter the full path of the output folder, for example D:\Renders.";
+            if (folder.IndexOfAny(LauncherBreakers) >= 0)
+                return "ComfyUI's start script cannot pass & ! % ^ or \" in a folder name. Choose a folder without them.";
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Why the library folder cannot be used, or null. Only with the switch on, which needs a
+    /// library: see <see cref="UseModelLibraryFolder"/>. A relative library would be resolved by
+    /// ComfyUI against its own folder, not where the user meant.
+    /// </summary>
+    public string? ModelFolderProblem
+    {
+        get
+        {
+            if (!UseModelLibraryFolder) return null;
+            if (string.IsNullOrWhiteSpace(_modelBaseFolder))
+                return "Choose your model library folder, or turn off \"Use my own model folder\".";
+            if (!Path.IsPathFullyQualified(_modelBaseFolder.Trim()))
+                return @"Enter the full path of your model library, for example D:\Models.";
+            return null;
+        }
+    }
 
     public void Contribute(InstallationOptionsDraft draft)
     {
@@ -328,8 +410,15 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
                 .Select(r => r.ToModel(_user?.UserId ?? Guid.Empty)));
         }
 
-        draft.OutputFolder = string.IsNullOrWhiteSpace(OutputFolder) ? null : OutputFolder;
+        draft.OutputFolder = EffectiveOutputFolder;
     }
 
-    public ModuleValidation Validate() => ModuleValidation.Ok();
+    /// <summary>
+    /// The first of the two switches' problems. The panel shows each one under its own box, so the
+    /// page leaves this module out of its list under the buttons.
+    /// </summary>
+    public ModuleValidation Validate() =>
+        (OutputFolderProblem ?? ModelFolderProblem) is { } problem
+            ? ModuleValidation.Error(problem)
+            : ModuleValidation.Ok();
 }

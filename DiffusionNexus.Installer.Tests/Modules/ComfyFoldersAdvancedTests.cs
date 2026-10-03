@@ -177,12 +177,14 @@ public class ComfyFoldersAdvancedTests
     }
 
     [Fact]
-    public async Task A_library_folder_counts_as_custom_because_it_now_lives_in_the_advanced_section()
+    public async Task A_library_folder_alone_is_not_flagged_because_it_sits_under_the_switch_in_plain_sight()
     {
+        // The tag on the closed Advanced toggle is for what that section hides. The library box
+        // moved out of it (PR #47 review round 2): on needs a library, and a required box cannot hide.
         var (module, _) = Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" });
         await module.InitializeAsync(Selection());
 
-        module.HasCustomFolders.Should().BeTrue("a saved library applied out of sight must still be flagged");
+        module.HasCustomFolders.Should().BeFalse();
     }
 
     [Fact]
@@ -199,6 +201,7 @@ public class ComfyFoldersAdvancedTests
         await module.InitializeAsync(Selection());
         module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
+        module.UseOwnOutputFolder = true;      // and the output box with its own switch on
         module.OutputFolder = @"D:\Out";
         module.SetFolderType("loras", "MyLoras");
         module.SetFolderType("checkpoints", "checkpoints");
