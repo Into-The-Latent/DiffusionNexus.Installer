@@ -15,6 +15,8 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public LocalCatalogState? Installed { get; set; }
     public CatalogDownloadProgress? Progress { get; set; }
     public CatalogApplyResult? LastApply { get; set; }
+    public long ContentGeneration { get; set; }
+    public bool LastApplyUncertain { get; set; }
     public string? ApplyBlockedReason { get; set; }
 
     public bool UpdateAvailable => PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;

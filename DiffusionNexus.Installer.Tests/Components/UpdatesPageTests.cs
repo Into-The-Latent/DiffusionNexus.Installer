@@ -215,10 +215,90 @@ public class UpdatesPageTests : BunitContext
 
         var page = Render<UpdatesPage>();
 
-        page.Find(".catalog-outcome").TextContent.Should().Contain("Catalog updated to v4.");
-        page.Find(".catalog-outcome a[href='/']").TextContent.Should().Be("Back to all software");
+        // The whole cell: no "Back to all software" after it, as a link, a button or text (#32).
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v4.");
         page.FindAll(".catalog-changes").Should().BeEmpty("what changed is now what is installed");
     }
+
+    private static readonly Guid WizardId = Guid.Parse("6f9619ff-8b86-d011-b42d-00cf4fc964ff");
+    private static string Wizard => $"install/{WizardId}";
+
+    private string BackHref(IRenderedComponent<UpdatesPage> page) => page.Find("a.back-link").GetAttribute("href")!;
+
+    // What the coordinator does when an apply lands: content moves the generation, whatever the phase.
+    private void Lands(CatalogApplyResult result, CatalogUpdatePhase phase)
+    {
+        _catalog.LastApply = result;
+        _catalog.ContentGeneration++;
+        _catalog.Phase = phase;
+        _catalog.RaiseChanged();
+    }
+
+    public static TheoryData<CatalogApplyResult, CatalogUpdatePhase> LandedApplies => new()
+    {
+        { new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null), CatalogUpdatePhase.Applied },
+        // Partial: the phase goes back to Checked, but the wizard is half-new all the same.
+        { new CatalogApplyResult(CatalogSections.Workloads, CatalogSections.Workflows, "workflows/ locked"), CatalogUpdatePhase.Checked },
+    };
+
+    [Theory]
+    [MemberData(nameof(LandedApplies))]
+    public void An_apply_opened_from_a_wizard_sends_Back_home(CatalogApplyResult result, CatalogUpdatePhase phase)
+    {
+        // The wizard was built from the old catalog; returning to it would rebuild it from the new
+        // one and drop every answer. Back is the only way home now that the link is gone (#32).
+        Register(InstallPhase.Idle);
+        Available();
+        Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        var page = Render<UpdatesPage>();
+        BackHref(page).Should().Be("/" + Wizard);
+
+        Lands(result, phase);
+
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/"));
+    }
+
+    [Fact]
+    public async Task An_apply_keeps_Back_on_an_install_that_is_on_screen()
+    {
+        // A run's report or progress does not depend on the catalog: leaving it behind would lose it.
+        var plan = await PlanAsync(WizardId);
+        Register(InstallPhase.Completed, plan);
+        Available();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.Remember(Wizard);
+        target.InstallOnScreen = plan;
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        var page = Render<UpdatesPage>();
+
+        Lands(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null), CatalogUpdatePhase.Applied);
+
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/" + Wizard));
+    }
+
+    [Fact]
+    public async Task A_report_left_behind_does_not_shield_the_screen_after_it()
+    {
+        // Leaving a report by the top bar does not clear InstallOnScreen; the screen the user went
+        // on to was built from the old catalog like any other.
+        var plan = await PlanAsync(WizardId);
+        Register(InstallPhase.Completed, plan);
+        Available();
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.InstallOnScreen = plan;
+        target.Remember("software/ComfyUI");
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        var page = Render<UpdatesPage>();
+
+        Lands(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null), CatalogUpdatePhase.Applied);
+
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/"));
+    }
+
+    private static Task<WizardPlan> PlanAsync(Guid workloadId) =>
+        new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = new InstallationConfiguration { Id = workloadId, Name = "Krea-2-Turbo" } });
 
     [Fact]
     public void Reports_a_failed_apply_and_offers_a_retry()
@@ -231,6 +311,20 @@ public class UpdatesPageTests : BunitContext
 
         page.Find(".catalog-error").TextContent.Should().Contain("The catalog update failed: sha256 mismatch. Nothing was changed.");
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    [Fact]
+    public void Does_not_claim_nothing_changed_when_what_landed_is_unknown()
+    {
+        // The apply threw and the state could not be read back: a section may be in (PR #44 review).
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "unexpected");
+        _catalog.LastApplyUncertain = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-error").TextContent.Trim().Should().Be("The catalog update failed: unexpected. Part of it may already be installed.");
     }
 
     [Fact]
@@ -771,7 +865,7 @@ public class UpdatesPageTests : BunitContext
     {
         Register(InstallPhase.Idle);
         Render<UpdatesPage>();
-        _catalog.Subscribers.Should().Be(1);
+        _catalog.Subscribers.Should().Be(2, "the page, and its Back link through ReturnTarget");
 
         await DisposeComponentsAsync();
 

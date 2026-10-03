@@ -40,10 +40,28 @@
 @code {
     [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
 
+    /// <summary>
+    /// The catalog's ContentGeneration the page read its content under (#32), for a page that
+    /// shows catalog content; taken before the read. Null: the page shows none.
+    /// </summary>
+    [Parameter] public long? ReadUnder { get; set; }
+
     private bool _feedbackOpen;
+    private (string Path, long? ReadUnder)? _remembered;
 
     // Every flow screen wears this shell and no side trip does, so rendering it is the moment to
     // record "this is where Back on /licenses, /updates or /debug should lead". On parameters set
-    // rather than on init: a route-parameter change re-uses the page instance.
-    protected override void OnParametersSet() => Return.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+    // rather than on init: a route-parameter change re-uses the page instance. But only when this
+    // instance has not recorded this screen yet: ChildContent counts as changed on every parent
+    // render, and re-recording on a ticked checkbox after an apply would stamp a screen built from
+    // the old catalog with the new generation. A rebuilt page (a reload, a return) is a new
+    // instance and records afresh.
+    protected override void OnParametersSet()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri);
+        if (_remembered is { } done && done.Path == path && done.ReadUnder == ReadUnder) return;
+
+        _remembered = (path, ReadUnder);
+        Return.Remember(path, ReadUnder);
+    }
 }

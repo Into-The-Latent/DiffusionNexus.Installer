@@ -1,6 +1,7 @@
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
@@ -17,6 +18,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"dn-coordinator-{Guid.NewGuid():N}");
     private readonly FakeCatalogUpdateService _service = new();
+    private readonly Mock<ICatalog> _catalog = new();
     private readonly CatalogOptions _options;
     private readonly Mock<IUserSettingsRepository> _settings = new();
     private readonly Mock<IInstallSession> _session = new();
@@ -42,7 +44,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
     /// <summary>A new coordinator is a restart: it shares only the files with the ones before it.</summary>
     private CatalogUpdateCoordinator Create() =>
-        new(_service, _options, _settings.Object, _session.Object, () => _environment,
+        new(_service, _catalog.Object, _options, _settings.Object, _session.Object, () => _environment,
             confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
 
     /// <summary>What an apply leaves on disk. A channel is recorded per section, as SDK 2.1.0 does; null is a 2.0.0 state.</summary>
@@ -284,6 +286,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
         coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null));
+        coordinator.ContentGeneration.Should().Be(1);
         coordinator.Progress.Should().BeNull();
         coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
         coordinator.UpdateAvailable.Should().BeFalse("the dot and the notice go away once it is in");
@@ -301,6 +304,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
         coordinator.LastApply!.Error.Should().Be("sha256 mismatch");
+        coordinator.ContentGeneration.Should().Be(0, "nothing landed");
         coordinator.UpdateAvailable.Should().BeTrue();
         coordinator.CanApply.Should().BeTrue();
     }
@@ -331,6 +335,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
         coordinator.LastApply!.Applied.Should().Be(CatalogSections.Workloads);
+        coordinator.ContentGeneration.Should().Be(1, "the workloads did land, whatever the phase says");
     }
 
     [Fact]
@@ -343,7 +348,103 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
         coordinator.LastApply.Should().BeNull();
+        coordinator.ContentGeneration.Should().Be(0);
         coordinator.Progress.Should().BeNull();
+    }
+
+    // The SDK catches only I/O errors per section: anything else escapes after an earlier section
+    // may have been swapped in, without the SDK invalidating its cache. The state file, written in
+    // the same step as each swap, says what landed (PR #44 review).
+    [Fact]
+    public async Task An_apply_that_throws_after_a_section_landed_reports_it_and_refreshes_the_catalog()
+    {
+        // The applier's per-section write: Workloads swapped in, Workflows left as it was.
+        _service.OnApply = () =>
+        {
+            var state = LocalCatalogState.Read(_options.InstalledCatalogPath);
+            state.Workloads = new SectionState(4, "def", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Stable };
+            state.Save(_options.InstalledCatalogPath);
+        };
+        _service.ApplyFailure = new InvalidOperationException("workflows: unexpected");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.Workloads, CatalogSections.Workflows, "workflows: unexpected"));
+        coordinator.LastApplyUncertain.Should().BeFalse();
+        coordinator.ContentGeneration.Should().Be(1);
+        coordinator.Installed!.Workloads!.CatalogVersion.Should().Be(4);
+        _catalog.Verify(c => c.Invalidate(), Times.Once, "the SDK skipped its own invalidate on the throw");
+    }
+
+    [Fact]
+    public async Task An_apply_that_throws_before_anything_landed_says_nothing_was_changed()
+    {
+        _service.ApplyFailure = new InvalidOperationException("download: unexpected");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "download: unexpected"));
+        coordinator.LastApplyUncertain.Should().BeFalse();
+        coordinator.ContentGeneration.Should().Be(0);
+        _catalog.Verify(c => c.Invalidate(), Times.Never);
+    }
+
+    [Fact]
+    public async Task An_apply_that_throws_over_an_unreadable_state_assumes_something_landed()
+    {
+        // A needless "Back goes home" is cheap; a missed one is #32. The page must not claim
+        // "nothing was changed" either.
+        using var coordinator = await CheckedWithUpdateAsync();
+        WriteInstalledState(3);
+        var stateFile = Path.Combine(_options.InstalledCatalogPath, CatalogSchema.StateFileName);
+        using var held = new FileStream(stateFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        _service.ApplyFailure = new InvalidOperationException("workflows: unexpected");
+
+        await coordinator.ApplyAsync();
+
+        coordinator.LastApply!.Applied.Should().Be(CatalogSections.None);
+        coordinator.LastApplyUncertain.Should().BeTrue();
+        coordinator.ContentGeneration.Should().Be(1);
+        _catalog.Verify(c => c.Invalidate(), Times.Once);
+    }
+
+    [Fact]
+    public async Task An_apply_that_throws_after_both_sections_landed_is_no_longer_offered()
+    {
+        // The content is installed; offering it again would put the dot back for nothing.
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
+        _service.ApplyFailure = new InvalidOperationException("cleanup: unexpected");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, "cleanup: unexpected"));
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.UpdateAvailable.Should().BeFalse();
+        coordinator.CanApply.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_failing_cache_refresh_after_a_throw_does_not_strand_the_apply()
+    {
+        // No update deadlock: an escape from the last-chance catch would leave the phase on
+        // Applying with no Raise, and every later check and apply refused until a restart.
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
+        _service.ApplyFailure = new InvalidOperationException("workflows: unexpected");
+        _catalog.Setup(c => c.Invalidate()).Throws(new InvalidOperationException("cache gone"));
+        using var coordinator = await CheckedWithUpdateAsync();
+        var raised = 0;
+        coordinator.Changed += () => raised++;
+
+        await coordinator.ApplyAsync();
+
+        coordinator.Phase.Should().NotBe(CatalogUpdatePhase.Applying);
+        raised.Should().BeGreaterThanOrEqualTo(2, "entering Applying and leaving it");
+        await coordinator.CheckAsync();
+        _service.CheckCalls.Should().Be(2, "a later check runs");
     }
 
     [Fact]
@@ -505,6 +606,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _options.Channel.Should().Be(CatalogChannel.Stable);
         coordinator.PendingSwitch.Should().BeNull();
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.ContentGeneration.Should().Be(1, "a switch's apply changes content like any other");
         coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
         coordinator.SwitchIncomplete.Should().BeFalse();
     }
@@ -528,6 +630,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Channel.Should().Be(CatalogChannel.Preview);
         coordinator.LastCheck.Should().BeSameAs(before);
         coordinator.SwitchIncomplete.Should().BeFalse();
+        coordinator.ContentGeneration.Should().Be(0, "a previewed switch that was kept changed nothing");
         raised.Should().Be(1, "the radio snaps back on that render");
 
         await coordinator.CheckAsync();
@@ -993,6 +1096,49 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         VerifyNothingSaved();
         _service.ApplyCalls.Should().Be(0);
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Idle);
+    }
+
+    // Applied, as after an earlier apply: the phase a switch that applies nothing passes back to.
+    private async Task<CatalogUpdateCoordinator> AppliedOnPreviewAsync()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Preview);
+        var coordinator = CreateOnPreview();
+        await coordinator.CheckAsync();
+        await coordinator.ApplyAsync();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.ContentGeneration.Should().Be(1);
+        return coordinator;
+    }
+
+    [Fact]
+    public async Task A_kept_switch_from_applied_does_not_count_as_changed_content()
+    {
+        // The phase goes Applied -> Checking -> Applied; nothing landed (PR #44 review).
+        using var coordinator = await AppliedOnPreviewAsync();
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        coordinator.PendingSwitch.Should().NotBeNull();
+
+        coordinator.KeepChannel();
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.ContentGeneration.Should().Be(1);
+        _service.ApplyCalls.Should().Be(1, "only the earlier apply");
+    }
+
+    [Fact]
+    public async Task A_switch_whose_save_fails_from_applied_does_not_count_as_changed_content()
+    {
+        using var coordinator = await AppliedOnPreviewAsync();
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1");
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("settings.json is locked"));
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        var confirm = () => coordinator.ConfirmSwitchAsync();
+
+        await confirm.Should().ThrowAsync<IOException>();
+        coordinator.ContentGeneration.Should().Be(1);
+        _service.ApplyCalls.Should().Be(1, "only the earlier apply");
     }
 
     [Fact]
