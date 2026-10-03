@@ -352,8 +352,10 @@ leaving them showing the click the user just made.
   before and after: a section whose record moved landed, so it is reported as applied, the
   catalog is invalidated and the generation moves. A state it cannot read back counts as
   landed, and the result line says "Part of it may already be installed." rather than
-  "Nothing was changed." (A wizard's answers do not survive any side trip yet, apply or not --
-  #45.) A finished install's report (`ReturnTarget.InstallOnScreen`, when it is
+  "Nothing was changed." A wizard left mid-configuration is kept
+  (`ReturnTarget.WizardInProgress`, #45) and restored with its answers on Back, unless an
+  apply landed since: then Back leads home and the wizard is rebuilt from the new catalog.
+  A finished install's report (`ReturnTarget.InstallOnScreen`, when it is
   the screen remembered) keeps its way back; it does not depend on the catalog.
 - No automatic re-check after apply. The SDK reloads the catalog lazily; the coordinator
   reloads `Installed` from the state file so the section shows the new version at once.

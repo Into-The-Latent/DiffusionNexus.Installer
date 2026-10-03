@@ -92,6 +92,16 @@ public sealed class ReturnTarget
     /// </summary>
     public WizardPlan? InstallOnScreen { get; set; }
 
+    /// <summary>
+    /// The wizard the user left mid-configuration (#45), so a side trip and Back -- or a circuit
+    /// reconnect -- picks it up with every answer instead of starting over. Set by the install page
+    /// while its run is short of the Install stage, where <see cref="InstallOnScreen"/> takes over;
+    /// taken (and cleared) by the next install page. Only restored when that page is returned to
+    /// (<see cref="IsAt"/>), which is never the case once the catalog has changed since: a wizard
+    /// built from the old catalog is rebuilt from the new one.
+    /// </summary>
+    public KeptWizard? WizardInProgress { get; set; }
+
     /// <param name="baseRelativePath">As <c>NavigationManager.ToBaseRelativePath</c> returns it: no leading slash.</param>
     /// <param name="readUnder">
     /// The <see cref="ICatalogUpdateCoordinator.ContentGeneration"/> the screen's content was read
@@ -135,3 +145,7 @@ public sealed class ReturnTarget
         return "/" + (end < 0 ? baseRelativePath : baseRelativePath[..end]).TrimStart('/');
     }
 }
+
+/// <summary>A wizard kept across a side trip: the run (its modules hold the answers) and what the page derived with it.</summary>
+/// <param name="ReadUnder">The catalog generation the run was built under, handed to the page's shell again.</param>
+public sealed record KeptWizard(WizardRun Run, bool OnlyWorkloadOfItsSoftware, long ReadUnder);

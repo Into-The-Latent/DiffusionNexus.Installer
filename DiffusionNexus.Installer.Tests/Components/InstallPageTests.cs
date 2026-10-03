@@ -258,6 +258,94 @@ public class InstallPageTests : BunitContext
                 "re-opening a report must never start an install");
     }
 
+    // ----- #45: a wizard left mid-configuration -----
+
+    private const string Folder = @"C:\Installs\Fooocus";
+
+    /// <summary>Opens the wizard at its URL (so its shell records it as Back's target) and types a folder.</summary>
+    private async Task<ReturnTarget> AnsweredAndLeftAsync()
+    {
+        Register(Workload());
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.Find(".path-row input").Input(Folder);
+
+        // The side trip: the page goes away; /licenses and /updates wear no shell and record nothing.
+        await DisposeComponentsAsync();
+        return Services.GetRequiredService<ReturnTarget>();
+    }
+
+    private IRenderedComponent<InstallPage> ComeBack() => Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+    private static bool NextEnabled(IRenderedComponent<InstallPage> page) =>
+        !page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").HasAttribute("disabled");
+
+    [Fact]
+    public async Task Coming_back_from_a_side_trip_keeps_the_answers_already_given()
+    {
+        // Issue #45: every return used to build a new WizardRun, so a look at Licences reset the
+        // whole wizard -- no catalog change needed.
+        await AnsweredAndLeftAsync();
+
+        var page = ComeBack();
+
+        page.Find(".path-row input").GetAttribute("value").Should().Be(Folder);
+        NextEnabled(page).Should().BeTrue("the folder answer is still there, so the stage still validates");
+    }
+
+    [Fact]
+    public async Task A_wizard_left_before_a_catalog_apply_starts_over()
+    {
+        // Built from the old catalog: Back leads home after an apply (#32), and a way back here
+        // (a reconnect, a remembered link) must not revive it either.
+        var target = await AnsweredAndLeftAsync();
+        ((StubCatalogUpdateCoordinator)Services.GetRequiredService<ICatalogUpdateCoordinator>()).ContentGeneration++;
+
+        var page = ComeBack();
+
+        page.Find(".path-row input").GetAttribute("value").Should().BeNullOrEmpty();
+        target.WizardInProgress.Should().NotBeNull("the new wizard is kept in its place")
+            .And.Subject.As<KeptWizard>().ReadUnder.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Picking_the_workload_again_from_the_gallery_starts_a_new_wizard()
+    {
+        var target = await AnsweredAndLeftAsync();
+        target.Remember("software/Fooocus");
+
+        var page = ComeBack();
+
+        page.Find(".path-row input").GetAttribute("value").Should().BeNullOrEmpty();
+    }
+
+    [Fact]
+    public void Cancel_forgets_the_wizard()
+    {
+        Register(Workload());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.WizardInProgress.Should().NotBeNull();
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel").Click();
+
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_kept_wizard_asks_about_a_shortcut_clash_through_the_page_it_is_on_now()
+    {
+        // After a reconnect the page that built the plan -- and the prompt it captured -- belong to
+        // a dead circuit; a clash mid-install would wait on a dialog nobody can see.
+        var target = await AnsweredAndLeftAsync();
+        var shortcuts = target.WizardInProgress!.Run.Plan.AllModules.OfType<ShortcutsModule>().Single();
+        var before = shortcuts.OnShortcutConflict;
+
+        ComeBack();
+
+        shortcuts.OnShortcutConflict.Should().NotBeNull().And.NotBeSameAs(before);
+    }
+
     [Fact]
     public async Task Picking_the_same_workload_again_starts_a_new_wizard_not_the_old_report()
     {
