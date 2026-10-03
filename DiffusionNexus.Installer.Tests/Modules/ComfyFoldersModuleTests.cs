@@ -103,6 +103,68 @@ public class ComfyFoldersModuleTests
         draft.OutputFolder.Should().BeNull("blank means ComfyUI's own output folder, not an empty path");
     }
 
+    // ---- The "use my own output folder" switch (issue #27) --------------------------------------
+    // Same rule as the model folder's: a saved output folder means on, none means off. Off means
+    // ComfyUI's own output folder and persists an empty one.
+
+    [Fact]
+    public async Task The_output_switch_follows_the_remembered_output_folder()
+    {
+        var on = Module(outputFolder: @"D:\Out");
+        await on.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        on.UseOwnOutputFolder.Should().BeTrue("a saved output folder is the user's standing answer");
+
+        var off = Module();
+        await off.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        off.UseOwnOutputFolder.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task With_the_output_switch_off_the_typed_folder_does_not_reach_the_install()
+    {
+        var module = Module(outputFolder: @"D:\Out");
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+
+        module.UseOwnOutputFolder = false;
+
+        module.OutputFolder.Should().Be(@"D:\Out", "kept for this run so flipping back on loses nothing");
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.OutputFolder.Should().BeNull("off means ComfyUI's own output folder");
+
+        module.UseOwnOutputFolder = true;
+        module.Contribute(draft);
+        draft.OutputFolder.Should().Be(@"D:\Out");
+    }
+
+    [Fact]
+    public async Task Persist_forgets_the_output_folder_when_its_switch_is_off()
+    {
+        var stored = new UserSettings { DefaultModelBaseFolder = @"D:\Models", OutputFolder = @"D:\Out" };
+        var module = ModuleWith(stored);
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+
+        module.UseOwnOutputFolder = false;
+        await module.PersistAsync();
+
+        stored.OutputFolder.Should().BeEmpty("a folder left saved would switch it back on at the next start");
+        stored.DefaultModelBaseFolder.Should().Be(@"D:\Models", "the model folder has its own switch");
+    }
+
+    [Fact]
+    public async Task Persist_saves_the_output_folder_when_its_switch_is_on()
+    {
+        var stored = new UserSettings();
+        var module = ModuleWith(stored);
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = @" D:\Out ";
+        await module.PersistAsync();
+
+        stored.OutputFolder.Should().Be(@"D:\Out");
+    }
+
     // ---- The "use my own model folder" switch (issue #15) ---------------------------------------
     // The switch IS the remembered library: a saved folder means on, none means off. Off means
     // ComfyUI's own folders and no extra_model_paths.yaml, and persists an empty folder -- a
@@ -155,7 +217,7 @@ public class ComfyFoldersModuleTests
         draft.GenerateExtraModelPaths.Should().BeFalse("off means no extra_model_paths.yaml at all");
         draft.FolderPathOverrides.Should().BeEmpty();
         draft.AdditionalFolders.Should().BeEmpty();
-        draft.OutputFolder.Should().Be(@"D:\Out", "the output folder is not a model folder and stays outside the switch");
+        draft.OutputFolder.Should().Be(@"D:\Out", "the output folder has its own switch, not this one");
     }
 
     [Fact]
@@ -193,7 +255,7 @@ public class ComfyFoldersModuleTests
         await module.PersistAsync();
 
         stored.DefaultModelBaseFolder.Should().BeEmpty();
-        stored.OutputFolder.Should().Be(@"D:\Out", "the output folder is outside the switch");
+        stored.OutputFolder.Should().Be(@"D:\Out", "the output folder has its own switch");
     }
 
     [Fact]

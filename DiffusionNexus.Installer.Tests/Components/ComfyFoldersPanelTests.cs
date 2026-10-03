@@ -15,9 +15,10 @@ using Xunit;
 namespace DiffusionNexus.Installer.Tests.Components;
 
 /// <summary>
-/// The folders page shows the output folder and the "use my own model folder" switch. Only with
-/// the switch on does the model library appear, and then behind an "Advanced" toggle that is
-/// closed by default (issue #15).
+/// The folders page shows two panels (issue #27): the output folder behind its own "use my own
+/// output folder" switch, and the "use my own model folder" switch. Only with that switch on does
+/// the model library appear, and then behind an "Advanced" toggle that is closed by default
+/// (issue #15).
 /// </summary>
 public class ComfyFoldersPanelTests : BunitContext
 {
@@ -46,7 +47,12 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task Only_the_output_folder_shows_until_advanced_is_opened()
     {
-        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" }));
+        var cut = RenderPanel(await Module(new UserSettings
+        {
+            DefaultModelBaseFolder = @"D:\Models",
+            DefaultLorasFolder = "Lora",
+            OutputFolder = @"D:\Out",
+        }));
 
         cut.Markup.Should().NotContain("saved model folder");
         cut.FindAll("[data-folder-key]").Should().BeEmpty("the per-type list is advanced");
@@ -59,7 +65,9 @@ public class ComfyFoldersPanelTests : BunitContext
     [Fact]
     public async Task The_output_box_shows_the_install_default_as_grey_text()
     {
-        var cut = RenderPanel(await Module());
+        var module = await Module();
+        module.UseOwnOutputFolder = true;
+        var cut = RenderPanel(module);
 
         var output = cut.Find("[data-role='output']");
         output.GetAttribute("value").Should().BeNullOrEmpty();
@@ -174,8 +182,7 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.FindAll(".advanced-toggle").Should().BeEmpty("off means ComfyUI's own folders: nothing to configure");
         cut.FindAll("[data-role='library']").Should().BeEmpty();
         cut.FindAll("[data-folder-key]").Should().BeEmpty();
-        cut.FindAll("[data-role='output']").Should().ContainSingle("the output folder is not a model folder");
-        cut.Find(".switch-text").TextContent.Should().Contain("Off:").And.Contain("extra_model_paths.yaml", "the user is told what off means")
+        cut.Find("[data-role='model-panel'] .switch-text").TextContent.Should().Contain("Off:").And.Contain("extra_model_paths.yaml", "the user is told what off means")
             .And.NotContain("library folder (");
     }
 
@@ -195,7 +202,7 @@ public class ComfyFoldersPanelTests : BunitContext
 
         cut.Find("input[data-role='use-library']").Change(false);
 
-        cut.Find(".switch-text").TextContent.Should().Contain(@"D:\Models").And.Contain("will not be remembered");
+        cut.Find("[data-role='model-panel'] .switch-text").TextContent.Should().Contain(@"D:\Models").And.Contain("will not be remembered");
     }
 
     [Fact]
@@ -225,5 +232,73 @@ public class ComfyFoldersPanelTests : BunitContext
         module.UseModelLibraryFolder.Should().BeFalse();
         cut.FindAll(".advanced-toggle").Should().BeEmpty();
         module.ModelBaseFolder.Should().Be(@"D:\Models");
+    }
+
+    // ---- Two panels and the output switch (issue #27) ------------------------------------------
+
+    [Fact]
+    public async Task Output_and_model_folder_are_separate_panels_each_with_its_own_switch()
+    {
+        var cut = RenderPanel(await Module());
+
+        var panels = cut.FindAll("section.panel");
+        panels.Should().HaveCount(2);
+        panels[0].GetAttribute("data-role").Should().Be("output-panel");
+        panels[0].QuerySelector("h2")!.TextContent.Should().Be("Output folder");
+        panels[0].QuerySelector("input[data-role='use-output']").Should().NotBeNull();
+        panels[1].GetAttribute("data-role").Should().Be("model-panel");
+        panels[1].QuerySelector("h2")!.TextContent.Should().Be("Model folder");
+        panels[1].QuerySelector("input[data-role='use-library']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Without_a_remembered_output_folder_the_output_switch_is_off_and_the_box_hidden()
+    {
+        var cut = RenderPanel(await Module());
+
+        var toggle = cut.Find("input[data-role='use-output']");
+        toggle.GetAttribute("role").Should().Be("switch");
+        toggle.HasAttribute("checked").Should().BeFalse();
+        cut.FindAll("[data-role='output']").Should().BeEmpty();
+        cut.Find("[data-role='output-panel'] .switch-text").TextContent.Should().Contain("Off:")
+            .And.Contain("ComfyUI's own output folder");
+    }
+
+    [Fact]
+    public async Task A_remembered_output_folder_starts_the_output_switch_on_with_the_folder_shown()
+    {
+        var cut = RenderPanel(await Module(new UserSettings { OutputFolder = @"D:\Out" }));
+
+        cut.Find("input[data-role='use-output']").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-role='output']").GetAttribute("value").Should().Be(@"D:\Out");
+        cut.Find("input[data-role='use-library']").HasAttribute("checked").Should().BeFalse("the switches are independent");
+    }
+
+    [Fact]
+    public async Task Turning_the_output_switch_on_reveals_the_box_and_raises_Changed()
+    {
+        var module = await Module();
+        var changed = false;
+        var cut = RenderPanel(module, () => changed = true);
+
+        cut.Find("input[data-role='use-output']").Change(true);
+
+        module.UseOwnOutputFolder.Should().BeTrue();
+        changed.Should().BeTrue();
+        cut.Find("[data-role='output']").GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\output");
+    }
+
+    [Fact]
+    public async Task Turning_the_output_switch_off_hides_the_box_and_says_the_folder_will_not_be_remembered()
+    {
+        var module = await Module(new UserSettings { OutputFolder = @"D:\Out" });
+        var cut = RenderPanel(module);
+
+        cut.Find("input[data-role='use-output']").Change(false);
+
+        module.UseOwnOutputFolder.Should().BeFalse();
+        module.OutputFolder.Should().Be(@"D:\Out", "kept for this run");
+        cut.FindAll("[data-role='output']").Should().BeEmpty();
+        cut.Find("[data-role='output-panel'] .switch-text").TextContent.Should().Contain(@"D:\Out").And.Contain("will not be remembered");
     }
 }

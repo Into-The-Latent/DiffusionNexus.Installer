@@ -199,6 +199,7 @@ public class ComfyFoldersAdvancedTests
         await module.InitializeAsync(Selection());
         module.UseModelLibraryFolder = true;   // the library box only exists with the switch on
         module.ModelBaseFolder = @"D:\Models";
+        module.UseOwnOutputFolder = true;      // and the output box with its own switch on
         module.OutputFolder = @"D:\Out";
         module.SetFolderType("loras", "MyLoras");
         module.SetFolderType("checkpoints", "checkpoints");

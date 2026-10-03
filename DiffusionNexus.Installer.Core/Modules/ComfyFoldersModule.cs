@@ -63,8 +63,8 @@ public sealed class AdditionalFolderRow
 /// this is a ComfyUI-only module -- see <see cref="AppliesTo"/>.
 /// </para>
 /// <para>
-/// Everything about model folders sits behind <see cref="UseModelLibraryFolder"/>, off by default.
-/// The output folder does not: it is not a model folder.
+/// Everything about model folders sits behind <see cref="UseModelLibraryFolder"/>, and the output
+/// folder behind its own <see cref="UseOwnOutputFolder"/>; both are off unless a folder is saved.
 /// </para>
 /// </summary>
 public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWizardModule
@@ -106,6 +106,14 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         get => _modelBaseFolder;
         set { _modelBaseFolder = value; SyncSelection(); }
     }
+
+    /// <summary>
+    /// The "use my own output folder" switch (issue #27), the same rule as
+    /// <see cref="UseModelLibraryFolder"/>: a saved output folder means on, none means off. Off
+    /// means ComfyUI's own output folder, no --output-directory in the launcher, and an EMPTY
+    /// output folder persisted; the typed path is kept within the run.
+    /// </summary>
+    public bool UseOwnOutputFolder { get; set; }
 
     public string OutputFolder { get; set; } = string.Empty;
     public bool OverwriteExtraModelPaths { get; set; }
@@ -193,6 +201,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         _useModelLibraryFolder = !string.IsNullOrWhiteSpace(user.DefaultModelBaseFolder);
         ModelBaseFolder = user.DefaultModelBaseFolder;
         OutputFolder = user.OutputFolder;
+        UseOwnOutputFolder = !string.IsNullOrWhiteSpace(user.OutputFolder);
 
         var saved = UserModelFolderMap.Build(user);
         _folderTypes.Clear();
@@ -269,10 +278,11 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // before this one, and writing a stale object back would undo it.
         // Off saves an empty library folder. The switch IS that field on the next start, so a
         // folder left saved behind an "off" would be on again; within this run the typed path is
-        // kept so flipping the switch back on does not lose it.
+        // kept so flipping the switch back on does not lose it. The output folder's switch works
+        // the same way.
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         user.DefaultModelBaseFolder = UseModelLibraryFolder ? ModelBaseFolder.Trim() : string.Empty;
-        user.OutputFolder = OutputFolder.Trim();
+        user.OutputFolder = UseOwnOutputFolder ? OutputFolder.Trim() : string.Empty;
 
         if (AdvancedEdited)
         {
@@ -328,7 +338,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
                 .Select(r => r.ToModel(_user?.UserId ?? Guid.Empty)));
         }
 
-        draft.OutputFolder = string.IsNullOrWhiteSpace(OutputFolder) ? null : OutputFolder;
+        draft.OutputFolder = UseOwnOutputFolder && !string.IsNullOrWhiteSpace(OutputFolder) ? OutputFolder : null;
     }
 
     public ModuleValidation Validate() => ModuleValidation.Ok();

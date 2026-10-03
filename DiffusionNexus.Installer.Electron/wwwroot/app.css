@@ -2035,6 +2035,17 @@ progress {
     margin: 0;
 }
 
+/* A switch that opens its panel (the folders page's two, issue #27) sits right under the heading;
+   the 1rem above is for a switch that follows other controls. */
+.panel > h2 + .switch {
+    margin-top: 0;
+}
+
+/* What the switch reveals, set off from the switch's own hint. */
+.switch-body {
+    margin-top: .85rem;
+}
+
 /* The workload screen's "Show legacy workloads" switch, at the far end of the type filters' row
    and speaking at their size. After .switch so it wins on source order. */
 .filters-switch {
