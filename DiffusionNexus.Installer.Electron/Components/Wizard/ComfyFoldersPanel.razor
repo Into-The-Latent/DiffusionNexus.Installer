@@ -25,6 +25,12 @@
                    placeholder="Choose a folder for generated images and videos" @oninput="OnOutputFolderTyped" />
             <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
         </div>
+        @* Here, under the box it is about -- the page leaves this module out of its list under the
+           buttons, which sits below the whole model panel and off screen on a short window. *@
+        @if (Module.OutputFolderProblem is { } outputProblem)
+        {
+            <p class="validation-error" data-role="output-problem">@outputProblem</p>
+        }
     }
 </section>
 
@@ -34,33 +40,32 @@
     @* The "use my own model folder" switch (issue #15). On when a library folder is remembered,
        off when none is. Off means ComfyUI's own models folders: nothing below it renders and no
        extra_model_paths.yaml is written. Before it existed a remembered library was applied from
-       behind the collapsed Advanced section, where nobody saw it. *@
+       behind the collapsed Advanced section, where nobody saw it. On needs a library (the module
+       refuses Next without one), so the library box sits right under the switch, as the output
+       box does, not inside the collapsed Advanced section where a required field cannot hide. *@
     <FolderSwitch Role="use-library" Checked="@Module.UseModelLibraryFolder" OnChange="OnUseLibraryChanged"
                   Label="Use my own model folder"
                   OnText="On: models are read from your library through an extra_model_paths.yaml written into the install."
-                  OffText="Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written."
+                  OffText="@ModelOffText"
                   Folder="@Module.ModelBaseFolder" FolderNoun="library folder" />
 
     @if (Module.UseModelLibraryFolder)
     {
+    <div class="path-row switch-body">
+        <input type="text" data-role="library" value="@Module.ModelBaseFolder"
+               placeholder="Choose your model library folder" @oninput="OnModelBaseFolderTyped" />
+        <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
+    </div>
+    @if (Module.ModelFolderProblem is { } modelProblem)
+    {
+        <p class="validation-error" data-role="library-problem">@modelProblem</p>
+    }
+
     <AdvancedDisclosure Subtitle="custom model folders" Badge="@(Module.HasCustomFolders ? "custom folders in use" : null)">
         <p class="panel-hint">
-            Only needed if you keep models outside the install, or your library uses different
-            folder names than ComfyUI's standard ones. Everything here is remembered for your
-            next install.
+            Only needed if your library uses different folder names than ComfyUI's standard ones,
+            or holds extra folders. Everything here is remembered for your next install.
         </p>
-
-        <label>Model library folder <span class="panel-hint">(optional)</span></label>
-        <p class="panel-hint">
-            Leave empty to keep models inside the install. Point it at an existing library and the
-            installer writes an <code>extra_model_paths.yaml</code> so the software reads from it
-            instead of downloading again.
-        </p>
-        <div class="path-row">
-            <input type="text" data-role="library" value="@Module.ModelBaseFolder"
-                   placeholder="@Module.DefaultModelsFolder" @oninput="OnModelBaseFolderTyped" />
-            <button class="btn-secondary" @onclick="BrowseModels">Browse...</button>
-        </div>
 
         @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
         {
@@ -122,6 +127,10 @@
     private string OutputOffText => string.IsNullOrEmpty(Module.DefaultOutputFolder)
         ? "Off: generated images and videos stay in ComfyUI's own output folder inside the install."
         : $"Off: generated images and videos stay in ComfyUI's own output folder ({Module.DefaultOutputFolder}).";
+
+    private string ModelOffText => string.IsNullOrEmpty(Module.DefaultModelsFolder)
+        ? "Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written."
+        : $"Off: ComfyUI's own models folders ({Module.DefaultModelsFolder}) are used and no extra_model_paths.yaml is written.";
 
     private async Task OnUseOutputChanged(bool on)
     {

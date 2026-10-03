@@ -513,6 +513,7 @@ public class InstallPageTests : BunitContext
         RegisterContent(EmptyScanner());
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         page.Find("input[data-role='use-library']").Change(true);   // the section only exists with the switch on (#15)
+        page.Find("[data-role='library']").Input(@"D:\Models");      // and on needs a library (#47)
         page.Find(".advanced-toggle").Click();
         page.Find("[data-folder-key='loras']").Input("MyLoras");
 
@@ -620,6 +621,31 @@ public class InstallPageTests : BunitContext
         page.FindAll(".panel .validation-error").Should().ContainSingle();
         page.FindAll("button").Single(b => b.TextContent.Trim() == "Next").HasAttribute("disabled").Should().BeTrue();
     }
+
+    [Fact]
+    public void A_folders_page_message_is_shown_once_inside_its_panel_not_under_the_buttons()
+    {
+        // PR #47 review round 2: under the buttons the message sat below the whole model panel,
+        // off screen on a short window, with Next greyed and no visible reason.
+        RegisterContent(EmptyScanner());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        Button(page, "Next").HasAttribute("disabled").Should().BeFalse("both switches start off");
+
+        page.Find("input[data-role='use-output']").Change(true);
+
+        page.FindAll(".validation-error").Should().ContainSingle()
+            .Which.TextContent.Should().Contain("Choose an output folder");
+        page.FindAll("[data-role='output-panel'] .validation-error").Should().ContainSingle();
+        Button(page, "Next").HasAttribute("disabled").Should().BeTrue();
+
+        page.Find("[data-role='output']").Input(@"D:\Renders");
+
+        page.FindAll(".validation-error").Should().BeEmpty();
+        Button(page, "Next").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    private static AngleSharp.Dom.IElement Button(IRenderedComponent<InstallPage> page, string text) =>
+        page.FindAll("button").Single(b => b.TextContent.Trim() == text);
 
     [Fact]
     public void The_content_stage_shows_only_the_memory_panel_until_advanced_is_opened()

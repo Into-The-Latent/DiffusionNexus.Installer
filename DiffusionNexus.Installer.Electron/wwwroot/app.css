@@ -2041,6 +2041,12 @@ progress {
     margin-top: 0;
 }
 
+/* A FolderSwitch's hint sits outside its <label> (it is the description, not the name), so it is
+   lined up under the label text by hand: the track's 2.6rem plus the switch's .75rem gap. */
+.switch-hint {
+    margin: .15rem 0 0 3.35rem;
+}
+
 /* What the switch reveals, set off from the switch's own hint. */
 .switch-body {
     margin-top: .85rem;

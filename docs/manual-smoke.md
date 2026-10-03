@@ -98,15 +98,18 @@ the catalog reaches those lists correctly.
    each with its own switch; with nothing saved both switches are off and neither panel shows a
    box; the output switch's off hint names `<folder>\ComfyUI\output`. Turn "Use my own output
    folder" on. **Expect:** an empty box saying "Choose a folder…" and Browse; Next is disabled and
-   "Choose an output folder, or turn off…" shows until a folder is typed. Type a folder, press
+   "Choose an output folder, or turn off…" shows in red right under the box (not under the
+   buttons) until a folder is typed. Type `Renders`. **Expect:** "Enter the full path…". Type
+   `D:\Art&Out`. **Expect:** the start-script message. Type a real folder ending in `\`, press
    Next, cancel the wizard and pick Blanck-ComfyUI again. **Expect:** the output switch is on with
-   that folder. Turn it off. **Expect:** the box hides and the hint says the folder will be
-   forgotten when you continue. Cancel and pick again: the switch is still on (nothing was saved).
-   Turn it off, press Next, cancel, pick again: the switch is off. Turn "Use my own model folder" on. **Expect:** a
-   full-width closed "Advanced settings · custom model folders" bar. No "saved model folders"
-   checkbox, no library box outside Advanced. Click the bar.
-   **Expect:** it opens with the Model library folder box first (grey `<folder>\ComfyUI\models`
-   inside when empty), the overwrite checkbox (only when a library is set), 21 folder-name boxes
+   that folder, without the trailing `\`. Turn it off. **Expect:** the box hides and the hint says
+   the folder will be forgotten when you continue. Cancel and pick again: the switch is still on
+   (nothing was saved). Turn it off, press Next, cancel, pick again: the switch is off. Turn "Use
+   my own model folder" on. **Expect:** a "Choose your model library folder" box right under the
+   switch with its red message under it and Next disabled, then a full-width closed "Advanced
+   settings · custom model folders" bar. No "saved model folders" checkbox. Type a library folder
+   and click the bar.
+   **Expect:** it opens with the overwrite checkbox, 21 folder-name boxes
    prefilled with ComfyUI's standard names (or your saved custom ones), "Reset to standard", and
    an empty "Additional folders" list with "+ Add folder". Type `MyLoras` into LoRAs, press Next,
    then Back. **Expect:** the closed line now says "custom folders in use". Cancel the wizard and

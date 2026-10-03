@@ -144,6 +144,121 @@ public class ComfyFoldersModuleTests
         if (!valid) result.ErrorMessage.Should().Contain("output folder");
     }
 
+    // ---- What the launcher can carry (PR #47 review round 2) -----------------------------------
+    // BatchScriptGenerator quotes the path only when it holds a space and runs the script under
+    // enabledelayedexpansion, so some folders that look fine start ComfyUI somewhere else.
+
+    [Theory]
+    [InlineData("Renders")]
+    [InlineData(@"Pictures\Comfy")]
+    [InlineData("D:Out")]
+    public async Task A_relative_output_folder_is_refused(string folder)
+    {
+        // It would resolve under <install>\ComfyUI -- inside the install, deleted with it.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = folder;
+
+        module.OutputFolderProblem.Should().Contain("full path");
+        module.Validate().IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(@"D:\Art&Out")]
+    [InlineData(@"D:\Wow!Renders")]
+    [InlineData(@"D:\100%Out")]
+    [InlineData(@"D:\A^B")]
+    public async Task An_output_folder_the_start_script_would_mangle_is_refused(string folder)
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = folder;
+
+        module.OutputFolderProblem.Should().Contain("cannot");
+        module.Validate().IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(@"D:\My Output\", @"D:\My Output")]
+    [InlineData(@"D:\Out/", @"D:\Out")]
+    [InlineData(@"D:\", @"D:\")]
+    public async Task A_trailing_separator_is_dropped_but_a_drive_root_is_kept(string typed, string expected)
+    {
+        // "D:\My Output\" quoted becomes "D:\My Output\" -- and \" is a literal quote in argv.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = typed;
+
+        module.Validate().IsValid.Should().BeTrue();
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.OutputFolder.Should().Be(expected);
+    }
+
+    // ---- The model switch on needs a library too (PR #47 review round 2) -----------------------
+    // With no library there is no extra_model_paths.yaml, and Persist saves an empty folder, so the
+    // switch is off at the next start and any renamed folder types quietly stop applying.
+
+    [Theory]
+    [InlineData(true, "", false)]
+    [InlineData(true, "   ", false)]
+    [InlineData(true, "Models", false)]
+    [InlineData(true, @"D:\Models", true)]
+    [InlineData(false, "", true)]
+    public async Task The_model_switch_on_needs_a_full_library_path(bool on, string folder, bool valid)
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseModelLibraryFolder = on;
+        module.ModelBaseFolder = folder;
+
+        (module.ModelFolderProblem is null).Should().Be(valid);
+        module.Validate().IsValid.Should().Be(valid);
+        if (!valid) module.ModelFolderProblem.Should().Contain("model library");
+    }
+
+    [Fact]
+    public async Task Each_switch_reports_its_own_problem()
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.UseModelLibraryFolder = true;
+
+        module.OutputFolderProblem.Should().NotBeNull();
+        module.ModelFolderProblem.Should().NotBeNull();
+
+        module.OutputFolder = @"D:\Out";
+        module.OutputFolderProblem.Should().BeNull();
+        module.Validate().ErrorMessage.Should().Be(module.ModelFolderProblem);
+    }
+
+    [Fact]
+    public async Task On_the_Location_stage_an_unanswered_switch_keeps_Next_disabled_until_a_folder_is_typed()
+    {
+        // The rule only matters through WizardRun: Next reads Validate() for the current stage.
+        var module = Module();
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.ComfyUI;
+        var plan = await new WizardModuleRegistry(() => [module]).BuildPlanAsync(new WizardSelection { Workload = w });
+        var run = new WizardRun(plan);
+        run.CurrentStage.Should().Be(WizardStage.Location);
+        run.CanGoNext.Should().BeTrue();
+
+        module.UseOwnOutputFolder = true;
+
+        run.CanGoNext.Should().BeFalse();
+        run.ValidationErrors.Should().ContainSingle().Which.Should().Contain("output folder");
+
+        module.OutputFolder = @"D:\Out";
+
+        run.CanGoNext.Should().BeTrue();
+        run.ValidationErrors.Should().BeEmpty();
+    }
+
     // ---- The "use my own output folder" switch (issue #27) --------------------------------------
     // Same rule as the model folder's: a saved output folder means on, none means off. Off means
     // ComfyUI's own output folder and persists an empty one.
