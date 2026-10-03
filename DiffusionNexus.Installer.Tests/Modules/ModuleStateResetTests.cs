@@ -153,4 +153,42 @@ public class ModuleStateResetTests
         module.Contribute(draft);
         draft.SkipVcRuntimeProvisioning.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task A_vc_runtime_installed_during_a_side_trip_is_seen_on_resume()
+    {
+        // #45: the user read "missing", ran vc_redist by hand, came Back. A decline given while it
+        // was missing must not become a "skipped" warning row for a runtime that is there.
+        var detection = new Mock<IVcRuntimeDetectionService>();
+        detection.SetupSequence(d => d.Detect())
+            .Returns(new VcRuntimeDetectionResult(VcRuntimeState.Missing))
+            .Returns(new VcRuntimeDetectionResult(VcRuntimeState.Present, new Version(14, 44)));
+        var module = new VcRuntimeModule(detection.Object);
+        await module.InitializeAsync(Selection());
+        module.InstallRuntime = false;
+
+        module.RefreshAfterResume();
+
+        module.IsPresent.Should().BeTrue();
+        module.InstalledVersion.Should().Be(new Version(14, 44));
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.SkipVcRuntimeProvisioning.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_inconclusive_probe_on_resume_keeps_the_earlier_answer()
+    {
+        var detection = new Mock<IVcRuntimeDetectionService>();
+        detection.SetupSequence(d => d.Detect())
+            .Returns(new VcRuntimeDetectionResult(VcRuntimeState.Outdated, new Version(14, 20)))
+            .Returns(new VcRuntimeDetectionResult(VcRuntimeState.Unknown));
+        var module = new VcRuntimeModule(detection.Object);
+        await module.InitializeAsync(Selection());
+
+        module.RefreshAfterResume();
+
+        module.IsOutdated.Should().BeTrue();
+        module.InstalledVersion.Should().Be(new Version(14, 20));
+    }
 }

@@ -47,4 +47,11 @@ public interface IWizardModule
     /// it is now, not on the copy it loaded at initialization.
     /// </summary>
     Task PersistAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// The wizard is shown again after a side trip (#45) without being rebuilt. Refresh what the
+    /// machine may have changed meanwhile -- a detection, a scan -- never the user's answers.
+    /// Cheap and synchronous: it runs before the page's first render. A no-op by default.
+    /// </summary>
+    void RefreshAfterResume() { }
 }

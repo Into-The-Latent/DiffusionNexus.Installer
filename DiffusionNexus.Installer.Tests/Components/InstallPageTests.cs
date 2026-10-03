@@ -588,6 +588,28 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
+    public async Task A_wizard_left_while_preparing_is_not_kept()
+    {
+        // The home shell remembered "/" before this page finished building, so nothing released
+        // it; keeping it afterwards would hold a wizard no screen leads back to.
+        Register(Workload());
+        var reading = new TaskCompletionSource<IReadOnlyList<InstallationConfiguration>>();
+        var source = new Mock<IWorkloadSource>();
+        source.Setup(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>())).Returns(reading.Task);
+        Services.AddSingleton(source.Object);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"/install/{WorkloadId}");
+        Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        var target = Services.GetRequiredService<ReturnTarget>();
+
+        await DisposeComponentsAsync();
+        reading.SetResult([Workload()]);
+
+        // Nothing to wait on when it does the right thing; a kept wizard would appear within ms.
+        SpinWait.SpinUntil(() => target.WizardInProgress is not null, TimeSpan.FromSeconds(1));
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
     public async Task A_wizard_resumed_after_a_side_trip_scans_for_models_again()
     {
         // Files may have come or gone while the user read Licences; the panel must not show the

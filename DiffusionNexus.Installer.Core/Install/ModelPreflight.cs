@@ -35,6 +35,9 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         // shows. Off the render thread: a large library on a slow disk must not freeze the window
         // before the "Verifying..." hint can even paint.
         await Task.Run(module.RefreshPresence, ct).ConfigureAwait(false);
+        // Task.Run only observes ct before the scan starts. A page that went away meanwhile must
+        // not touch a module the wizard it left behind (#45) may already be showing elsewhere.
+        ct.ThrowIfCancellationRequested();
         module.ApplyVerification([], []);
 
         var candidates = module.ExistingTargetsForSelectedModels()

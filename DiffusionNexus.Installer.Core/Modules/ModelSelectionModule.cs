@@ -32,6 +32,17 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     private readonly HashSet<string> _forceRedownloadUrls = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _trustedUrls = new(StringComparer.OrdinalIgnoreCase);
 
+    // A kept wizard (#45) is one module under two pages for a moment: the page that left may still
+    // be scanning or estimating while the restored one starts its own. Each run is numbered as it
+    // starts; a scan commits only when nothing newer has committed and no resume came after it
+    // started, and an estimate only when no newer one has started. Never "discard while a newer
+    // one runs": two scan loops would then keep discarding each other.
+    private readonly Lock _presenceGate = new();
+    private long _scanStarted;
+    private long _scanCommitted;
+    private long _scanInvalidatedAt;
+    private long _estimateStarted;
+
     public string Id => "model-selection";
     public WizardStage Stage => WizardStage.Content;
     public int Order => 10;
@@ -94,13 +105,18 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     }
 
     /// <summary>
-    /// Makes the panel scan again on its next render, whatever the tier and folder: for a wizard
-    /// resumed after a side trip (#45), when files may have come or gone since the last scan.
+    /// Files may have come or gone during the trip, and a fresh wizard would have scanned: the
+    /// panel scans again on its next render, whatever the tier and folder, and a scan that began
+    /// before the trip no longer commits.
     /// </summary>
-    public void InvalidatePresence()
+    public void RefreshAfterResume()
     {
-        LastScannedTier = -1;
-        LastScannedFolder = null;
+        lock (_presenceGate)
+        {
+            _scanInvalidatedAt = Interlocked.Increment(ref _scanStarted);
+            LastScannedTier = -1;
+            LastScannedFolder = null;
+        }
     }
 
     /// <summary>Filesystem only, synchronous. Nothing to scan until an install folder is known.</summary>
@@ -108,38 +124,45 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     {
         if (_selection is null) return;
 
+        var run = Interlocked.Increment(ref _scanStarted);
         var tier = _selection.SelectedVramProfile;
-        LastScannedTier = tier;
-        LastScannedFolder = _selection.TargetFolder;
+        var folder = _selection.TargetFolder;
 
-        if (string.IsNullOrWhiteSpace(_selection.TargetFolder))
+        IReadOnlyList<ModelPresence> presence = string.IsNullOrWhiteSpace(folder)
+            ? []
+            : scanner.Scan(new ModelScanRequest(
+                _selection.Workload,
+                RepositoryPaths.Resolve(_selection.Workload, folder),
+                _selection.ModelBaseFolder,
+                _selection.FolderPathOverrides,
+                tier));
+
+        lock (_presenceGate)
         {
-            _presence = [];
-            foreach (var row in Rows) { row.IsExisting = false; row.ExistingPath = null; }
-            return;
-        }
+            if (run < _scanCommitted || run < _scanInvalidatedAt) return;
+            _scanCommitted = run;
+            LastScannedTier = tier;
+            LastScannedFolder = folder;
+            _presence = presence;
 
-        _presence = scanner.Scan(new ModelScanRequest(
-            _selection.Workload,
-            RepositoryPaths.Resolve(_selection.Workload, _selection.TargetFolder),
-            _selection.ModelBaseFolder,
-            _selection.FolderPathOverrides,
-            tier));
-
-        // A repeated model id is a hand-authored catalog mistake, not an impossibility; the first
-        // entry wins rather than the whole Content stage throwing.
-        var byId = _presence.GroupBy(p => p.ModelId).ToDictionary(g => g.Key, g => g.First());
-        foreach (var row in Rows)
-        {
-            var found = byId.TryGetValue(row.Id, out var presence) && presence.AllPartsPresent;
-            row.IsExisting = found;
-            row.ExistingPath = found ? presence!.ExistingPath : null;
+            // A repeated model id is a hand-authored catalog mistake, not an impossibility; the first
+            // entry wins rather than the whole Content stage throwing.
+            var byId = presence.GroupBy(p => p.ModelId).ToDictionary(g => g.Key, g => g.First());
+            foreach (var row in Rows)
+            {
+                var found = byId.TryGetValue(row.Id, out var p) && p.AllPartsPresent;
+                row.IsExisting = found;
+                row.ExistingPath = found ? p!.ExistingPath : null;
+            }
         }
     }
 
     /// <summary>Network-bound (HEAD per URL). Failure is reported through <see cref="EstimateError"/>, never thrown.</summary>
     public async Task RefreshEstimateAsync(CancellationToken ct = default)
     {
+        var run = Interlocked.Increment(ref _estimateStarted);
+        bool Latest() => run == Interlocked.Read(ref _estimateStarted);
+
         if (_selection is null || string.IsNullOrWhiteSpace(_selection.TargetFolder))
         {
             Estimate = null;
@@ -148,13 +171,17 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
 
         try
         {
-            Estimate = await estimator.EstimateAsync(new DiskSpaceRequest(
+            var estimate = await estimator.EstimateAsync(new DiskSpaceRequest(
                 _selection.Workload,
                 _selection.TargetFolder,
                 _selection.SelectedVramProfile,
                 Rows.Where(r => !r.IsSelected).Select(r => r.Id).ToHashSet(),
                 Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet(),
                 _selection.ModelBaseFolder), ct).ConfigureAwait(false);
+
+            // An estimator that ignores ct finishes anyway; only the newest request may show.
+            if (!Latest()) return;
+            Estimate = estimate;
             EstimateError = null;
         }
         catch (OperationCanceledException)
@@ -163,6 +190,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         }
         catch (Exception ex)
         {
+            if (!Latest()) return;
             Estimate = null;
             EstimateError = $"Could not estimate disk space: {ex.Message}";
         }
