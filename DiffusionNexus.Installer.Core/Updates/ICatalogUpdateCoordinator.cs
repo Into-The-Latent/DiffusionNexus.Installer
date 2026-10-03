@@ -34,6 +34,15 @@ public interface ICatalogUpdateCoordinator
     CatalogDownloadProgress? Progress { get; }
     CatalogApplyResult? LastApply { get; }
 
+    /// <summary>
+    /// How many applies have changed installed content in this run: one per apply that landed at
+    /// least one section, a partial one included. A screen built from the catalog compares it
+    /// with the value it was built under to know it is stale (#32). No phase says this: a partial
+    /// apply ends in Checked, and a switch that applies nothing passes through Checking back to
+    /// whatever phase it found, Applied included.
+    /// </summary>
+    long ContentGeneration { get; }
+
     bool UpdateAvailable { get; }
     bool CanApply { get; }
 

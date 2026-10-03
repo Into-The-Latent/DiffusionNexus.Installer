@@ -1,8 +1,20 @@
 @using DiffusionNexus.Installer.Electron.Services
 @inject ReturnTarget Return
+@implements IDisposable
 
 @* The way out of a side trip (/licenses, /updates, /debug), at the top of the page where it can
    be found. One component because each page used to hand-roll its own -- two links and a button
    buried in an action row -- and all of them led to the welcome screen even when the user had
    come from a running install. *@
 <a class="back-link" href="@Return.Path">&larr; Back</a>
+
+@code {
+    // An apply can move the target while the page is open (#32). Re-rendered here rather than by
+    // each page: a parameterless child is not re-rendered by its parent, and the apply can land on
+    // whichever side trip the user has moved to by then.
+    protected override void OnInitialized() => Return.Changed += OnReturnChanged;
+
+    private void OnReturnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Return.Changed -= OnReturnChanged;
+}

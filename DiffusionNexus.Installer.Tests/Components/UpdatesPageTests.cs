@@ -220,10 +220,30 @@ public class UpdatesPageTests : BunitContext
         page.FindAll(".catalog-changes").Should().BeEmpty("what changed is now what is installed");
     }
 
-    private static string Wizard => "install/6f9619ff-8b86-d011-b42d-00cf4fc964ff";
+    private static readonly Guid WizardId = Guid.Parse("6f9619ff-8b86-d011-b42d-00cf4fc964ff");
+    private static string Wizard => $"install/{WizardId}";
 
-    [Fact]
-    public void An_apply_opened_from_a_wizard_sends_Back_home()
+    private string BackHref(IRenderedComponent<UpdatesPage> page) => page.Find("a.back-link").GetAttribute("href")!;
+
+    // What the coordinator does when an apply lands: content moves the generation, whatever the phase.
+    private void Lands(CatalogApplyResult result, CatalogUpdatePhase phase)
+    {
+        _catalog.LastApply = result;
+        _catalog.ContentGeneration++;
+        _catalog.Phase = phase;
+        _catalog.RaiseChanged();
+    }
+
+    public static TheoryData<CatalogApplyResult, CatalogUpdatePhase> LandedApplies => new()
+    {
+        { new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null), CatalogUpdatePhase.Applied },
+        // Partial: the phase goes back to Checked, but the wizard is half-new all the same.
+        { new CatalogApplyResult(CatalogSections.Workloads, CatalogSections.Workflows, "workflows/ locked"), CatalogUpdatePhase.Checked },
+    };
+
+    [Theory]
+    [MemberData(nameof(LandedApplies))]
+    public void An_apply_opened_from_a_wizard_sends_Back_home(CatalogApplyResult result, CatalogUpdatePhase phase)
     {
         // The wizard was built from the old catalog; returning to it would rebuild it from the new
         // one and drop every answer. Back is the only way home now that the link is gone (#32).
@@ -232,22 +252,38 @@ public class UpdatesPageTests : BunitContext
         Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
         _catalog.Phase = CatalogUpdatePhase.Applying;
         var page = Render<UpdatesPage>();
-        page.Find("a.back-link").GetAttribute("href").Should().Be("/" + Wizard);
+        BackHref(page).Should().Be("/" + Wizard);
 
+        Lands(result, phase);
+
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/"));
+    }
+
+    [Fact]
+    public void A_switch_that_applies_nothing_does_not_move_Back()
+    {
+        // Applied hours ago, then into a wizard built from that catalog, then here: a channel
+        // switch previews (Checking), the user keeps their channel, the phase returns to Applied.
+        // Nothing changed, so the wizard is still current.
+        Register(InstallPhase.Idle);
+        Available();
+        Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
         _catalog.Phase = CatalogUpdatePhase.Applied;
-        _catalog.LastApply = new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        var page = Render<UpdatesPage>();
+
+        _catalog.Phase = CatalogUpdatePhase.Checking;
+        _catalog.RaiseChanged();
+        _catalog.Phase = CatalogUpdatePhase.Applied;
         _catalog.RaiseChanged();
 
-        page.WaitForAssertion(() => page.Find("a.back-link").GetAttribute("href").Should().Be("/"));
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/" + Wizard));
     }
 
     [Fact]
     public async Task An_apply_keeps_Back_on_an_install_that_is_on_screen()
     {
         // A run's report or progress does not depend on the catalog: leaving it behind would lose it.
-        var workload = new InstallationConfiguration { Name = "Krea-2-Turbo" };
-        var plan = await new WizardModuleRegistry(() => [])
-            .BuildPlanAsync(new WizardSelection { Workload = workload });
+        var plan = await PlanAsync(WizardId);
         Register(InstallPhase.Completed, plan);
         Available();
         var target = Services.GetRequiredService<ReturnTarget>();
@@ -256,27 +292,33 @@ public class UpdatesPageTests : BunitContext
         _catalog.Phase = CatalogUpdatePhase.Applying;
         var page = Render<UpdatesPage>();
 
-        _catalog.Phase = CatalogUpdatePhase.Applied;
-        _catalog.RaiseChanged();
+        Lands(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null), CatalogUpdatePhase.Applied);
 
-        page.WaitForAssertion(() => page.Find("a.back-link").GetAttribute("href").Should().Be("/" + Wizard));
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/" + Wizard));
     }
 
     [Fact]
-    public void An_earlier_apply_does_not_move_Back()
+    public async Task A_report_left_behind_does_not_shield_the_screen_after_it()
     {
-        // Applied hours ago, then into a wizard built from that catalog, then here again: the
-        // wizard is current, and an unrelated re-render must not take the way back to it away.
-        Register(InstallPhase.Idle);
+        // Leaving a report by the top bar does not clear InstallOnScreen; the screen the user went
+        // on to was built from the old catalog like any other.
+        var plan = await PlanAsync(WizardId);
+        Register(InstallPhase.Completed, plan);
         Available();
-        Services.GetRequiredService<ReturnTarget>().Remember(Wizard);
-        _catalog.Phase = CatalogUpdatePhase.Applied;
+        var target = Services.GetRequiredService<ReturnTarget>();
+        target.InstallOnScreen = plan;
+        target.Remember("software/ComfyUI");
+        _catalog.Phase = CatalogUpdatePhase.Applying;
         var page = Render<UpdatesPage>();
 
-        _catalog.RaiseChanged();
+        Lands(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null), CatalogUpdatePhase.Applied);
 
-        page.WaitForAssertion(() => page.Find("a.back-link").GetAttribute("href").Should().Be("/" + Wizard));
+        page.WaitForAssertion(() => BackHref(page).Should().Be("/"));
     }
+
+    private static Task<WizardPlan> PlanAsync(Guid workloadId) =>
+        new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = new InstallationConfiguration { Id = workloadId, Name = "Krea-2-Turbo" } });
 
     [Fact]
     public void Reports_a_failed_apply_and_offers_a_retry()
@@ -829,7 +871,7 @@ public class UpdatesPageTests : BunitContext
     {
         Register(InstallPhase.Idle);
         Render<UpdatesPage>();
-        _catalog.Subscribers.Should().Be(1);
+        _catalog.Subscribers.Should().Be(2, "the page, and its Back link through ReturnTarget");
 
         await DisposeComponentsAsync();
 

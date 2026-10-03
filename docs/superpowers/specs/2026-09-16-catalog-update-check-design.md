@@ -340,11 +340,13 @@ leaving them showing the click the user just made.
   current catalog; swapping content under it has no upside.
 - Allowed while a wizard is mid-configuration but not running. Every page reads the
   catalog through `IWorkloadSource` on navigation and the SDK invalidates its cache on
-  apply, so the next screen reflects the new content. An apply that lands on `/updates`
-  points the page's **← Back** at `/` rather than forcing a reload (#32): the wizard the
-  user came from was built from the old catalog, and returning to it would rebuild it from
-  the new one, dropping their answers. A finished install on screen
-  (`ReturnTarget.InstallOnScreen`) keeps its way back; its report does not depend on the catalog.
+  apply, so the next screen reflects the new content. Once an apply has landed content
+  (a partial one included), **← Back** leads to `/` rather than forcing a reload (#32): the
+  wizard the user came from was built from the old catalog, and returning to it would rebuild
+  it from the new one, dropping their answers. `ReturnTarget` remembers each screen with the
+  coordinator's `ContentGeneration` and decides on read, so it holds across a reconnect and
+  on any side trip. A finished install's report (`ReturnTarget.InstallOnScreen`, when it is
+  the screen remembered) keeps its way back; it does not depend on the catalog.
 - No automatic re-check after apply. The SDK reloads the catalog lazily; the coordinator
   reloads `Installed` from the state file so the section shows the new version at once.
 

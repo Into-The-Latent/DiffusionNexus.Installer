@@ -258,8 +258,9 @@ can lag a minute after the release appears). Stable is what users follow.
    Release dialog would show — and an **Apply catalog update** button.
 4. Press Apply. **Expect:** "Downloading… NN%" ticking, then "Catalog updated to vN+1." and no
    link after it (#32); the top bar is back to "Check for Updates" and the welcome
-   notice is gone. Press **← Back**. **Expect:** the welcome screen, wherever `/updates` was
-   opened from — an apply sends Back home (#32). Open the workload. **Expect:** the edited description.
+   notice is gone. Press **← Back**. **Expect:** the welcome screen — an apply sends Back home
+   (#32) — unless `/updates` was opened from a finished install's report, which Back returns to.
+   Open the workload. **Expect:** the edited description.
 5. Quit. Launch again **without** the variable. **Expect:** `/updates` has Stable checked, the
    Catalog row still says vN+1 (Preview) — provenance, not preference — and the check
    says "The catalog is up to date." or offers the stable content back if it differs (the diff is

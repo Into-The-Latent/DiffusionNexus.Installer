@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 
 namespace DiffusionNexus.Installer.Electron.Services;
@@ -15,13 +16,73 @@ namespace DiffusionNexus.Installer.Electron.Services;
 /// A singleton, like the session: this is a one-user desktop app, and a circuit reconnect must
 /// not forget where the user was. Written by <c>ScreenShell</c> -- every flow screen wears it and
 /// no side trip does, so "rendered the shell" is exactly "is somewhere worth returning to".
+///
+/// Unless the catalog changed since (#32): a screen is remembered with the catalog's
+/// <see cref="ICatalogUpdateCoordinator.ContentGeneration"/>, and once an apply has landed content
+/// Back leads to the welcome screen instead. A wizard returned to would be rebuilt from the new
+/// catalog, dropping every answer without a word; the gallery showing the change is where the
+/// user wants to be. Decided here, next to the state it guards, so it holds across a circuit
+/// reconnect and whichever page the apply landed on.
 /// </summary>
 public sealed class ReturnTarget
 {
-    private volatile string _path = "/";
+    private sealed record Remembered(string Path, long Generation);
+
+    private readonly ICatalogUpdateCoordinator? _catalog;
+    private readonly Lock _listeners = new();
+    private volatile Remembered _at = new("/", 0);
+    private Action? _changed;
+    private long _raisedGeneration;
+
+    /// <summary>Without a catalog: Back is never moved by an apply (component tests that do not care).</summary>
+    public ReturnTarget()
+    {
+    }
+
+    public ReturnTarget(ICatalogUpdateCoordinator catalog)
+    {
+        _catalog = catalog;
+        _at = new("/", catalog.ContentGeneration);
+    }
+
+    /// <summary>
+    /// Raised when an apply has moved <see cref="Path"/>; on the coordinator's thread. Listens to
+    /// the coordinator only while someone listens here (a Back link on screen), so the pages'
+    /// "every handler is gone after dispose" checks stay exact.
+    /// </summary>
+    public event Action? Changed
+    {
+        add
+        {
+            lock (_listeners)
+            {
+                if (_changed is null && _catalog is not null)
+                {
+                    _raisedGeneration = _catalog.ContentGeneration;
+                    _catalog.Changed += OnCatalogChanged;
+                }
+                _changed += value;
+            }
+        }
+        remove
+        {
+            lock (_listeners)
+            {
+                _changed -= value;
+                if (_changed is null && _catalog is not null) _catalog.Changed -= OnCatalogChanged;
+            }
+        }
+    }
 
     /// <summary>App-relative, always rooted ("/", "/install/{id}").</summary>
-    public string Path => _path;
+    public string Path
+    {
+        get
+        {
+            var at = _at;
+            return at.Generation == Generation || IsInstallOnScreen(at.Path) ? at.Path : "/";
+        }
+    }
 
     /// <summary>
     /// The run whose Install stage the user is looking at, or null on every other screen. Set by
@@ -33,7 +94,7 @@ public sealed class ReturnTarget
     public WizardPlan? InstallOnScreen { get; set; }
 
     /// <param name="baseRelativePath">As <c>NavigationManager.ToBaseRelativePath</c> returns it: no leading slash.</param>
-    public void Remember(string baseRelativePath) => _path = Normalize(baseRelativePath);
+    public void Remember(string baseRelativePath) => _at = new(Normalize(baseRelativePath), Generation);
 
     /// <summary>
     /// True when <paramref name="baseRelativePath"/> is the screen Back would lead to -- i.e. the
@@ -41,7 +102,22 @@ public sealed class ReturnTarget
     /// in the flow. Only meaningful before the page's own shell has rendered and recorded it.
     /// </summary>
     public bool IsAt(string baseRelativePath) =>
-        string.Equals(_path, Normalize(baseRelativePath), StringComparison.OrdinalIgnoreCase);
+        string.Equals(Path, Normalize(baseRelativePath), StringComparison.OrdinalIgnoreCase);
+
+    private long Generation => _catalog?.ContentGeneration ?? 0;
+
+    // A run's progress or report does not depend on the catalog, so an apply leaves the way back
+    // to it alone. Only when it is the screen remembered: InstallOnScreen is not cleared when the
+    // user leaves a report by the top bar, and must not shield the screen they went on to.
+    private bool IsInstallOnScreen(string path) =>
+        InstallOnScreen is { } plan
+        && string.Equals(path, Normalize($"install/{plan.Selection.Workload.Id}"), StringComparison.OrdinalIgnoreCase);
+
+    private void OnCatalogChanged()
+    {
+        var generation = Generation;
+        if (Interlocked.Exchange(ref _raisedGeneration, generation) != generation) _changed?.Invoke();
+    }
 
     // Path only. A query or fragment is no part of any flow route today, and carrying one
     // along would be replaying input nobody chose to keep.

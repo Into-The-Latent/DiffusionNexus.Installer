@@ -284,6 +284,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
         coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null));
+        coordinator.ContentGeneration.Should().Be(1);
         coordinator.Progress.Should().BeNull();
         coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
         coordinator.UpdateAvailable.Should().BeFalse("the dot and the notice go away once it is in");
@@ -301,6 +302,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
         coordinator.LastApply!.Error.Should().Be("sha256 mismatch");
+        coordinator.ContentGeneration.Should().Be(0, "nothing landed");
         coordinator.UpdateAvailable.Should().BeTrue();
         coordinator.CanApply.Should().BeTrue();
     }
@@ -331,6 +333,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
         coordinator.LastApply!.Applied.Should().Be(CatalogSections.Workloads);
+        coordinator.ContentGeneration.Should().Be(1, "the workloads did land, whatever the phase says");
     }
 
     [Fact]
@@ -343,6 +346,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
         coordinator.LastApply.Should().BeNull();
+        coordinator.ContentGeneration.Should().Be(0);
         coordinator.Progress.Should().BeNull();
     }
 
@@ -505,6 +509,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _options.Channel.Should().Be(CatalogChannel.Stable);
         coordinator.PendingSwitch.Should().BeNull();
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.ContentGeneration.Should().Be(1, "a switch's apply changes content like any other");
         coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
         coordinator.SwitchIncomplete.Should().BeFalse();
     }
@@ -528,6 +533,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Channel.Should().Be(CatalogChannel.Preview);
         coordinator.LastCheck.Should().BeSameAs(before);
         coordinator.SwitchIncomplete.Should().BeFalse();
+        coordinator.ContentGeneration.Should().Be(0, "a previewed switch that was kept changed nothing");
         raised.Should().Be(1, "the radio snaps back on that render");
 
         await coordinator.CheckAsync();

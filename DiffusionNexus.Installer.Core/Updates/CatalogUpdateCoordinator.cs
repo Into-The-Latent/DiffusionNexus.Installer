@@ -76,6 +76,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public LocalCatalogState? Installed { get; private set; }
     public CatalogDownloadProgress? Progress { get; private set; }
     public CatalogApplyResult? LastApply { get; private set; }
+    public long ContentGeneration { get; private set; }
 
     // Not while a switch waits for an answer: the last check describes the channel being left,
     // and its update could not be applied until Switch or Keep (PR #43 review).
@@ -211,6 +212,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 Installed = installed;
                 _overrideActive = overrideActive;
                 Progress = null;
+                if (result.Applied != CatalogSections.None) ContentGeneration++;
                 Phase = succeeded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
                 if (succeeded) _notLanded = null;
             }
