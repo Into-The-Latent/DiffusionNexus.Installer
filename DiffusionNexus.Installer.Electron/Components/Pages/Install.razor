@@ -234,10 +234,10 @@
             _onlyWorkloadOfItsSoftware = left.OnlyWorkloadOfItsSoftware;
             _readUnder = left.ReadUnder;
 
-            // Files may have come or gone during the trip; a fresh wizard would have scanned, so
-            // the Content stage scans again instead of showing "already downloaded" from before.
-            foreach (var models in _run.Plan.AllModules.OfType<ModelSelectionModule>())
-                models.InvalidatePresence();
+            // What the machine may have changed during the trip (a model file, the VC++ runtime);
+            // each module knows its own detections, and never touches the user's answers.
+            foreach (var module in _run.Plan.AllModules)
+                module.RefreshAfterResume();
 
             KeepWizard();
             return;
@@ -269,6 +269,10 @@
         WireShortcutPrompt(plan, Prompt, Session);
 
         _run = new WizardRun(plan);
+
+        // Left while "Preparing..." showed: the screen it would be kept for is no longer Back's
+        // target, and no answer has been given that a side trip could lose.
+        if (_pageCts.IsCancellationRequested) return;
         KeepWizard();
     }
 
