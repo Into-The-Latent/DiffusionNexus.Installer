@@ -275,4 +275,17 @@ public class DependencyInjectionTests
         // the catalog too. A dropped AddHostedService line would leave every page test green.
         provider.GetServices<IHostedService>().Should().ContainSingle(h => h is CatalogUpdateStartupCheck);
     }
+
+    [Fact]
+    public void The_return_target_resolves_with_the_coordinator_it_needs()
+    {
+        // It has one constructor, which needs the coordinator: a host that drops AddInstallerCore
+        // must fail here, not on the first flow screen while every component test stays green.
+        using var provider = Build();
+
+        var target = provider.GetRequiredService<ReturnTarget>();
+
+        target.Path.Should().Be("/");
+        target.Should().BeSameAs(provider.GetRequiredService<ReturnTarget>());
+    }
 }

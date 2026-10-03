@@ -341,12 +341,18 @@ leaving them showing the click the user just made.
 - Allowed while a wizard is mid-configuration but not running. Every page reads the
   catalog through `IWorkloadSource` on navigation and the SDK invalidates its cache on
   apply, so the next screen reflects the new content. Once an apply has landed content
-  (a partial one, or one that threw, included), **← Back** leads to `/` rather than forcing a
+  (a partial one included), **← Back** leads to `/` rather than forcing a
   reload (#32): with the inline link gone it is the one click to the gallery showing the
   change, and the screen left behind was built from the old catalog. `ReturnTarget` remembers
-  each screen with the coordinator's `ContentGeneration`, stamped when the path changes (the
-  shell re-remembers on every render), and decides on read, so it holds across a reconnect and
-  on any side trip. (A wizard's answers do not survive any side trip yet, apply or not --
+  each screen with the coordinator's `ContentGeneration` the page read its content under
+  (`ScreenShell.ReadUnder`, taken before the read; recorded once per page instance), and
+  decides on read, so it holds across a reconnect and on any side trip.
+- An apply the SDK lets an unexpected exception out of may have swapped a section first,
+  and then the SDK has not invalidated its cache. The coordinator reads the state file
+  before and after: a section whose record moved landed, so it is reported as applied, the
+  catalog is invalidated and the generation moves. A state it cannot read back counts as
+  landed, and the result line says "Part of it may already be installed." rather than
+  "Nothing was changed." (A wizard's answers do not survive any side trip yet, apply or not --
   #45.) A finished install's report (`ReturnTarget.InstallOnScreen`, when it is
   the screen remembered) keeps its way back; it does not depend on the catalog.
 - No automatic re-check after apply. The SDK reloads the catalog lazily; the coordinator

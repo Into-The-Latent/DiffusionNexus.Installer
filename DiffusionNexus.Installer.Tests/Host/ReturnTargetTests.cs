@@ -73,34 +73,18 @@ public class ReturnTargetTests
     }
 
     [Fact]
-    public void A_re_render_after_an_apply_keeps_the_screen_stamped_with_the_catalog_it_was_built_from()
+    public void A_screen_read_before_an_apply_is_stamped_with_what_it_read()
     {
-        // The shell calls Remember on every render of its page. A wizard built before the apply,
-        // re-rendered after it (a ticked checkbox), is still built from the old catalog.
+        // A page that reads the catalog before its shell renders passes the generation it read
+        // under; stamped after the read, an apply in between would pass stale content as current.
         var catalog = new StubCatalogUpdateCoordinator();
         var target = new ReturnTarget(catalog);
-        target.Remember("install/ABC");
-
+        var readUnder = catalog.ContentGeneration;
         catalog.ContentGeneration++;
-        target.Remember("install/abc");
+
+        target.Remember("software/ComfyUI", readUnder);
 
         target.Path.Should().Be("/");
-    }
-
-    [Fact]
-    public void A_throwing_listener_does_not_keep_the_others_from_hearing()
-    {
-        // A Back link on a retained or dead circuit must not leave the live ones on the old target.
-        var catalog = new StubCatalogUpdateCoordinator();
-        var target = new ReturnTarget(catalog);
-        var heard = 0;
-        target.Changed += () => throw new InvalidOperationException("dispatcher gone");
-        target.Changed += () => heard++;
-
-        catalog.ContentGeneration++;
-        catalog.RaiseChanged();
-
-        heard.Should().Be(1);
     }
 
     [Fact]

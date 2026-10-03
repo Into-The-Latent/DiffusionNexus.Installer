@@ -4,6 +4,7 @@ using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
@@ -49,6 +50,7 @@ public static class CoreServiceCollectionExtensions
         // container registers no logging, exactly like CommunityLinksCache.
         services.AddSingleton<ICatalogUpdateCoordinator>(sp => new CatalogUpdateCoordinator(
             sp.GetRequiredService<ICatalogUpdateService>(),
+            sp.GetRequiredService<ICatalog>(),
             sp.GetRequiredService<CatalogOptions>(),
             sp.GetRequiredService<IUserSettingsRepository>(),
             sp.GetRequiredService<IInstallSession>(),

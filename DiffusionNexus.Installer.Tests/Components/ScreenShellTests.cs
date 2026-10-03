@@ -1,5 +1,6 @@
 using Bunit;
 using DiffusionNexus.Installer.Electron.Components.Shared;
+using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.Tests.Support;
@@ -29,6 +30,52 @@ public class ScreenShellTests : BunitContext
 
     private IRenderedComponent<ScreenShell> RenderShell() =>
         Render<ScreenShell>(p => p.AddChildContent("<p class=\"probe\">page content</p>"));
+
+    private (StubCatalogUpdateCoordinator Catalog, ReturnTarget Target) OnAWizard()
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo("install/6f9619ff-8b86-d011-b42d-00cf4fc964ff");
+        return ((StubCatalogUpdateCoordinator)Services.GetRequiredService<Core.Updates.ICatalogUpdateCoordinator>(),
+            Services.GetRequiredService<ReturnTarget>());
+    }
+
+    [Fact]
+    public void A_re_render_after_an_apply_does_not_pass_the_screen_off_as_current()
+    {
+        // ChildContent counts as changed on every parent render (a ticked checkbox): re-recording
+        // then would stamp a wizard built from the old catalog with the new generation (#32).
+        var (catalog, target) = OnAWizard();
+        var cut = RenderShell();
+
+        catalog.ContentGeneration++;
+        cut.Render(p => p.AddChildContent("<p class=\"probe\">ticked</p>"));
+
+        target.Path.Should().Be("/");
+    }
+
+    [Fact]
+    public void A_screen_rebuilt_after_an_apply_is_current()
+    {
+        // A reload or a return builds a new page, read from the new catalog: Back may lead to it.
+        var (catalog, target) = OnAWizard();
+        RenderShell();
+        catalog.ContentGeneration++;
+
+        RenderShell();
+
+        target.Path.Should().Be("/install/6f9619ff-8b86-d011-b42d-00cf4fc964ff");
+    }
+
+    [Fact]
+    public void A_page_that_read_before_the_apply_is_stamped_with_what_it_read()
+    {
+        var (catalog, target) = OnAWizard();
+        var readUnder = catalog.ContentGeneration;
+        catalog.ContentGeneration++;
+
+        Render<ScreenShell>(p => p.Add(s => s.ReadUnder, readUnder).AddChildContent("<p>grid</p>"));
+
+        target.Path.Should().Be("/");
+    }
 
     [Fact]
     public void Puts_the_bar_above_the_pages_own_content()

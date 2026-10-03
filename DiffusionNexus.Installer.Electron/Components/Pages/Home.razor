@@ -142,7 +142,7 @@
 
             @if (Catalog.LastApply is { } failed && (failed.Error is not null || failed.Failed != CatalogSections.None))
             {
-                <p class="catalog-error">@ApplyFailureText(failed)</p>
+                <p class="catalog-error">@ApplyFailureText(failed, Catalog.LastApplyUncertain)</p>
             }
         }
     </section>
@@ -439,8 +439,11 @@
         var p => $"Downloading… {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
     };
 
-    private static string ApplyFailureText(CatalogApplyResult result) => result.Applied switch
+    // Uncertain: the apply threw and the state could not be read back, so "nothing was changed"
+    // would be a guess (PR #44 review).
+    private static string ApplyFailureText(CatalogApplyResult result, bool uncertain) => result.Applied switch
     {
+        CatalogSections.None when uncertain => $"The catalog update failed: {result.Error?.TrimEnd('.')}. Part of it may already be installed.",
         CatalogSections.None => $"The catalog update failed: {result.Error?.TrimEnd('.')}. Nothing was changed.",
         CatalogSections.Workloads => $"Workloads were updated; workflows failed: {result.Error}",
         CatalogSections.Workflows => $"Workflows were updated; workloads failed: {result.Error}",

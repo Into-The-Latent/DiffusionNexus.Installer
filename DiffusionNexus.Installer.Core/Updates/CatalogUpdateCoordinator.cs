@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DiffusionNexus.Installer.Core.Install;
+using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -16,6 +17,7 @@ namespace DiffusionNexus.Installer.Core.Updates;
 public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDisposable
 {
     private readonly ICatalogUpdateService _updates;
+    private readonly ICatalog _catalog;
     private readonly CatalogOptions _options;
     private readonly IUserSettingsRepository _settings;
     private readonly IInstallSession _session;
@@ -49,6 +51,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
     public CatalogUpdateCoordinator(
         ICatalogUpdateService updates,
+        ICatalog catalog,
         CatalogOptions options,
         IUserSettingsRepository settings,
         IInstallSession session,
@@ -58,6 +61,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     {
         _confirmations = confirmations ?? new CatalogChannelConfirmations(null, logger);
         _updates = updates;
+        _catalog = catalog;
         _options = options;
         _settings = settings;
         _session = session;
@@ -78,6 +82,11 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public CatalogApplyResult? LastApply { get; private set; }
     public long ContentGeneration => Interlocked.Read(ref _contentGeneration);
     private long _contentGeneration;
+
+    // The LastApply instance whose Applied could not be read back; compared by reference, so every
+    // write of LastApply clears it without each having to.
+    private CatalogApplyResult? _uncertainApply;
+    public bool LastApplyUncertain { get { lock (_gate) return LastApply is not null && ReferenceEquals(LastApply, _uncertainApply); } }
 
     // Not while a switch waits for an answer: the last check describes the channel being left,
     // and its update could not be applied until Switch or Keep (PR #43 review).
@@ -200,6 +209,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     private async Task ApplyCoreAsync(CatalogUpdateCheck check, CancellationToken ct)
     {
         _logger.LogInformation("Catalog apply started: v{Version} from {Channel}, both sections", check.Remote?.CatalogVersion, check.Channel);
+
+        // What was installed before, to tell what landed if the SDK throws part-way (below).
+        var before = TryReadState();
         try
         {
             var result = await _updates.ApplyAsync(check, CatalogSections.All, new ProgressRelay(this), ct).ConfigureAwait(false);
@@ -234,18 +246,47 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         catch (Exception ex)
         {
             _logger.LogError(ex, "Catalog apply failed unexpectedly");
+
+            // The SDK catches only I/O errors per section; anything else escapes after an earlier
+            // section may already have been swapped in, and then the SDK has not invalidated its
+            // catalog cache either. The applier records each section in the same state write as
+            // its swap, so the state file says what landed. Unreadable: assume something did.
+            var after = TryReadState();
+            CatalogSections? landed = before is null || after is null ? null : LandedBetween(before, after);
+            if (landed != CatalogSections.None) _catalog.Invalidate();
+
+            var result = new CatalogApplyResult(landed ?? CatalogSections.None, CatalogSections.All & ~(landed ?? CatalogSections.None), ex.Message);
             lock (_gate)
             {
-                // The SDK catches only I/O errors per section; anything else escapes after an
-                // earlier section may already have been swapped in. Counted as content changed.
-                Interlocked.Increment(ref _contentGeneration);
-                LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, ex.Message);
+                if (landed != CatalogSections.None) Interlocked.Increment(ref _contentGeneration);
+                if (after is not null) Installed = after;
+                LastApply = result;
+                _uncertainApply = landed is null ? result : null;
                 Progress = null;
                 Phase = CatalogUpdatePhase.Checked;
             }
+            _logger.LogInformation("Catalog apply after the failure: landed={Landed}", landed?.ToString() ?? "unknown");
         }
         Raise();
     }
+
+    private LocalCatalogState? TryReadState()
+    {
+        try
+        {
+            return LocalCatalogState.Read(_options.InstalledCatalogPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Catalog state could not be read: {Message}", ex.Message);
+            return null;
+        }
+    }
+
+    // SectionState is a record: any field the applier writes (version, commit, time, origin) differs.
+    private static CatalogSections LandedBetween(LocalCatalogState before, LocalCatalogState after) =>
+        (after.Workloads != before.Workloads ? CatalogSections.Workloads : CatalogSections.None)
+        | (after.Workflows != before.Workflows ? CatalogSections.Workflows : CatalogSections.None);
 
     /// <summary>
     /// Not <see cref="System.Progress{T}"/>: that posts to the captured SynchronizationContext, which

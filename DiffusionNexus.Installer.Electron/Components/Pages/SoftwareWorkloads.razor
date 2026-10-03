@@ -1,6 +1,7 @@
 @page "/software/{Software}"
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
+@using DiffusionNexus.Installer.Core.Updates
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.SDK.Catalog
 @using DiffusionNexus.Installer.SDK.Models.Configuration
@@ -8,10 +9,11 @@
 @inject SoftwareGalleryBuilder Builder
 @inject IWorkloadSource Workloads
 @inject NavigationManager Nav
+@inject ICatalogUpdateCoordinator CatalogUpdates
 
 <PageTitle>Easy Workload Installer - Into the Latent</PageTitle>
 
-<ScreenShell>
+<ScreenShell ReadUnder="_readUnder">
     <div class="workload-screen">
         @if (_loadError is not null)
         {
@@ -106,6 +108,10 @@
     /// </summary>
     private string? _loadedFor;
 
+    // The catalog generation the grid is read under (#32). Before the read: this page reads in
+    // OnParametersSetAsync, before its shell first renders, so the shell cannot take it itself.
+    private long _readUnder;
+
     protected override async Task OnParametersSetAsync()
     {
         // Keyed on the parameter actually changing, not on merely being handed parameters again.
@@ -124,6 +130,7 @@
         if (_loaded && string.Equals(_loadedFor, Software, StringComparison.OrdinalIgnoreCase)) return;
 
         _loadedFor = Software;
+        _readUnder = CatalogUpdates.ContentGeneration;
 
         // Filter state is per-software: arriving at a different software must not inherit the
         // previous one's chosen type, nor its legacy switch.

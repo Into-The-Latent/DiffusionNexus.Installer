@@ -35,13 +35,20 @@ public interface ICatalogUpdateCoordinator
     CatalogApplyResult? LastApply { get; }
 
     /// <summary>
+    /// True when the last apply threw and what it left installed could not be read back:
+    /// <see cref="LastApply"/> then says nothing about what landed (its Applied is None, but part
+    /// of the update may be in). False whenever LastApply is null or was read from the state.
+    /// </summary>
+    bool LastApplyUncertain { get; }
+
+    /// <summary>
     /// How many applies have changed installed content in this run: one per apply that landed at
     /// least one section, a partial one included. A screen built from the catalog compares it
     /// with the value it was built under to know it is stale (#32). No phase says this: a partial
     /// apply ends in Checked, and a switch that applies nothing passes through Checking back to
-    /// whatever phase it found, Applied included. An apply that throws counts too: a section may
-    /// have moved before the throw, and a needless "go home" is cheap where a missed one is #32.
-    /// Safe to read from any thread without the coordinator's lock.
+    /// whatever phase it found, Applied included. An apply that throws counts when the state file
+    /// shows a section moved, or when the state cannot be read back (a needless "go home" is cheap
+    /// where a missed one is #32). Safe to read from any thread without the coordinator's lock.
     /// </summary>
     long ContentGeneration { get; }
 

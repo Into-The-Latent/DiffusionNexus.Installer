@@ -21,12 +21,13 @@
 @inject ICatalogProvenance CatalogProvenance
 @inject NavigationManager Nav
 @inject ReturnTarget Return
+@inject ICatalogUpdateCoordinator CatalogUpdates
 
 <PageTitle>Easy Workload Installer - Into the Latent</PageTitle>
 
 @* Same chrome as the screens before it. The bar and the footer used to stop at the
    welcome and workload screens, so picking a software changed the shape of the window. *@
-<ScreenShell>
+<ScreenShell ReadUnder="_readUnder">
     <div class="wizard">
         @if (_busyWith is not null)
         {
@@ -163,8 +164,13 @@
     private string? _settingsNotice;
     private bool _savingSettings;
 
+    // The catalog generation the wizard is built under (#32): taken before anything is read.
+    private long _readUnder;
+
     protected override async Task OnInitializedAsync()
     {
+        _readUnder = CatalogUpdates.ContentGeneration;
+
         // Blazor only re-renders the component that owns an event handler. Every panel is a child
         // component, so without an explicit callback back up to this page, an edit inside a panel
         // (typing a folder, ticking a checkbox) never refreshes this page's disabled="@(!_run.CanGoNext)".

@@ -314,6 +314,20 @@ public class UpdatesPageTests : BunitContext
     }
 
     [Fact]
+    public void Does_not_claim_nothing_changed_when_what_landed_is_unknown()
+    {
+        // The apply threw and the state could not be read back: a section may be in (PR #44 review).
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "unexpected");
+        _catalog.LastApplyUncertain = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-error").TextContent.Trim().Should().Be("The catalog update failed: unexpected. Part of it may already be installed.");
+    }
+
+    [Fact]
     public void Names_the_section_that_did_land_on_a_partial_apply()
     {
         Register(InstallPhase.Idle);

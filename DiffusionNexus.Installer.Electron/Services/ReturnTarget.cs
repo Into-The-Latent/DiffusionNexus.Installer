@@ -1,7 +1,5 @@
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DiffusionNexus.Installer.Electron.Services;
 
@@ -25,14 +23,14 @@ namespace DiffusionNexus.Installer.Electron.Services;
 /// the gallery that shows the change; the screen left behind was built from the old catalog, and
 /// a workload screen or wizard returned to would show different content (or none, for a removed
 /// workload) than the user left. Decided here, next to the state it guards, so it holds across a
-/// circuit reconnect and whichever page the apply landed on.
+/// circuit reconnect and whichever page the apply landed on. The stamp is the generation the
+/// screen's content was read under, given by the page (see <see cref="Remember"/>).
 /// </summary>
 public sealed class ReturnTarget
 {
     private sealed record Remembered(string Path, long Generation);
 
     private readonly ICatalogUpdateCoordinator _catalog;
-    private readonly ILogger<ReturnTarget> _logger;
     private readonly Lock _listeners = new();
     private volatile Remembered _at;
     private Action? _changed;
@@ -40,10 +38,9 @@ public sealed class ReturnTarget
 
     // One constructor on purpose: with a second, catalog-less one the container would quietly pick
     // it in a host that forgot the coordinator, and Back would never move after an apply.
-    public ReturnTarget(ICatalogUpdateCoordinator catalog, ILogger<ReturnTarget>? logger = null)
+    public ReturnTarget(ICatalogUpdateCoordinator catalog)
     {
         _catalog = catalog;
-        _logger = logger ?? NullLogger<ReturnTarget>.Instance;
         _at = new("/", catalog.ContentGeneration);
     }
 
@@ -96,19 +93,15 @@ public sealed class ReturnTarget
     public WizardPlan? InstallOnScreen { get; set; }
 
     /// <param name="baseRelativePath">As <c>NavigationManager.ToBaseRelativePath</c> returns it: no leading slash.</param>
-    /// <remarks>
-    /// The shell calls this on every render of its page, not only on arrival, so the generation is
-    /// stamped when the path changes and kept while it does not: a re-render after an apply (a
-    /// ticked checkbox) must not pass a screen built from the old catalog off as current. The
-    /// first call for a path comes from the page's first render, before its catalog read can
-    /// finish, so the stamp is never newer than the content -- at worst Back goes home needlessly.
-    /// </remarks>
-    public void Remember(string baseRelativePath)
-    {
-        var path = Normalize(baseRelativePath);
-        var at = _at;
-        if (!string.Equals(at.Path, path, StringComparison.OrdinalIgnoreCase)) _at = new(path, Generation);
-    }
+    /// <param name="readUnder">
+    /// The <see cref="ICatalogUpdateCoordinator.ContentGeneration"/> the screen's content was read
+    /// under, taken by the page before its catalog read. Null for a screen that shows no catalog
+    /// content (it is stamped with the current generation). A page that reads the catalog must
+    /// pass it: taken here, after the read, an apply landing in between would stamp stale content
+    /// as current.
+    /// </param>
+    public void Remember(string baseRelativePath, long? readUnder = null) =>
+        _at = new(Normalize(baseRelativePath), readUnder ?? Generation);
 
     /// <summary>
     /// True when <paramref name="baseRelativePath"/> is the screen Back would lead to -- i.e. the
@@ -130,22 +123,8 @@ public sealed class ReturnTarget
     private void OnCatalogChanged()
     {
         var generation = Generation;
-        if (Interlocked.Exchange(ref _raisedGeneration, generation) == generation) return;
-
-        // One handler per Back link; each on its own, like the coordinator's Raise, so a link on a
-        // retained or dead circuit that throws cannot leave the others showing the old target.
-        if (_changed is not { } handlers) return;
-        foreach (var handler in handlers.GetInvocationList())
-        {
-            try
-            {
-                ((Action)handler)();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Return target: a Changed subscriber threw");
-            }
-        }
+        // The only subscriber, BackLink, hands the work to its dispatcher and cannot throw here.
+        if (Interlocked.Exchange(ref _raisedGeneration, generation) != generation) _changed?.Invoke();
     }
 
     // Path only. A query or fragment is no part of any flow route today, and carrying one

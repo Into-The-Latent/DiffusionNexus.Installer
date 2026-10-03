@@ -1,6 +1,7 @@
 using DiffusionNexus.Installer.Core.Install;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
@@ -17,6 +18,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"dn-coordinator-{Guid.NewGuid():N}");
     private readonly FakeCatalogUpdateService _service = new();
+    private readonly Mock<ICatalog> _catalog = new();
     private readonly CatalogOptions _options;
     private readonly Mock<IUserSettingsRepository> _settings = new();
     private readonly Mock<IInstallSession> _session = new();
@@ -42,7 +44,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
     /// <summary>A new coordinator is a restart: it shares only the files with the ones before it.</summary>
     private CatalogUpdateCoordinator Create() =>
-        new(_service, _options, _settings.Object, _session.Object, () => _environment,
+        new(_service, _catalog.Object, _options, _settings.Object, _session.Object, () => _environment,
             confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
 
     /// <summary>What an apply leaves on disk. A channel is recorded per section, as SDK 2.1.0 does; null is a 2.0.0 state.</summary>
@@ -350,19 +352,63 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Progress.Should().BeNull();
     }
 
+    // The SDK catches only I/O errors per section: anything else escapes after an earlier section
+    // may have been swapped in, without the SDK invalidating its cache. The state file, written in
+    // the same step as each swap, says what landed (PR #44 review).
     [Fact]
-    public async Task An_apply_that_throws_counts_as_changed_content()
+    public async Task An_apply_that_throws_after_a_section_landed_reports_it_and_refreshes_the_catalog()
     {
-        // The SDK catches only I/O errors per section: anything else escapes after an earlier
-        // section may have been swapped in. A needless "Back goes home" is cheap; a missed one is #32.
-        _service.ApplyFailure = new InvalidOperationException("state save failed");
+        // The applier's per-section write: Workloads swapped in, Workflows left as it was.
+        _service.OnApply = () =>
+        {
+            var state = LocalCatalogState.Read(_options.InstalledCatalogPath);
+            state.Workloads = new SectionState(4, "def", DateTimeOffset.UtcNow) { Channel = CatalogChannel.Stable };
+            state.Save(_options.InstalledCatalogPath);
+        };
+        _service.ApplyFailure = new InvalidOperationException("workflows: unexpected");
         using var coordinator = await CheckedWithUpdateAsync();
 
         await coordinator.ApplyAsync();
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
-        coordinator.LastApply!.Applied.Should().Be(CatalogSections.None);
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.Workloads, CatalogSections.Workflows, "workflows: unexpected"));
+        coordinator.LastApplyUncertain.Should().BeFalse();
         coordinator.ContentGeneration.Should().Be(1);
+        coordinator.Installed!.Workloads!.CatalogVersion.Should().Be(4);
+        _catalog.Verify(c => c.Invalidate(), Times.Once, "the SDK skipped its own invalidate on the throw");
+    }
+
+    [Fact]
+    public async Task An_apply_that_throws_before_anything_landed_says_nothing_was_changed()
+    {
+        _service.ApplyFailure = new InvalidOperationException("download: unexpected");
+        using var coordinator = await CheckedWithUpdateAsync();
+
+        await coordinator.ApplyAsync();
+
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "download: unexpected"));
+        coordinator.LastApplyUncertain.Should().BeFalse();
+        coordinator.ContentGeneration.Should().Be(0);
+        _catalog.Verify(c => c.Invalidate(), Times.Never);
+    }
+
+    [Fact]
+    public async Task An_apply_that_throws_over_an_unreadable_state_assumes_something_landed()
+    {
+        // A needless "Back goes home" is cheap; a missed one is #32. The page must not claim
+        // "nothing was changed" either.
+        using var coordinator = await CheckedWithUpdateAsync();
+        WriteInstalledState(3);
+        var stateFile = Path.Combine(_options.InstalledCatalogPath, CatalogSchema.StateFileName);
+        using var held = new FileStream(stateFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        _service.ApplyFailure = new InvalidOperationException("workflows: unexpected");
+
+        await coordinator.ApplyAsync();
+
+        coordinator.LastApply!.Applied.Should().Be(CatalogSections.None);
+        coordinator.LastApplyUncertain.Should().BeTrue();
+        coordinator.ContentGeneration.Should().Be(1);
+        _catalog.Verify(c => c.Invalidate(), Times.Once);
     }
 
     [Fact]
