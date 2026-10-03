@@ -91,16 +91,57 @@ public class ComfyFoldersModuleTests
         draft.GenerateExtraModelPaths.Should().BeFalse();
     }
 
-    [Fact]
-    public async Task An_empty_output_folder_contributes_nothing()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task A_blank_output_folder_contributes_nothing_even_with_the_switch_on(string blank)
     {
-        var module = Module(outputFolder: string.Empty);
+        var module = Module();
         await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;     // past the switch, so the blank guard itself is tested
+        module.OutputFolder = blank;
 
         var draft = new InstallationOptionsDraft();
         module.Contribute(draft);
 
-        draft.OutputFolder.Should().BeNull("blank means ComfyUI's own output folder, not an empty path");
+        draft.OutputFolder.Should().BeNull("an empty --output-directory must never reach the launcher");
+    }
+
+    [Fact]
+    public async Task Folders_reach_the_install_trimmed()
+    {
+        // A pasted " D:\Out" is not rooted: ComfyUI would write under its working directory.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = @" D:\Out ";
+        module.UseModelLibraryFolder = true;
+        module.ModelBaseFolder = @" D:\Models ";
+
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+
+        draft.OutputFolder.Should().Be(@"D:\Out");
+        draft.ModelBaseFolder.Should().Be(@"D:\Models");
+    }
+
+    [Theory]
+    [InlineData(true, "", false)]
+    [InlineData(true, "   ", false)]
+    [InlineData(true, @"D:\Out", true)]
+    [InlineData(false, "", true)]
+    public async Task The_output_switch_on_needs_a_folder(bool on, string folder, bool valid)
+    {
+        // On with an empty box would quietly behave as off -- and be saved as off.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = on;
+        module.OutputFolder = folder;
+
+        var result = module.Validate();
+
+        result.IsValid.Should().Be(valid);
+        if (!valid) result.ErrorMessage.Should().Contain("output folder");
     }
 
     // ---- The "use my own output folder" switch (issue #27) --------------------------------------

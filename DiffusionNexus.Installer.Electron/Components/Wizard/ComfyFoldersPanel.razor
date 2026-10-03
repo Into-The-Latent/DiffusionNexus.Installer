@@ -9,35 +9,20 @@
     <h2>Output folder</h2>
 
     @* The "use my own output folder" switch (issue #27), the model folder's rule: on when an output
-       folder is remembered, off when none is. Off means ComfyUI's own output folder. *@
-    <label class="switch">
-        <input type="checkbox" role="switch" data-role="use-output"
-               checked="@Module.UseOwnOutputFolder" @onchange="OnUseOutputChanged" />
-        <span class="switch-track" aria-hidden="true"></span>
-        <span class="switch-text">
-            Use my own output folder
-            <span class="panel-hint">
-                @if (Module.UseOwnOutputFolder)
-                {
-                    <text>On: generated images and videos are saved to the folder below.</text>
-                }
-                else if (!string.IsNullOrWhiteSpace(Module.OutputFolder))
-                {
-                    <text>Off: generated images and videos stay in ComfyUI's own output folder. Your folder (<code>@Module.OutputFolder</code>) is not used and will not be remembered unless you turn this back on.</text>
-                }
-                else
-                {
-                    <text>Off: generated images and videos stay in ComfyUI's own output folder inside the install.</text>
-                }
-            </span>
-        </span>
-    </label>
+       folder is remembered, off when none is. Off means ComfyUI's own output folder. On needs a
+       folder -- the module refuses Next without one -- so the box asks for one rather than
+       showing the default as grey text, which would read as a value that empty gets. *@
+    <FolderSwitch Role="use-output" Checked="@Module.UseOwnOutputFolder" OnChange="OnUseOutputChanged"
+                  Label="Use my own output folder"
+                  OnText="On: generated images and videos are saved to the folder you choose below."
+                  OffText="@OutputOffText"
+                  Folder="@Module.OutputFolder" FolderNoun="output folder" />
 
     @if (Module.UseOwnOutputFolder)
     {
         <div class="path-row switch-body">
             <input type="text" data-role="output" value="@Module.OutputFolder"
-                   placeholder="@Module.DefaultOutputFolder" @oninput="OnOutputFolderTyped" />
+                   placeholder="Choose a folder for generated images and videos" @oninput="OnOutputFolderTyped" />
             <button class="btn-secondary" @onclick="BrowseOutput">Browse...</button>
         </div>
     }
@@ -50,29 +35,11 @@
        off when none is. Off means ComfyUI's own models folders: nothing below it renders and no
        extra_model_paths.yaml is written. Before it existed a remembered library was applied from
        behind the collapsed Advanced section, where nobody saw it. *@
-    <label class="switch">
-        <input type="checkbox" role="switch" data-role="use-library"
-               checked="@Module.UseModelLibraryFolder" @onchange="OnUseLibraryChanged" />
-        <span class="switch-track" aria-hidden="true"></span>
-        <span class="switch-text">
-            Use my own model folder
-            @* Off with a library still typed in: say what happens to it, since moving on forgets it. *@
-            <span class="panel-hint">
-                @if (Module.UseModelLibraryFolder)
-                {
-                    <text>On: models are read from your library through an extra_model_paths.yaml written into the install.</text>
-                }
-                else if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
-                {
-                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written. Your library folder (<code>@Module.ModelBaseFolder</code>) is not used and will not be remembered unless you turn this back on.</text>
-                }
-                else
-                {
-                    <text>Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written.</text>
-                }
-            </span>
-        </span>
-    </label>
+    <FolderSwitch Role="use-library" Checked="@Module.UseModelLibraryFolder" OnChange="OnUseLibraryChanged"
+                  Label="Use my own model folder"
+                  OnText="On: models are read from your library through an extra_model_paths.yaml written into the install."
+                  OffText="Off: ComfyUI's own models folders are used and no extra_model_paths.yaml is written."
+                  Folder="@Module.ModelBaseFolder" FolderNoun="library folder" />
 
     @if (Module.UseModelLibraryFolder)
     {
@@ -151,15 +118,20 @@
     /// </summary>
     [Parameter] public EventCallback Changed { get; set; }
 
-    private async Task OnUseOutputChanged(ChangeEventArgs e)
+    /// <summary>Names the folder off falls back to, once an install folder says where that is.</summary>
+    private string OutputOffText => string.IsNullOrEmpty(Module.DefaultOutputFolder)
+        ? "Off: generated images and videos stay in ComfyUI's own output folder inside the install."
+        : $"Off: generated images and videos stay in ComfyUI's own output folder ({Module.DefaultOutputFolder}).";
+
+    private async Task OnUseOutputChanged(bool on)
     {
-        Module.UseOwnOutputFolder = (bool)(e.Value ?? false);
+        Module.UseOwnOutputFolder = on;
         await Changed.InvokeAsync();
     }
 
-    private async Task OnUseLibraryChanged(ChangeEventArgs e)
+    private async Task OnUseLibraryChanged(bool on)
     {
-        Module.UseModelLibraryFolder = (bool)(e.Value ?? false);
+        Module.UseModelLibraryFolder = on;
         await Changed.InvokeAsync();
     }
 

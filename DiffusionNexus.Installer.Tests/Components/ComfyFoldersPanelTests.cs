@@ -45,33 +45,32 @@ public class ComfyFoldersPanelTests : BunitContext
             .Add(x => x.Changed, EventCallback.Factory.Create(this, () => changed?.Invoke())));
 
     [Fact]
-    public async Task Only_the_output_folder_shows_until_advanced_is_opened()
+    public async Task With_the_model_switch_on_every_model_control_stays_closed_until_advanced_is_opened()
     {
-        var cut = RenderPanel(await Module(new UserSettings
-        {
-            DefaultModelBaseFolder = @"D:\Models",
-            DefaultLorasFolder = "Lora",
-            OutputFolder = @"D:\Out",
-        }));
+        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" }));
 
         cut.Markup.Should().NotContain("saved model folder");
         cut.FindAll("[data-folder-key]").Should().BeEmpty("the per-type list is advanced");
         cut.FindAll("[data-role='library']").Should().BeEmpty("the model library moved into advanced");
         cut.FindAll(".checkbox").Should().BeEmpty("the overwrite choice is advanced too");
-        cut.FindAll(".path-row input").Should().ContainSingle("output only");
+        cut.FindAll(".path-row input").Should().BeEmpty("no box shows until a switch or Advanced opens one");
         cut.Find(".advanced-toggle").TextContent.Should().Contain("Advanced");
     }
 
     [Fact]
-    public async Task The_output_box_shows_the_install_default_as_grey_text()
+    public async Task The_output_box_asks_for_a_folder_and_the_off_hint_names_the_install_default()
     {
+        // On needs a folder, so the box must not show the default as grey text: that reads as the
+        // value an empty box gets. The default belongs to off, so off names it.
         var module = await Module();
-        module.UseOwnOutputFolder = true;
         var cut = RenderPanel(module);
+        cut.Find("[data-role='output-panel'] .switch-text").TextContent.Should().Contain(@"E:\Installer\9\ComfyUI\output");
+
+        cut.Find("input[data-role='use-output']").Change(true);
 
         var output = cut.Find("[data-role='output']");
         output.GetAttribute("value").Should().BeNullOrEmpty();
-        output.GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\output");
+        output.GetAttribute("placeholder").Should().StartWith("Choose a folder");
     }
 
     [Fact]
@@ -196,13 +195,15 @@ public class ComfyFoldersPanelTests : BunitContext
     }
 
     [Fact]
-    public async Task Turning_the_switch_off_says_the_typed_library_will_not_be_remembered()
+    public async Task Turning_the_switch_off_says_the_typed_library_is_forgotten_on_continue()
     {
+        // Forgotten on Next (PersistAsync), not on the flip: cancelling keeps the saved folder.
         var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
 
         cut.Find("input[data-role='use-library']").Change(false);
 
-        cut.Find("[data-role='model-panel'] .switch-text").TextContent.Should().Contain(@"D:\Models").And.Contain("will not be remembered");
+        cut.Find("[data-role='model-panel'] .switch-text").TextContent.Should().Contain(@"D:\Models")
+            .And.Contain("library folder").And.Contain("forgotten when you continue");
     }
 
     [Fact]
@@ -285,11 +286,11 @@ public class ComfyFoldersPanelTests : BunitContext
 
         module.UseOwnOutputFolder.Should().BeTrue();
         changed.Should().BeTrue();
-        cut.Find("[data-role='output']").GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\output");
+        cut.FindAll("[data-role='output']").Should().ContainSingle();
     }
 
     [Fact]
-    public async Task Turning_the_output_switch_off_hides_the_box_and_says_the_folder_will_not_be_remembered()
+    public async Task Turning_the_output_switch_off_hides_the_box_and_says_the_folder_is_forgotten_on_continue()
     {
         var module = await Module(new UserSettings { OutputFolder = @"D:\Out" });
         var cut = RenderPanel(module);
@@ -299,6 +300,7 @@ public class ComfyFoldersPanelTests : BunitContext
         module.UseOwnOutputFolder.Should().BeFalse();
         module.OutputFolder.Should().Be(@"D:\Out", "kept for this run");
         cut.FindAll("[data-role='output']").Should().BeEmpty();
-        cut.Find("[data-role='output-panel'] .switch-text").TextContent.Should().Contain(@"D:\Out").And.Contain("will not be remembered");
+        cut.Find("[data-role='output-panel'] .switch-text").TextContent.Should().Contain(@"D:\Out")
+            .And.Contain("output folder (").And.Contain("forgotten when you continue");
     }
 }

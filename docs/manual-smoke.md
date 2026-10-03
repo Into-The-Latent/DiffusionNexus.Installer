@@ -96,11 +96,13 @@ the catalog reaches those lists correctly.
    installed" and, once a folder is typed, a grey "Will be created: <folder>\ComfyUI" line under
    the box. Below it come two separate panels, "Output folder" and "Model folder" (issue #27),
    each with its own switch; with nothing saved both switches are off and neither panel shows a
-   box. Turn "Use my own output folder" on. **Expect:** an empty box with grey
-   `<folder>\ComfyUI\output` text inside and Browse. Type a folder, press Next, cancel the wizard
-   and pick Blanck-ComfyUI again. **Expect:** the output switch is on with that folder. Turn it
-   off. **Expect:** the box hides and the hint says the folder will not be remembered; press Next,
-   cancel, pick again: the switch is off. Turn "Use my own model folder" on. **Expect:** a
+   box; the output switch's off hint names `<folder>\ComfyUI\output`. Turn "Use my own output
+   folder" on. **Expect:** an empty box saying "Choose a folder…" and Browse; Next is disabled and
+   "Choose an output folder, or turn off…" shows until a folder is typed. Type a folder, press
+   Next, cancel the wizard and pick Blanck-ComfyUI again. **Expect:** the output switch is on with
+   that folder. Turn it off. **Expect:** the box hides and the hint says the folder will be
+   forgotten when you continue. Cancel and pick again: the switch is still on (nothing was saved).
+   Turn it off, press Next, cancel, pick again: the switch is off. Turn "Use my own model folder" on. **Expect:** a
    full-width closed "Advanced settings · custom model folders" bar. No "saved model folders"
    checkbox, no library box outside Advanced. Click the bar.
    **Expect:** it opens with the Model library folder box first (grey `<folder>\ComfyUI\models`

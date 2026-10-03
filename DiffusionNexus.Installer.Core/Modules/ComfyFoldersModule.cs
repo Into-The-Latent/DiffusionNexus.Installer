@@ -111,7 +111,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// The "use my own output folder" switch (issue #27), the same rule as
     /// <see cref="UseModelLibraryFolder"/>: a saved output folder means on, none means off. Off
     /// means ComfyUI's own output folder, no --output-directory in the launcher, and an EMPTY
-    /// output folder persisted; the typed path is kept within the run.
+    /// output folder persisted; the typed path is kept within the run. On needs a folder (see
+    /// <see cref="Validate"/>): on with an empty box would behave, and be saved, as off.
     /// </summary>
     public bool UseOwnOutputFolder { get; set; }
 
@@ -281,8 +282,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // kept so flipping the switch back on does not lose it. The output folder's switch works
         // the same way.
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
-        user.DefaultModelBaseFolder = UseModelLibraryFolder ? ModelBaseFolder.Trim() : string.Empty;
-        user.OutputFolder = UseOwnOutputFolder ? OutputFolder.Trim() : string.Empty;
+        user.DefaultModelBaseFolder = EffectiveModelBaseFolder ?? string.Empty;
+        user.OutputFolder = EffectiveOutputFolder ?? string.Empty;
 
         if (AdvancedEdited)
         {
@@ -311,9 +312,18 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
+    // What the install sees and what is remembered, from one place each: null when the switch is
+    // off or the box is blank, otherwise trimmed. A pasted " D:\Out" is not a rooted path, so an
+    // untrimmed value would send ComfyUI's output under its working directory.
+
     /// <summary>The library folder as the install sees it: null when blank or when the switch is off.</summary>
-    private string? EffectiveModelBaseFolder =>
-        UseModelLibraryFolder && !string.IsNullOrWhiteSpace(_modelBaseFolder) ? _modelBaseFolder : null;
+    private string? EffectiveModelBaseFolder => Effective(UseModelLibraryFolder, _modelBaseFolder);
+
+    /// <summary>The output folder as the install sees it: null when blank or when the switch is off.</summary>
+    private string? EffectiveOutputFolder => Effective(UseOwnOutputFolder, OutputFolder);
+
+    private static string? Effective(bool on, string folder) =>
+        on && !string.IsNullOrWhiteSpace(folder) ? folder.Trim() : null;
 
     public void Contribute(InstallationOptionsDraft draft)
     {
@@ -338,8 +348,16 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
                 .Select(r => r.ToModel(_user?.UserId ?? Guid.Empty)));
         }
 
-        draft.OutputFolder = UseOwnOutputFolder && !string.IsNullOrWhiteSpace(OutputFolder) ? OutputFolder : null;
+        draft.OutputFolder = EffectiveOutputFolder;
     }
 
-    public ModuleValidation Validate() => ModuleValidation.Ok();
+    /// <summary>
+    /// The output switch on with an empty box is contradictory: it would install and be saved as
+    /// off while the screen says on. The model switch has no such rule -- its library box sits in
+    /// Advanced and is optional there.
+    /// </summary>
+    public ModuleValidation Validate() =>
+        UseOwnOutputFolder && string.IsNullOrWhiteSpace(OutputFolder)
+            ? ModuleValidation.Error("Choose an output folder, or turn off \"Use my own output folder\".")
+            : ModuleValidation.Ok();
 }
