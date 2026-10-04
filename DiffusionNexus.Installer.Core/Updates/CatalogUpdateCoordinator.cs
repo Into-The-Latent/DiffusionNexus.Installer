@@ -45,6 +45,17 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     // Which content a check found current, per channel; kept across restarts (PR #43 review).
     private readonly CatalogChannelConfirmations _confirmations;
 
+    // "Apply catalog updates automatically" (#36): latched once read, like the channel, and on
+    // every save -- so a read that started before a save cannot put the old value back.
+    private bool _autoApplyResolved;
+
+    // True while SetAutoApplyAsync saves. A channel switch writes the same file, so each refuses
+    // while the other is inside its awaits.
+    private bool _savingAutoApply;
+
+    // Whether the apply in LastApply (or running) was started by the startup check.
+    private bool _applyAutomatic;
+
     // Whether the SDK reads an override folder, probed with Installed (each check, apply, switch)
     // rather than on every read of SwitchIncompleteReason, which a page does on each render.
     private bool _overrideActive;
@@ -88,6 +99,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     private CatalogApplyResult? _uncertainApply;
     public bool LastApplyUncertain { get { lock (_gate) return LastApply is not null && ReferenceEquals(LastApply, _uncertainApply); } }
 
+    public bool AutoApply { get; private set; }
+
+    public bool LastApplyAutomatic { get { lock (_gate) return _applyAutomatic && (LastApply is not null || Phase is CatalogUpdatePhase.Applying or CatalogUpdatePhase.Applied); } }
+
     // Not while a switch waits for an answer: the last check describes the channel being left,
     // and its update could not be applied until Switch or Keep (PR #43 review).
     public bool UpdateAvailable =>
@@ -130,6 +145,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // LastApply directly and would otherwise keep showing a retry banner for an apply
             // nobody has attempted since.
             LastApply = null;
+            _applyAutomatic = false;
             inFlight = _inFlight = Task.Run(() => CheckCoreAsync(ct), CancellationToken.None);
         }
         Raise();
@@ -176,7 +192,32 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         Raise();
     }
 
-    public Task ApplyAsync(CancellationToken ct = default)
+    public Task ApplyAsync(CancellationToken ct = default) => StartApply(automatic: false, ct);
+
+    public async Task CheckAtStartupAsync(CancellationToken ct = default)
+    {
+        await CheckAsync(ct).ConfigureAwait(false);
+
+        bool start;
+        lock (_gate) start = AutoApply && UpdateAvailable && Phase == CatalogUpdatePhase.Checked;
+        if (!start) return;
+
+        if (InstallRunning)
+        {
+            // Not later either: the banner and the Apply button wait for the install, as they do
+            // with the setting off.
+            _logger.LogInformation("Catalog update not applied automatically: an install is running");
+            return;
+        }
+
+        // Not awaited, and not under the caller's token: this returns once the download has
+        // started, and the apply reports through Changed like a manual one. StartApply decides
+        // again under the lock, so a manual click or an install in between wins.
+        _logger.LogInformation("Applying the catalog update automatically (setting on)");
+        _ = StartApply(automatic: true, CancellationToken.None);
+    }
+
+    private Task StartApply(bool automatic, CancellationToken ct)
     {
         CatalogUpdateCheck check;
         Task inFlight;
@@ -199,6 +240,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             check = LastCheck!;
             Phase = CatalogUpdatePhase.Applying;
             LastApply = null;
+            _applyAutomatic = automatic;
             Progress = null;
             inFlight = _inFlight = Task.Run(() => ApplyCoreAsync(check, ct), CancellationToken.None);
         }
@@ -371,7 +413,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         CatalogUpdatePhase phaseBefore;
         lock (_gate)
         {
-            if (_switching || PendingSwitch is not null || Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
+            if (_switching || _savingAutoApply || PendingSwitch is not null || Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
             {
                 _logger.LogInformation("Catalog channel switch to {Channel} refused while {Phase}{Pending}",
                     target, Phase, PendingSwitch is null ? string.Empty : ", a switch to " + PendingSwitch.Target + " waiting for an answer");
@@ -540,6 +582,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             Installed = installed;
             _overrideActive = overrideActive;
             LastApply = null;
+            _applyAutomatic = false;
             Progress = null;
             if (Channel != target)
             {
@@ -589,6 +632,47 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         return settings.CatalogChannel;
     }
 
+    public async Task<bool> SetAutoApplyAsync(bool on, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            // Refused like a channel switch, in the same phases: a check or apply running with the
+            // setting about to change would leave "was it automatic?" up to timing.
+            if (_switching || _savingAutoApply || PendingSwitch is not null || Phase is CatalogUpdatePhase.Checking or CatalogUpdatePhase.Applying)
+            {
+                _logger.LogInformation("Apply catalog updates automatically: change to {State} refused while {Phase}{Busy}",
+                    on ? "on" : "off", Phase,
+                    _switching || PendingSwitch is not null ? ", a channel switch in progress" : _savingAutoApply ? ", a save in progress" : string.Empty);
+                return false;
+            }
+            _savingAutoApply = true;
+        }
+
+        try
+        {
+            var settings = await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+            settings.ApplyCatalogUpdatesAutomatically = on;
+            await _settings.SaveAsync(settings, ct).ConfigureAwait(false);
+            lock (_gate)
+            {
+                AutoApply = on;
+                _autoApplyResolved = true;
+            }
+            _logger.LogInformation("Apply catalog updates automatically: saved {State}", on ? "on" : "off");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Apply catalog updates automatically: {State} could not be saved; nothing was changed", on ? "on" : "off");
+            throw;
+        }
+        finally
+        {
+            lock (_gate) _savingAutoApply = false;
+            Raise();
+        }
+    }
+
     public async Task<CatalogChannel> ResolveChannelAsync(CancellationToken ct = default)
     {
         try
@@ -604,15 +688,19 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         lock (_gate) { return Channel; }
     }
 
+    /// <summary>Reads the channel and the auto-apply setting, from the one settings file.</summary>
     private async Task EnsureChannelAsync(CancellationToken ct)
     {
-        lock (_gate) { if (_channelResolved) return; }
+        lock (_gate) { if (_channelResolved && _autoApplyResolved) return; }
 
         string? saved = null;
+        var autoApply = false;
         var readSucceeded = true;
         try
         {
-            saved = (await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false)).CatalogChannel;
+            var settings = await _settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
+            saved = settings.CatalogChannel;
+            autoApply = settings.ApplyCatalogUpdatesAutomatically;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -622,6 +710,14 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
         lock (_gate)
         {
+            // Unreadable: off, the default, until a read succeeds -- an unknown setting never
+            // applies anything by itself. A save in the meantime is newer than this read.
+            if (!_autoApplyResolved)
+            {
+                AutoApply = autoApply;
+                if (readSucceeded) _autoApplyResolved = true;
+            }
+
             // A channel switch finished while the read above was awaited. Its answer is the newer
             // one; applying the value read before it would silently undo the switch.
             if (_channelResolved) return;
