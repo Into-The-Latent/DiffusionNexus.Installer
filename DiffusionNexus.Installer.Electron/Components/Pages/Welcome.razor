@@ -26,7 +26,15 @@
         @* Above the strip and below the title, so it reads as news about the list, not as an
            error about it. Only the two outcomes the user can act on get a line; a failed
            startup check stays quiet here -- /updates says why if they go looking. *@
-        @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available)
+        @if (Catalog.UpdateAvailable && Catalog.Phase == CatalogUpdatePhase.Applying)
+        {
+            @* The automatic apply (#36) runs while this screen is up: say so, do not ask for it. *@
+            <p class="catalog-update-notice">
+                A catalog update is being applied.
+                <a href="/updates">See progress</a>
+            </p>
+        }
+        else if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available)
         {
             <p class="catalog-update-notice">
                 @(available.Workloads.Count == 0 && available.Workflows.Count == 0
@@ -140,17 +148,28 @@
     private bool _atStart = true;
     private bool _atEnd;
 
+    // The catalog's ContentGeneration the strip was read under. An apply that lands while this
+    // screen is shown (the automatic one at startup, #36) rebuilds it.
+    private long _readUnder;
+
     protected override async Task OnInitializedAsync()
     {
         Catalog.Changed += OnCatalogChanged;
+        await LoadAsync();
+    }
 
+    private async Task LoadAsync()
+    {
+        _readUnder = Catalog.ContentGeneration;
         try
         {
+            // The old strip stays on screen until the new one is built: no flash of "Loading".
             _software = await Builder.BuildAsync();
 
             // Read after the build: the catalog populates diagnostics during the load the build
             // triggers, so asking earlier reports on a catalog that has not been resolved yet.
             _errors = Workloads.Diagnostics.Where(d => d.IsError).ToList();
+            _loadError = null;
         }
         catch (Exception ex)
         {
@@ -291,7 +310,11 @@
     private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
     // Fires on a pool thread when the startup check lands; hop back onto the circuit.
-    private void OnCatalogChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnCatalogChanged() => _ = InvokeAsync(async () =>
+    {
+        if (!_disposed && Catalog.ContentGeneration != _readUnder) await LoadAsync();
+        StateHasChanged();
+    });
 
     /// <summary>
     /// Where a card navigates, or null when it must not navigate at all.

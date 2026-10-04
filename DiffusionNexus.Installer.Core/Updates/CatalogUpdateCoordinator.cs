@@ -202,19 +202,11 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         lock (_gate) wanted = AutoApply && UpdateAvailable;
         if (!wanted) return;
 
-        if (InstallRunning)
-        {
-            // Not later either: the banner and the Apply button wait for the install, as they do
-            // with the setting off.
-            _logger.LogInformation("Catalog update not applied automatically: an install is running");
-            return;
-        }
-
         // Not awaited, and not under the caller's token: this returns once the download has
         // started, and the apply reports through Changed like a manual one. StartApply decides
-        // under the lock and logs why it refuses, so a manual click, a second check or an install
-        // in between wins and the log says which.
-        _logger.LogInformation("Starting the catalog update automatically (setting on)");
+        // under the lock and logs why it refuses, so a running install, a manual click or a second
+        // check in between wins and the log says which. A refusal is not retried later: the banner
+        // and the Apply button wait, as they do with the setting off.
         _ = StartApply(automatic: true, CancellationToken.None);
     }
 
@@ -238,6 +230,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                     Phase, UpdateAvailable, InstallRunning, _switching);
                 return Task.CompletedTask;
             }
+            if (automatic) _logger.LogInformation("Applying the catalog update automatically (setting on)");
             check = LastCheck!;
             Phase = CatalogUpdatePhase.Applying;
             LastApply = null;
@@ -705,7 +698,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            _logger.LogWarning(ex, "User settings could not be read; following the Stable catalog channel for this check");
+            // Not "following Stable": a channel a switch already latched stays. The line below
+            // (ApplyResolution) names the channel when this read decides it.
+            _logger.LogWarning(ex, "User settings could not be read; reading them again on the next check");
             readSucceeded = false;
         }
 

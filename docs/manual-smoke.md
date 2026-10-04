@@ -370,7 +370,9 @@ follow Preview, as in section 7). A Release build, no catalog override.
    `"applyCatalogUpdatesAutomatically": true`.
 2. Quit and launch. **Expect:** without a click, the log shows "Applying the catalog update
    automatically (setting on)", and `/updates` reads "Catalog updated to vN+1 automatically."
-   with the change list under it; the top bar says "Check for Updates".
+   with the change list under it; the top bar says "Check for Updates". Stay on the welcome
+   screen for this launch: while the download runs it reads "A catalog update is being applied.",
+   and the tiles change to the new content when it lands, without leaving the screen.
 3. Make `catalog.zip` unreachable (disconnect the network after the check, or publish a broken
    archive) and launch with the setting on. **Expect:** "The catalog update failed: … Nothing was
    changed." with **Apply catalog update**, as after a failed manual apply; the gallery still
