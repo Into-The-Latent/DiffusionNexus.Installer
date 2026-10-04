@@ -29,26 +29,31 @@ public static class FolderInput
     /// <summary>
     /// Whether <paramref name="path"/> names a folder by its full path. IsPathFullyQualified alone
     /// accepts anything that starts with two separators: "\\", "\\nas" and "\\nas\" all pass, and
-    /// none of them is a folder. A network path needs a server and a share.
+    /// none of them is a folder. A network path needs a server and a share. Device paths
+    /// (\\.\D:\..., \\?\D:\...) are refused: no picker or Explorer produces them, and the
+    /// inside-the-install check compares plain paths, so \\.\E:\Installer\9\ComfyUI\output
+    /// slipped past it.
     /// </summary>
     public static bool IsFullPath(string path)
     {
         if (!Path.IsPathFullyQualified(path)) return false;
         if (!IsSeparator(path[0]) || !IsSeparator(path[1])) return true;
+        if (path.Length > 2 && path[2] is '.' or '?' && (path.Length == 3 || IsSeparator(path[3]))) return false;
         return path.Split(Separators, StringSplitOptions.RemoveEmptyEntries).Length >= 2;
     }
 
     /// <summary>
-    /// Whether a folder name in <paramref name="path"/> holds a character Windows refuses
-    /// (&lt; &gt; : " | ? * and control characters). Judged per name after the root, so a colon
-    /// is caught wherever the root ends and "\\.\D:\Renders" is not refused for its drive. Without
-    /// it "D:\Renders|old" passes as a full path, and an unquoted | or &gt; on the launcher line
-    /// pipes or redirects ComfyUI instead of naming a folder.
+    /// Whether a name in <paramref name="path"/> holds a character Windows refuses (&lt; &gt; : "
+    /// | ? * and control characters). Every name is judged, a UNC server and share included --
+    /// GetPathRoot takes those in, so "\\nas\Renders|old" is all root -- and only a leading drive
+    /// ("D:") is skipped, so a colon anywhere else is caught. Without it "D:\Renders|old" passes
+    /// as a full path, and an unquoted | or &gt; on the launcher line pipes or redirects ComfyUI
+    /// instead of naming a folder. Meant for paths <see cref="IsFullPath"/> accepts.
     /// </summary>
     public static bool HasInvalidName(string path)
     {
-        var root = Path.GetPathRoot(path) ?? string.Empty;
-        return path[root.Length..]
+        var names = path.Length >= 2 && path[1] == ':' ? path[2..] : path;
+        return names
             .Split(Separators, StringSplitOptions.RemoveEmptyEntries)
             .Any(name => name.IndexOfAny(InvalidNameChars) >= 0);
     }

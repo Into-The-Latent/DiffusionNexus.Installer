@@ -109,6 +109,58 @@ public class InstallFolderModuleTests
         module.DestinationFolder.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("ComfyUI")]
+    [InlineData(@"ComfyUI\")]
+    [InlineData("")]
+    public async Task An_existing_install_is_refused_however_the_folder_is_spelled(string tail)
+    {
+        // The pipeline drops a trailing folder named after the repository (PathNormalizer), so
+        // "X\ComfyUI" installs into X\ComfyUI. The pre-flight must look there, not at
+        // X\ComfyUI\ComfyUI, or Next is enabled on top of a live installation.
+        var root = Path.Combine(Path.GetTempPath(), $"dn-existing-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "ComfyUI"));
+        File.WriteAllText(Path.Combine(root, "ComfyUI", "main.py"), "");
+        try
+        {
+            var module = await Module(Selection());
+
+            module.TargetFolder = Path.Combine(root, tail);
+
+            module.DestinationFolder.Should().Be(Path.Combine(root, "ComfyUI"));
+            module.Validate().IsValid.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("AI")]
+    [InlineData(@"""E:\x")]
+    [InlineData(@"\\nas")]
+    [InlineData(@"\\?\E:\AI")]
+    public async Task An_install_folder_that_is_not_a_full_path_is_refused(string folder)
+    {
+        // A relative folder installed under the app's working directory.
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().ErrorMessage.Should().Contain("full path");
+    }
+
+    [Fact]
+    public async Task An_install_folder_Windows_cannot_name_is_refused()
+    {
+        var module = await Module(Selection());
+
+        module.TargetFolder = @"C:\a<b";
+
+        module.Validate().ErrorMessage.Should().Be(FolderInput.InvalidNameMessage);
+    }
+
     [Fact]
     public async Task The_destination_follows_the_remembered_folder_right_after_initialization()
     {

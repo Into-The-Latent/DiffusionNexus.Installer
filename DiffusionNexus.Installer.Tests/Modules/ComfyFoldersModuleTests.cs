@@ -276,6 +276,26 @@ public class ComfyFoldersModuleTests
         module.Validate().IsValid.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(@"\\.\E:\Installer\9\ComfyUI\output")]
+    [InlineData(@"\\?\E:\Installer\9\ComfyUI\output")]
+    public async Task A_device_path_into_the_install_is_refused(string folder)
+    {
+        // The inside-the-install check compares plain paths; a device path never matched it.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = @"E:\Installer\9";
+        module.UseOwnOutputFolder = true;
+        module.UseModelLibraryFolder = true;
+        module.OutputFolder = folder;
+        module.ModelBaseFolder = folder;
+
+        module.OutputFolderProblem.Should().Contain("full path");
+        module.ModelFolderProblem.Should().Contain("full path");
+    }
+
     [Fact]
     public async Task An_install_folder_pasted_with_quotes_still_guards_the_output_folder()
     {

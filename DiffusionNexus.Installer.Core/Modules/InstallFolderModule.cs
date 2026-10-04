@@ -105,13 +105,21 @@ public sealed class InstallFolderModule(
 
     public ModuleValidation Validate()
     {
-        if (Folder.Length == 0)
+        var folder = Folder;
+        if (folder.Length == 0)
             return ModuleValidation.Error("Choose a folder to install into.");
+
+        // The same shape checks as the output and library boxes, before any disk access: a
+        // relative folder installed under the app's working directory, and "\\nas" made the
+        // folder check wait on the network for every keystroke.
+        if (!FolderInput.IsFullPath(folder))
+            return ModuleValidation.Error(@"Enter the full path of the install folder, for example D:\AI.");
+        if (FolderInput.HasInvalidName(folder))
+            return ModuleValidation.Error(FolderInput.InvalidNameMessage);
 
         if (_selection is null)
             return ModuleValidation.Ok();
 
-        var folder = Folder;
         if (!string.Equals(_validatedPath, folder, StringComparison.Ordinal))
         {
             _validatedPath = folder;
@@ -127,8 +135,13 @@ public sealed class InstallFolderModule(
     {
         try
         {
+            // The validator appends the repository name itself, so it gets the folder that name is
+            // appended to by the pipeline too: "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and
+            // checking E:\AI\ComfyUI\ComfyUI instead let Next through onto a live installation.
             var result = preInstallation.ValidateTargetFolder(
-                _selection!.Workload, folder, InstallationType.FullInstall);
+                _selection!.Workload,
+                RepositoryPaths.NormalizedTarget(_selection.Workload, folder),
+                InstallationType.FullInstall);
 
             if (result.CanProceed) return null;
 

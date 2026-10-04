@@ -11,17 +11,25 @@ namespace DiffusionNexus.Installer.Core.Content;
 /// </summary>
 public static class RepositoryPaths
 {
-    public static string Resolve(InstallationConfiguration workload, string targetFolder)
+    public static string Resolve(InstallationConfiguration workload, string targetFolder) =>
+        Path.Combine(
+            NormalizedTarget(workload, targetFolder),
+            PathNormalizer.GetRepositoryName(workload.Repository.RepositoryUrl));
+
+    /// <summary>
+    /// The folder the repository folder is created in: the chosen folder, minus a last folder
+    /// already named after the repository ("E:\AI\ComfyUI" means E:\AI). Anything that appends
+    /// the repository name itself, like PreInstallationValidator, must be given this, not the
+    /// chosen folder, or it looks at E:\AI\ComfyUI\ComfyUI while the install goes to E:\AI\ComfyUI.
+    /// </summary>
+    public static string NormalizedTarget(InstallationConfiguration workload, string targetFolder)
     {
         ArgumentNullException.ThrowIfNull(workload);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetFolder);
 
-        var url = workload.Repository.RepositoryUrl;
-        var normalizedTarget = PathNormalizer.NormalizeTargetDirectory(
+        return PathNormalizer.NormalizeTargetDirectory(
             targetFolder,
-            url,
+            workload.Repository.RepositoryUrl,
             workload.Repository.Type == RepositoryType.AIToolkit ? "AI-Toolkit" : null);
-
-        return Path.Combine(normalizedTarget, PathNormalizer.GetRepositoryName(url));
     }
 }
