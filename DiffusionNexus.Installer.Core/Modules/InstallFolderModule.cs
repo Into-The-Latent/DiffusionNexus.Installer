@@ -45,15 +45,22 @@ public sealed class InstallFolderModule(
         get => _targetFolder;
         set
         {
-            // Raw here so the text box never fights a keystroke; TRIMMED everywhere it is acted
+            // Raw here so the text box never fights a keystroke; CLEANED everywhere it is acted
             // on. A pasted trailing space once made the destination line, the presence scan and
             // the pipeline disagree on which folder they meant.
-            _targetFolder = value;
+            _targetFolder = value ?? string.Empty;
             // Pushed eagerly, not only from Contribute: the Content stage scans the install folder
             // for models already on disk before Confirm ever runs ToOptions.
-            if (_selection is not null) _selection.TargetFolder = value.Trim();
+            if (_selection is not null) _selection.TargetFolder = Folder;
         }
     }
+
+    /// <summary>
+    /// The folder as acted on: cleaned the way the output and library boxes clean theirs
+    /// (FolderInput.Clean), so a path pasted with Explorer's "Copy as path" quotes is the same
+    /// folder here as there -- they are checked against this one. Empty while none is chosen.
+    /// </summary>
+    private string Folder => FolderInput.Clean(_targetFolder) ?? string.Empty;
 
     /// <summary>
     /// The folder the install will actually create: the chosen folder plus the repository's own
@@ -61,9 +68,9 @@ public sealed class InstallFolderModule(
     /// under the box so the user sees "E:\Installer\9\ComfyUI" before Next, not from an error.
     /// </summary>
     public string? DestinationFolder =>
-        _selection is null || string.IsNullOrWhiteSpace(TargetFolder)
+        _selection is null || Folder.Length == 0
             ? null
-            : RepositoryPaths.Resolve(_selection.Workload, TargetFolder.Trim());
+            : RepositoryPaths.Resolve(_selection.Workload, Folder);
 
     public bool AppliesTo(WizardSelection selection) => true;
 
@@ -82,13 +89,13 @@ public sealed class InstallFolderModule(
         // The target folder is not an InstallationOptions field — the orchestrator takes it as a
         // separate argument — so it lands on the selection instead.
         if (_selection is not null)
-            _selection.TargetFolder = TargetFolder.Trim();
+            _selection.TargetFolder = Folder;
     }
 
     /// <summary>Remembers the install folder for the next run. Re-reads settings first: another module may have just saved.</summary>
     public async Task PersistAsync(CancellationToken ct = default)
     {
-        var folder = TargetFolder.Trim();
+        var folder = Folder;
         if (folder.Length == 0) return;
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
@@ -98,13 +105,13 @@ public sealed class InstallFolderModule(
 
     public ModuleValidation Validate()
     {
-        if (string.IsNullOrWhiteSpace(TargetFolder))
+        if (Folder.Length == 0)
             return ModuleValidation.Error("Choose a folder to install into.");
 
         if (_selection is null)
             return ModuleValidation.Ok();
 
-        var folder = TargetFolder.Trim();
+        var folder = Folder;
         if (!string.Equals(_validatedPath, folder, StringComparison.Ordinal))
         {
             _validatedPath = folder;

@@ -42,7 +42,7 @@ public interface IWizardModule
     /// <summary>
     /// Whether the module's panel shows its validation message itself, next to the box it is
     /// about. The page then leaves it out of its list under the buttons, so the message is not
-    /// shown twice -- once of them off screen. Declared here, as <see cref="IsAdvanced"/> is, so
+    /// shown twice -- one of them off screen. Declared here, as <see cref="IsAdvanced"/> is, so
     /// the page keeps no list of such modules.
     /// </summary>
     bool ShowsOwnValidation => false;

@@ -239,6 +239,71 @@ public class ComfyFoldersModuleTests
     }
 
     [Fact]
+    public async Task Null_folders_in_the_settings_file_load_as_empty_and_the_switches_still_work()
+    {
+        // System.Text.Json loads "OutputFolder": null as null despite the non-nullable property.
+        var repo = new Mock<IUserSettingsRepository>();
+        repo.Setup(r => r.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSettings { DefaultModelBaseFolder = null!, OutputFolder = null! });
+        var module = new ComfyFoldersModule(repo.Object);
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+
+        module.UseModelLibraryFolder = true;
+        module.UseOwnOutputFolder = true;
+
+        module.ModelBaseFolder.Should().BeEmpty();
+        module.OutputFolder.Should().BeEmpty();
+        module.ModelFolderProblem.Should().StartWith("Choose your model library folder");
+        module.OutputFolderProblem.Should().StartWith("Choose an output folder");
+    }
+
+    [Theory]
+    [InlineData(@"\\nas")]
+    [InlineData(@"\\nas\")]
+    public async Task A_network_path_without_a_share_is_not_a_full_path(string folder)
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.UseModelLibraryFolder = true;
+        module.OutputFolder = folder;
+        module.ModelBaseFolder = folder;
+
+        module.OutputFolderProblem.Should().Contain("full path");
+        module.ModelFolderProblem.Should().Contain("full path");
+
+        module.OutputFolder = module.ModelBaseFolder = @"\\nas\share\AI";
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_install_folder_pasted_with_quotes_still_guards_the_output_folder()
+    {
+        // The install folder box cleans a "Copy as path" paste the same way, so the inside-the-
+        // install check compares against E:\Installer\9\ComfyUI, not <cwd>\"E:\Installer\9"\ComfyUI.
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.ComfyUI;
+        w.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        var selection = new WizardSelection { Workload = w };
+        var installSettings = new Mock<IUserSettingsRepository>();
+        installSettings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSettings());
+        var install = new InstallFolderModule(installSettings.Object, new SDK.Services.PreInstallationService());
+        await install.InitializeAsync(selection);
+        var module = Module();
+        await module.InitializeAsync(selection);
+
+        install.TargetFolder = @"""E:\Installer\9""";
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = @"E:\Installer\9\ComfyUI\renders";
+
+        selection.TargetFolder.Should().Be(@"E:\Installer\9");
+        install.DestinationFolder.Should().Be(@"E:\Installer\9\ComfyUI");
+        module.OutputFolderProblem.Should().Contain("inside the ComfyUI install");
+        module.DefaultOutputFolder.Should().Be(@"E:\Installer\9\ComfyUI\output");
+    }
+
+    [Fact]
     public async Task A_pair_of_empty_quotes_is_a_blank_folder()
     {
         var module = Module();

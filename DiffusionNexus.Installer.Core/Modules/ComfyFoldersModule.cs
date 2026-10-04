@@ -170,11 +170,14 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>ComfyUI's own output folder, the fallback with the output switch off.</summary>
     public string DefaultOutputFolder => InstallSubfolder("output");
 
-    private string InstallSubfolder(string name)
-    {
-        if (_selection is null || string.IsNullOrWhiteSpace(_selection.TargetFolder)) return string.Empty;
-        return Path.Combine(RepositoryPaths.Resolve(_selection.Workload, _selection.TargetFolder.Trim()), name);
-    }
+    private string InstallSubfolder(string name) =>
+        InstallRoot is { } root ? Path.Combine(root, name) : string.Empty;
+
+    /// <summary>The folder the install creates (E:\Installer\9\ComfyUI), or null until an install folder is chosen.</summary>
+    private string? InstallRoot =>
+        _selection is not null && FolderInput.Clean(_selection.TargetFolder) is { } target
+            ? RepositoryPaths.Resolve(_selection.Workload, target)
+            : null;
 
     /// <summary>
     /// ComfyUI only.
@@ -206,8 +209,10 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         _user = user;
         _useModelLibraryFolder = !string.IsNullOrWhiteSpace(user.DefaultModelBaseFolder);
-        ModelBaseFolder = user.DefaultModelBaseFolder;
-        OutputFolder = user.OutputFolder;
+        // ?? as for the additional folders below: System.Text.Json loads "OutputFolder": null as
+        // null despite the non-nullable property, and the text boxes and setters expect a string.
+        ModelBaseFolder = user.DefaultModelBaseFolder ?? string.Empty;
+        OutputFolder = user.OutputFolder ?? string.Empty;
         UseOwnOutputFolder = !string.IsNullOrWhiteSpace(user.OutputFolder);
 
         var saved = UserModelFolderMap.Build(user);
@@ -319,8 +324,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     }
 
     // What the install sees and what is remembered, from one place each: null when the switch is
-    // off or the box is blank, otherwise cleaned by Clean. The problem properties check the same
-    // cleaned value, so what is refused is exactly what would have been used.
+    // off or the box is blank, otherwise cleaned by FolderInput.Clean. The problem properties check
+    // the same cleaned value, so what is refused is exactly what would have been used.
 
     /// <summary>The library folder as the install sees it: null when blank or when the switch is off.</summary>
     private string? EffectiveModelBaseFolder => Effective(UseModelLibraryFolder, _modelBaseFolder);
@@ -328,38 +333,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>The output folder as the install sees it: null when blank or when the switch is off.</summary>
     private string? EffectiveOutputFolder => Effective(UseOwnOutputFolder, OutputFolder);
 
-    private static string? Effective(bool on, string folder) => on ? Clean(folder) : null;
-
-    /// <summary>
-    /// The folder as typed, minus what the user did not mean: surrounding spaces, the quotes
-    /// Explorer's "Copy as path" adds, and trailing separators. Null when nothing is left. A pasted
-    /// " D:\Out" is not a rooted path, so an untrimmed value would send ComfyUI's output under its
-    /// working directory; and "D:\My Output\" is quoted by the launcher as "D:\My Output\", where
-    /// \" is a literal quote in argv. A drive root keeps its separator ("D:" alone is relative).
-    /// </summary>
-    private static string? Clean(string folder)
-    {
-        var path = folder.Trim();
-        if (path.Length >= 2 && path[0] == '"' && path[^1] == '"') path = path[1..^1].Trim();
-        if (path.Length == 0) return null;
-
-        string trimmed;
-        while ((trimmed = Path.TrimEndingDirectorySeparator(path)) != path) path = trimmed;
-        return path;
-    }
-
-    /// <summary>
-    /// Characters no Windows folder name can hold: &lt; &gt; " | ? * and control characters, and a
-    /// colon anywhere but after the drive letter. IsPathFullyQualified checks only the shape of a
-    /// path, so without this "D:\Renders|old" passes -- and an unquoted | or &gt; on the launcher
-    /// line pipes or redirects ComfyUI instead of naming a folder.
-    /// </summary>
-    private static bool HasCharacterWindowsRefuses(string path) =>
-        path.Any(c => c < ' ' || c is '<' or '>' or '"' or '|' or '?' or '*')
-        || path.IndexOf(':', 2) >= 0;
-
-    private const string WindowsRefusesMessage =
-        "A Windows folder name cannot contain < > : \" | ? or *. Choose a folder without them.";
+    private static string? Effective(bool on, string folder) => on ? FolderInput.Clean(folder) : null;
 
     /// <summary>
     /// Characters a Windows folder name can hold but the generated run_nvidia.bat cannot carry in
@@ -372,56 +346,48 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     private static readonly char[] LauncherBreakers = ['&', '!', '%', '^'];
 
     /// <summary>
-    /// Why the output folder cannot be used, or null. Only with the switch on: on with an empty box
-    /// would install and be saved as off while the screen says on; a relative path resolves under
-    /// the install, and a folder inside the install is deleted with it; some characters break the
-    /// start script.
+    /// Why the output folder cannot be used, or null. Beyond the checks every folder gets (see
+    /// <see cref="FolderProblem"/>), some characters break the start script.
     /// </summary>
-    public string? OutputFolderProblem
-    {
-        get
-        {
-            if (!UseOwnOutputFolder) return null;
-            if (Clean(OutputFolder) is not { } folder)
-                return "Choose an output folder, or turn off \"Use my own output folder\".";
-
-            if (!Path.IsPathFullyQualified(folder))
-                return @"Enter the full path of the output folder, for example D:\Renders.";
-            if (HasCharacterWindowsRefuses(folder))
-                return WindowsRefusesMessage;
-            if (folder.IndexOfAny(LauncherBreakers) >= 0)
-                return "ComfyUI's start script cannot pass & ! % or ^ in a folder name. Choose a folder without them.";
-            if (InstallContaining(folder) is { } install)
-                return $"This folder is inside the ComfyUI install ({install}) and would be deleted with it. Choose a folder outside it.";
-            return null;
-        }
-    }
+    public string? OutputFolderProblem => FolderProblem(
+        UseOwnOutputFolder, OutputFolder,
+        blank: "Choose an output folder, or turn off \"Use my own output folder\".",
+        notFull: @"Enter the full path of the output folder, for example D:\Renders.",
+        carrierProblem: folder => folder.IndexOfAny(LauncherBreakers) >= 0
+            ? "ComfyUI's start script cannot pass & ! % or ^ in a folder name. Choose a folder without them."
+            : null);
 
     /// <summary>
-    /// Why the library folder cannot be used, or null. Only with the switch on, which needs a
-    /// library: see <see cref="UseModelLibraryFolder"/>. A relative library would be resolved by
-    /// ComfyUI against its own folder, not where the user meant. ExtraModelPathsYamlGenerator writes
-    /// base_path unquoted, and YAML reads a space followed by # as the start of a comment, so
-    /// "D:\AI #2\Models" would send ComfyUI to D:/AI -- refused until the SDK quotes the value.
+    /// Why the library folder cannot be used, or null. Beyond the checks every folder gets (see
+    /// <see cref="FolderProblem"/>): ExtraModelPathsYamlGenerator writes base_path unquoted, and
+    /// YAML reads a space followed by # as the start of a comment, so "D:\AI #2\Models" would send
+    /// ComfyUI to D:/AI -- refused until the SDK quotes the value.
     /// </summary>
-    public string? ModelFolderProblem
-    {
-        get
-        {
-            if (!UseModelLibraryFolder) return null;
-            if (Clean(_modelBaseFolder) is not { } folder)
-                return "Choose your model library folder, or turn off \"Use my own model folder\".";
+    public string? ModelFolderProblem => FolderProblem(
+        UseModelLibraryFolder, _modelBaseFolder,
+        blank: "Choose your model library folder, or turn off \"Use my own model folder\".",
+        notFull: @"Enter the full path of your model library, for example D:\Models.",
+        carrierProblem: folder => folder.Contains(" #", StringComparison.Ordinal)
+            ? "ComfyUI's model paths file cannot hold a space followed by # in a folder name. Choose a folder without it."
+            : null);
 
-            if (!Path.IsPathFullyQualified(folder))
-                return @"Enter the full path of your model library, for example D:\Models.";
-            if (HasCharacterWindowsRefuses(folder))
-                return WindowsRefusesMessage;
-            if (folder.Contains(" #", StringComparison.Ordinal))
-                return "ComfyUI's model paths file cannot hold a space followed by # in a folder name. Choose a folder without it.";
-            if (InstallContaining(folder) is { } install)
-                return $"Your library is inside the ComfyUI install ({install}) and would be deleted with it. Choose a folder outside it.";
-            return null;
-        }
+    /// <summary>
+    /// The checks both switches share, in order. Only with the switch on: on with an empty box
+    /// would install and be saved as off while the screen says on. A relative path resolves where
+    /// ComfyUI runs, not where the user meant; a Windows-invalid name is no folder at all; then
+    /// whatever the folder's carrier (start script or YAML) cannot hold; and a folder inside the
+    /// install is deleted with it.
+    /// </summary>
+    private string? FolderProblem(bool on, string typed, string blank, string notFull, Func<string, string?> carrierProblem)
+    {
+        if (!on) return null;
+        if (FolderInput.Clean(typed) is not { } folder) return blank;
+        if (!FolderInput.IsFullPath(folder)) return notFull;
+        if (FolderInput.HasInvalidName(folder)) return FolderInput.InvalidNameMessage;
+        if (carrierProblem(folder) is { } problem) return problem;
+        if (InstallContaining(folder) is { } install)
+            return $"This folder is inside the ComfyUI install ({install}) and would be deleted with it. Choose a folder outside it.";
+        return null;
     }
 
     /// <summary>
@@ -431,10 +397,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// </summary>
     private string? InstallContaining(string folder)
     {
-        if (_selection is null || string.IsNullOrWhiteSpace(_selection.TargetFolder)) return null;
+        if (InstallRoot is not { } root) return null;
 
-        var install = Path.TrimEndingDirectorySeparator(Path.GetFullPath(
-            RepositoryPaths.Resolve(_selection.Workload, _selection.TargetFolder.Trim())));
+        var install = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         var full = Path.GetFullPath(folder);
 
         return full.Equals(install, StringComparison.OrdinalIgnoreCase)
