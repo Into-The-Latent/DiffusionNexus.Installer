@@ -238,7 +238,8 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
     /// <summary>
     /// What the 1.x wizard did when a run ended: the whole log into a timestamped file in the
-    /// install folder, so a user can find and send it without the installer still being open
+    /// install folder -- the folder the install is created in, so beside the install for a chosen
+    /// folder named after it -- so a user can find and send it without the installer still being open
     /// (issue #14). Nowhere to write it -- the folder never got created -- means no file, never a
     /// failed run; InstallLogFile.TryWrite owns that rule.
     /// </summary>
@@ -253,15 +254,31 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
         // Into the folder the install is created in, not the one typed: for "E:\AI\ComfyUI" that
         // is E:\AI. Inside E:\AI\ComfyUI, a run that failed before cloning left the folder
-        // non-empty, and the install-folder check then refused the retry.
-        var target = plan.Selection.TargetFolder;
-        var path = InstallLogFile.TryWrite(
-            string.IsNullOrWhiteSpace(target) ? target : RepositoryPaths.NormalizedTarget(plan.Selection.Workload, target),
-            text, now);
+        // non-empty, and the install-folder check then refused the retry. Where that folder
+        // refuses the file -- "C:\ComfyUI" puts it at C:\, closed to a standard user -- the chosen
+        // folder still beats no log at all.
+        var path = InstallLogFile.TryWrite(LogFolder(plan.Selection), text, now)
+                   ?? InstallLogFile.TryWrite(plan.Selection.TargetFolder, text, now);
         if (path is null) return;
 
         LogFilePath = path;
         Append(new InstallLogLine(now, $"Log saved to: {path}", SdkLogLevel.Success));
+    }
+
+    /// <summary>
+    /// The folder the install is created in, or null. Never throws, like TryWrite: it runs in
+    /// StartAsync's <c>finally</c>, ahead of the notification that ends the run on screen.
+    /// </summary>
+    private static string? LogFolder(WizardSelection selection)
+    {
+        try
+        {
+            return RepositoryPaths.NormalizedTarget(selection.Workload, selection.TargetFolder);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     public void Cancel()

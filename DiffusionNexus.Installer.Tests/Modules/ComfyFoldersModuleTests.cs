@@ -277,6 +277,25 @@ public class ComfyFoldersModuleTests
     }
 
     [Theory]
+    [InlineData("AI")]
+    [InlineData(@"E:\AI!new")]
+    [InlineData(@"C:\a<b")]
+    public async Task A_refused_install_folder_names_no_default_folders(string target)
+    {
+        // The install box refuses these and hides "Will be created"; the switch hints must not
+        // name "AI\ComfyUI\output" under them, nor the inside-the-install check resolve a
+        // relative root against the app's working directory.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = target;
+
+        module.DefaultOutputFolder.Should().BeEmpty();
+        module.DefaultModelsFolder.Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData(@"\\.\E:\Installer\9\ComfyUI\output")]
     [InlineData(@"\\?\E:\Installer\9\ComfyUI\output")]
     public async Task A_device_path_into_the_install_is_refused(string folder)

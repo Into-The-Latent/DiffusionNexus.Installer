@@ -173,9 +173,15 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     private string InstallSubfolder(string name) =>
         InstallRoot is { } root ? Path.Combine(root, name) : string.Empty;
 
-    /// <summary>The folder the install creates (E:\Installer\9\ComfyUI), or null until an install folder is chosen.</summary>
+    /// <summary>
+    /// The folder the install creates (E:\Installer\9\ComfyUI), or null until an install folder
+    /// the install box accepts is chosen: a refused "AI" would name AI\ComfyUI\output in the hints
+    /// and be resolved against the app's working directory by the inside-the-install check.
+    /// </summary>
     private string? InstallRoot =>
-        _selection is not null && FolderInput.Clean(_selection.TargetFolder) is { } target
+        _selection is not null
+        && FolderInput.Clean(_selection.TargetFolder) is { } target
+        && FolderInput.InstallFolderProblem(target) is null
             ? RepositoryPaths.Resolve(_selection.Workload, target)
             : null;
 
@@ -336,16 +342,6 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     private static string? Effective(bool on, string folder) => on ? FolderInput.Clean(folder) : null;
 
     /// <summary>
-    /// Characters a Windows folder name can hold but the generated run_nvidia.bat cannot carry in
-    /// --output-directory. BatchScriptGenerator quotes the path only when it holds a space and runs
-    /// the script under enabledelayedexpansion: an unquoted &amp; ends the command, ^ escapes the
-    /// next character, and ! and % are expanded away. Refused here until the SDK's launcher quotes
-    /// and escapes properly; the install would otherwise succeed and ComfyUI start writing
-    /// somewhere else.
-    /// </summary>
-    private static readonly char[] LauncherBreakers = ['&', '!', '%', '^'];
-
-    /// <summary>
     /// Why the output folder cannot be used, or null. Beyond the checks every folder gets (see
     /// <see cref="FolderProblem"/>), some characters break the start script.
     /// </summary>
@@ -353,7 +349,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         UseOwnOutputFolder, OutputFolder,
         blank: "Choose an output folder, or turn off \"Use my own output folder\".",
         notFull: @"Enter the full path of the output folder, for example D:\Renders.",
-        carrierProblem: folder => folder.IndexOfAny(LauncherBreakers) >= 0
+        // --output-directory is written unquoted unless the path holds a space.
+        carrierProblem: folder => FolderInput.BreaksLauncher(folder, quoted: false)
             ? "ComfyUI's start script cannot pass & ! % or ^ in a folder name. Choose a folder without them."
             : null);
 

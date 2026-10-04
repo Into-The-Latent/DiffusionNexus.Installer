@@ -151,18 +151,34 @@ public class InstallFolderModuleTests
         module.Validate().ErrorMessage.Should().Contain("full path");
     }
 
-    [Fact]
-    public async Task An_install_folder_with_an_exclamation_mark_is_refused()
+    [Theory]
+    [InlineData(@"E:\AI!new")]
+    [InlineData(@"E:\AI 100%")]
+    [InlineData(@"E:\pct%x")]
+    [InlineData(@"E:\A^B")]
+    public async Task An_install_folder_the_start_script_cannot_carry_is_refused(string folder)
     {
-        // run_nvidia.bat runs setlocal enabledelayedexpansion, then call "%~dp0venv\...": a lone
-        // ! in the expanded folder is dropped, so E:\AI!new\... becomes E:\AInew\... and the
-        // venv is never found. & % ^ are harmless there (quoted, no second expansion).
+        // run_nvidia.bat runs setlocal enabledelayedexpansion, then call "%~dp0venv\...". Run in
+        // real cmd: a folder with ! % or ^ never activates the venv (CALL expands % a second time
+        // and doubles ^; delayed expansion drops !). & and spaces are fine inside the quotes.
         var module = await Module(Selection());
 
-        module.TargetFolder = @"E:\AI!new";
+        module.TargetFolder = folder;
 
-        module.Validate().ErrorMessage.Should().Contain("!");
+        module.Validate().ErrorMessage.Should().Contain("! % or ^");
         module.DestinationFolder.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(@"E:\Art & AI")]
+    [InlineData(@"E:\My AI")]
+    public async Task An_install_folder_with_an_ampersand_or_space_is_fine(string folder)
+    {
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().IsValid.Should().BeTrue();
     }
 
     [Theory]

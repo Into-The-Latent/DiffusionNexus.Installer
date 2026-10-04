@@ -66,26 +66,13 @@ public sealed class InstallFolderModule(
     /// The folder the install will actually create: the chosen folder plus the repository's own
     /// folder name, derived the way the pipeline derives it. Null while no folder is chosen. Shown
     /// under the box so the user sees "E:\Installer\9\ComfyUI" before Next, not from an error.
-    /// Null too for a folder <see cref="ShapeProblem"/> refuses: "Will be created: AI\ComfyUI"
-    /// under "Enter the full path" would contradict the message.
+    /// Null too for a folder <see cref="FolderInput.InstallFolderProblem"/> refuses: "Will be
+    /// created: AI\ComfyUI" under "Enter the full path" would contradict the message.
     /// </summary>
     public string? DestinationFolder =>
-        _selection is null || Folder.Length == 0 || ShapeProblem(Folder) is not null
+        _selection is null || Folder.Length == 0 || FolderInput.InstallFolderProblem(Folder) is not null
             ? null
             : RepositoryPaths.Resolve(_selection.Workload, Folder);
-
-    /// <summary>
-    /// Why the folder cannot be used, judged on its text alone: the checks every folder box runs,
-    /// then what the start scripts cannot carry. run_nvidia.bat runs setlocal
-    /// enabledelayedexpansion before call "%~dp0venv\...": a lone ! in the expanded install
-    /// folder is dropped, so E:\AI!new\... becomes E:\AInew\... and the venv is never found.
-    /// &amp; % ^ are harmless there (quoted, and not expanded a second time).
-    /// </summary>
-    private static string? ShapeProblem(string folder) =>
-        FolderInput.ShapeProblem(folder, @"Enter the full path of the install folder, for example D:\AI.")
-        ?? (folder.Contains('!')
-            ? "The start scripts cannot work in a folder whose path contains !. Choose a folder without it."
-            : null);
 
     public bool AppliesTo(WizardSelection selection) => true;
 
@@ -126,7 +113,7 @@ public sealed class InstallFolderModule(
 
         // Before any disk access: a relative folder installed under the app's working directory,
         // and a bare "\\nas" made the folder check wait on the network for it.
-        if (ShapeProblem(folder) is { } problem)
+        if (FolderInput.InstallFolderProblem(folder) is { } problem)
             return ModuleValidation.Error(problem);
 
         if (_selection is null)

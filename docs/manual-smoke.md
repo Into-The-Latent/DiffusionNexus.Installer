@@ -122,9 +122,12 @@ the catalog reaches those lists correctly.
    standard and press Next to clean up.
 3. Pick AI-Toolkit. **Expect:** the model-library field is present, the output folder field is not.
 4. Clear the install folder. **Expect:** Next is disabled and the validation message shows.
-   Browse to the `ComfyUI` folder of an existing install (so the box ends in `\ComfyUI`).
-   **Expect:** "Will be created" names that folder, the "already exists and is not empty" message
-   shows, and Next stays disabled. Type `AI`. **Expect:** "Enter the full path of the install folder…".
+   Go back and pick Blanck-ComfyUI again, then Browse to the `ComfyUI` folder of an existing
+   install (so the box ends in `\ComfyUI`). **Expect:** "Will be created" names that folder, the
+   "already exists and is not empty" message shows, and Next stays disabled. Type `AI`.
+   **Expect:** "Enter the full path of the install folder…", no "Will be created" line, and the
+   output switch's off hint names no default folder. Type `E:\AI 100%`. **Expect:** "The start
+   scripts cannot work in a folder whose path contains ! % or ^…".
 5. Click Browse. **Expect:** a native folder dialog opens. Dismiss it. **Expect:** the field is
    unchanged and nothing crashes.
 6. Pick Krea-2-Turbo. **Expect:** after Location comes a Content screen showing ONLY the

@@ -68,6 +68,31 @@ public static class FolderInput
         : HasInvalidName(folder) ? InvalidNameMessage
         : null;
 
+    /// <summary>
+    /// Why <paramref name="folder"/> cannot be the install folder, judged on its text alone, or
+    /// null. Shared by the install box and by everything that derives folders from it, so a
+    /// refused install folder never shows up as "Will be created" or as a default folder.
+    /// </summary>
+    public static string? InstallFolderProblem(string folder) =>
+        ShapeProblem(folder, @"Enter the full path of the install folder, for example D:\AI.")
+        ?? (BreaksLauncher(folder, quoted: true)
+            ? "The start scripts cannot work in a folder whose path contains ! % or ^. Choose a folder without them."
+            : null);
+
+    /// <summary>
+    /// Whether the generated run_nvidia.bat (SDK BatchScriptGenerator) mangles a path holding
+    /// these characters. It runs setlocal enabledelayedexpansion, and run in real cmd: the install
+    /// folder, quoted in call "%~dp0venv\...", breaks on ! % ^ (CALL expands % a second time and
+    /// doubles ^, delayed expansion drops !), while &amp; and spaces are fine. The output folder is
+    /// written unquoted unless it holds a space, so there an &amp; ends the command as well.
+    /// Refused until the SDK's launcher quotes and escapes properly.
+    /// </summary>
+    public static bool BreaksLauncher(string folder, bool quoted) =>
+        folder.IndexOfAny(quoted ? QuotedLauncherBreakers : UnquotedLauncherBreakers) >= 0;
+
+    private static readonly char[] QuotedLauncherBreakers = ['!', '%', '^'];
+    private static readonly char[] UnquotedLauncherBreakers = ['&', '!', '%', '^'];
+
     public const string InvalidNameMessage =
         "A Windows folder name cannot contain < > : \" | ? or *. Choose a folder without them.";
 

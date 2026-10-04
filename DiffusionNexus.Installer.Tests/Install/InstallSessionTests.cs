@@ -545,6 +545,41 @@ public class InstallSessionTests
     }
 
     [Fact]
+    public async Task When_the_folder_beside_the_install_refuses_the_log_it_goes_into_the_chosen_folder()
+    {
+        // "C:\ComfyUI" puts the log beside the install at C:\, where a standard user may not
+        // create files. Losing the log is worse than leaving it inside the chosen folder.
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
+        var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(
+            me, System.Security.AccessControl.FileSystemRights.CreateFiles,
+            System.Security.AccessControl.AccessControlType.Deny);
+        var parentInfo = new DirectoryInfo(parent);
+        var acl = parentInfo.GetAccessControl();
+        acl.AddAccessRule(deny);
+        parentInfo.SetAccessControl(acl);
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1));
+
+            await session.StartAsync(plan);
+
+            session.LogFilePath.Should().NotBeNull().And.StartWith(chosen);
+        }
+        finally
+        {
+            acl = parentInfo.GetAccessControl();
+            acl.RemoveAccessRule(deny);
+            parentInfo.SetAccessControl(acl);
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task No_install_folder_means_no_file_and_a_run_that_still_ends_cleanly()
     {
         // An install that died before creating its folder has nowhere to put the file. Same as 1.x:
