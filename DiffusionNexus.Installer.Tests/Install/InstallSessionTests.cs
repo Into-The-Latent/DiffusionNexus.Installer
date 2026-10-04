@@ -519,6 +519,121 @@ public class InstallSessionTests
     }
 
     [Fact]
+    public async Task A_folder_named_after_the_repository_gets_the_log_beside_the_install_not_in_it()
+    {
+        // "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and the install-folder check wants that
+        // folder empty or new. A run that failed before cloning left its log inside it, so the
+        // retry was refused with "already exists and is not empty".
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1, InstallationResult.Failure("python download failed")));
+
+            await session.StartAsync(plan);
+
+            Directory.EnumerateFileSystemEntries(chosen).Should().BeEmpty();
+            Directory.GetFiles(parent, "installation-log-verbose-*.txt").Should().ContainSingle();
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_first_install_that_failed_before_creating_its_folder_still_leaves_a_log_beside_it()
+    {
+        // D:\AI\ComfyUI chosen, never created: GitSetup or PythonCheck failed. The log goes to
+        // D:\AI, as it would had the user made the empty folder first.
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Path.Combine(parent, "ComfyUI");
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1, InstallationResult.Failure("git missing")));
+
+            await session.StartAsync(plan);
+
+            Directory.Exists(chosen).Should().BeFalse("the session must not create install folders on its own");
+            Directory.GetFiles(parent, "installation-log-verbose-*.txt").Should().ContainSingle();
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_folder_named_after_the_repository_keeps_the_log_once_the_install_is_in_it()
+    {
+        // "E:\ComfyUI" is a common choice. Once the install has put anything there, the log goes
+        // in with it, as before -- not loose at the root of E:\ on every run.
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
+        File.WriteAllText(Path.Combine(chosen, "main.py"), "");
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1));
+
+            await session.StartAsync(plan);
+
+            Directory.GetFiles(chosen, "installation-log-verbose-*.txt").Should().ContainSingle();
+            Directory.GetFiles(parent, "installation-log-verbose-*.txt").Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task An_empty_install_folder_never_gets_the_log_even_when_the_folder_beside_it_refuses_it()
+    {
+        // "C:\ComfyUI" puts the log beside the install at C:\, where a standard user may not
+        // create files. Writing it into the still-empty C:\ComfyUI instead would make the
+        // install-folder check refuse the retry; the on-screen log and Copy log remain.
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
+        var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+        var deny = new System.Security.AccessControl.FileSystemAccessRule(
+            me, System.Security.AccessControl.FileSystemRights.CreateFiles,
+            System.Security.AccessControl.AccessControlType.Deny);
+        var parentInfo = new DirectoryInfo(parent);
+        var acl = parentInfo.GetAccessControl();
+        acl.AddAccessRule(deny);
+        parentInfo.SetAccessControl(acl);
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1, InstallationResult.Failure("git missing")));
+
+            await session.StartAsync(plan);
+
+            session.Phase.Should().Be(InstallPhase.Failed);
+            session.LogFilePath.Should().BeNull();
+            Directory.EnumerateFileSystemEntries(chosen).Should().BeEmpty();
+        }
+        finally
+        {
+            acl = parentInfo.GetAccessControl();
+            acl.RemoveAccessRule(deny);
+            parentInfo.SetAccessControl(acl);
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task No_install_folder_means_no_file_and_a_run_that_still_ends_cleanly()
     {
         // An install that died before creating its folder has nowhere to put the file. Same as 1.x:

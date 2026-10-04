@@ -50,7 +50,8 @@ public interface IInstallSession
 
     /// <summary>
     /// Where the finished run's log was written -- <c>installation-log-verbose-&lt;timestamp&gt;.txt</c>
-    /// in the install folder, as the 1.x wizard wrote it -- or null while a run is going, when the
+    /// in the install folder, as the 1.x wizard wrote it (beside the install when the chosen folder
+    /// is the install and the run left it empty: E:\ for "E:\ComfyUI") -- or null while a run is going, when the
     /// install folder did not exist at the end, or when the file could not be written (issue #14).
     /// </summary>
     string? LogFilePath { get; }

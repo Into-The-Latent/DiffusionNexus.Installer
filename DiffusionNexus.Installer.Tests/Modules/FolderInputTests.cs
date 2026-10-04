@@ -22,15 +22,19 @@ public class FolderInputTests
     [InlineData(@"D:\Renders", true)]
     [InlineData(@"\\nas\share", true)]
     [InlineData(@"\\nas\share\Renders", true)]
-    [InlineData(@"\\.\D:\Renders", true)]
     [InlineData(@"\\", false)]
     [InlineData(@"\\nas", false)]
     [InlineData(@"//nas", false)]
     [InlineData("Renders", false)]
     [InlineData("D:Renders", false)]
-    public void A_network_path_needs_a_server_and_a_share(string path, bool full)
+    [InlineData(@"\\.\D:\Renders", false)]
+    [InlineData(@"\\?\D:\Renders", false)]
+    [InlineData(@"\\?\UNC\nas\share", false)]
+    public void A_network_path_needs_a_server_and_a_share_and_device_paths_are_not_folders(string path, bool full)
     {
         // IsPathFullyQualified alone says yes to "\\nas": ComfyUI cannot write to a bare server.
+        // \\.\ and \\?\ paths come from no picker or Explorer, and slipped past the
+        // inside-the-install check, which compares plain paths.
         FolderInput.IsFullPath(path).Should().Be(full);
     }
 
@@ -40,12 +44,16 @@ public class FolderInputTests
     [InlineData(@"D:\What?", true)]
     [InlineData("D:\\Tab\tOut", true)]
     [InlineData(@"\\nas\share\a<b", true)]
+    [InlineData(@"\\nas\Renders|old", true)]
+    [InlineData(@"\\nas\out>x\sub", true)]
+    [InlineData(@"\\n|as\share", true)]
     [InlineData(@"D:\Renders", false)]
-    [InlineData(@"\\.\D:\Renders", false)]
+    [InlineData(@"D:\", false)]
     [InlineData(@"\\nas\share\Renders", false)]
-    public void Invalid_names_are_judged_after_the_root(string path, bool invalid)
+    public void Every_name_is_judged_server_and_share_included(string path, bool invalid)
     {
-        // The device path's "D:" is its root, not a folder name with a colon in it.
+        // GetPathRoot of a UNC path takes in server and share -- "\\nas\Renders|old" is all
+        // root -- so judging only what follows it let | and > through to the launcher line.
         FolderInput.HasInvalidName(path).Should().Be(invalid);
     }
 }

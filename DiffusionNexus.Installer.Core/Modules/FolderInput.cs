@@ -29,29 +29,70 @@ public static class FolderInput
     /// <summary>
     /// Whether <paramref name="path"/> names a folder by its full path. IsPathFullyQualified alone
     /// accepts anything that starts with two separators: "\\", "\\nas" and "\\nas\" all pass, and
-    /// none of them is a folder. A network path needs a server and a share.
+    /// none of them is a folder. A network path needs a server and a share. Device paths
+    /// (\\.\D:\..., \\?\D:\...) are refused: no picker or Explorer produces them, and the
+    /// inside-the-install check compares plain paths, so \\.\E:\Installer\9\ComfyUI\output
+    /// slipped past it.
     /// </summary>
     public static bool IsFullPath(string path)
     {
         if (!Path.IsPathFullyQualified(path)) return false;
         if (!IsSeparator(path[0]) || !IsSeparator(path[1])) return true;
+        if (path.Length > 2 && path[2] is '.' or '?' && (path.Length == 3 || IsSeparator(path[3]))) return false;
         return path.Split(Separators, StringSplitOptions.RemoveEmptyEntries).Length >= 2;
     }
 
     /// <summary>
-    /// Whether a folder name in <paramref name="path"/> holds a character Windows refuses
-    /// (&lt; &gt; : " | ? * and control characters). Judged per name after the root, so a colon
-    /// is caught wherever the root ends and "\\.\D:\Renders" is not refused for its drive. Without
-    /// it "D:\Renders|old" passes as a full path, and an unquoted | or &gt; on the launcher line
-    /// pipes or redirects ComfyUI instead of naming a folder.
+    /// Whether a name in <paramref name="path"/> holds a character Windows refuses (&lt; &gt; : "
+    /// | ? * and control characters). Every name is judged, a UNC server and share included --
+    /// GetPathRoot takes those in, so "\\nas\Renders|old" is all root -- and only a leading drive
+    /// ("D:") is skipped, so a colon anywhere else is caught. Without it "D:\Renders|old" passes
+    /// as a full path, and an unquoted | or &gt; on the launcher line pipes or redirects ComfyUI
+    /// instead of naming a folder. Meant for paths <see cref="IsFullPath"/> accepts.
     /// </summary>
     public static bool HasInvalidName(string path)
     {
-        var root = Path.GetPathRoot(path) ?? string.Empty;
-        return path[root.Length..]
+        var names = path.Length >= 2 && path[1] == ':' ? path[2..] : path;
+        return names
             .Split(Separators, StringSplitOptions.RemoveEmptyEntries)
             .Any(name => name.IndexOfAny(InvalidNameChars) >= 0);
     }
+
+    /// <summary>
+    /// The checks every folder box runs on the cleaned folder, in order: a full path, then names
+    /// Windows accepts. Null when both pass. One place, so a rule added here reaches all three
+    /// boxes; each box adds only what its own carrier cannot hold.
+    /// </summary>
+    public static string? ShapeProblem(string folder, string notFullMessage) =>
+        !IsFullPath(folder) ? notFullMessage
+        : HasInvalidName(folder) ? InvalidNameMessage
+        : null;
+
+    /// <summary>
+    /// Why <paramref name="folder"/> cannot be the install folder, judged on its text alone, or
+    /// null. Shared by the install box and by everything that derives folders from it, so a
+    /// refused install folder never shows up as "Will be created" or as a default folder.
+    /// </summary>
+    public static string? InstallFolderProblem(string folder) =>
+        ShapeProblem(folder, @"Enter the full path of the install folder, for example D:\AI.")
+        ?? (BreaksLauncher(folder)
+            ? "The start scripts cannot work in a folder whose path contains & ! % or ^. Choose a folder without them."
+            : null);
+
+    /// <summary>
+    /// Whether a start script the SDK generates (BatchScriptGenerator, 2.1.0) mangles a path
+    /// holding these characters. Run in real cmd: ComfyUI's run_nvidia.bat runs setlocal
+    /// enabledelayedexpansion, and its call "%~dp0venv\..." never activates the venv in a folder
+    /// with ! % or ^ (CALL expands % a second time and doubles ^, delayed expansion drops !). The
+    /// A1111/Forge webui-user.bat writes set "PYTHON="%~dp0venv\..."", which leaves %~dp0 outside
+    /// the quotes, and --output-directory is unquoted unless it holds a space: there an &amp; ends
+    /// the command. One list for both folders: a launcher fails quietly at its first start, so a
+    /// rare character refused at the wizard is the cheaper mistake. Until the SDK quotes and
+    /// escapes properly.
+    /// </summary>
+    public static bool BreaksLauncher(string folder) => folder.IndexOfAny(LauncherBreakers) >= 0;
+
+    private static readonly char[] LauncherBreakers = ['&', '!', '%', '^'];
 
     public const string InvalidNameMessage =
         "A Windows folder name cannot contain < > : \" | ? or *. Choose a folder without them.";

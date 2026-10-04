@@ -66,9 +66,11 @@ public sealed class InstallFolderModule(
     /// The folder the install will actually create: the chosen folder plus the repository's own
     /// folder name, derived the way the pipeline derives it. Null while no folder is chosen. Shown
     /// under the box so the user sees "E:\Installer\9\ComfyUI" before Next, not from an error.
+    /// Null too for a folder <see cref="FolderInput.InstallFolderProblem"/> refuses: "Will be
+    /// created: AI\ComfyUI" under "Enter the full path" would contradict the message.
     /// </summary>
     public string? DestinationFolder =>
-        _selection is null || Folder.Length == 0
+        _selection is null || Folder.Length == 0 || FolderInput.InstallFolderProblem(Folder) is not null
             ? null
             : RepositoryPaths.Resolve(_selection.Workload, Folder);
 
@@ -105,13 +107,25 @@ public sealed class InstallFolderModule(
 
     public ModuleValidation Validate()
     {
-        if (Folder.Length == 0)
+        var folder = Folder;
+        if (folder.Length == 0)
             return ModuleValidation.Error("Choose a folder to install into.");
+
+        // Before any disk access: a relative folder installed under the app's working directory,
+        // and a bare "\\nas" made the folder check wait on the network for it.
+        if (FolderInput.InstallFolderProblem(folder) is { } problem)
+            return ModuleValidation.Error(problem);
 
         if (_selection is null)
             return ModuleValidation.Ok();
 
-        var folder = Folder;
+        if (RepositoryPaths.EndsInRepositoryNameTwice(_selection.Workload, folder))
+        {
+            var install = RepositoryPaths.Resolve(_selection.Workload, folder);
+            return ModuleValidation.Error(
+                $"This folder is never created: the software installs one level up, into {install}. Choose {Path.GetDirectoryName(install)} instead.");
+        }
+
         if (!string.Equals(_validatedPath, folder, StringComparison.Ordinal))
         {
             _validatedPath = folder;
@@ -127,8 +141,13 @@ public sealed class InstallFolderModule(
     {
         try
         {
+            // The validator appends the repository name itself, so it gets the folder that name is
+            // appended to by the pipeline too: "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and
+            // checking E:\AI\ComfyUI\ComfyUI instead let Next through onto a live installation.
             var result = preInstallation.ValidateTargetFolder(
-                _selection!.Workload, folder, InstallationType.FullInstall);
+                _selection!.Workload,
+                RepositoryPaths.NormalizedTarget(_selection.Workload, folder),
+                InstallationType.FullInstall);
 
             if (result.CanProceed) return null;
 

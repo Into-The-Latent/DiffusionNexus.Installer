@@ -109,6 +109,124 @@ public class InstallFolderModuleTests
         module.DestinationFolder.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("ComfyUI")]
+    [InlineData(@"ComfyUI\")]
+    [InlineData(@"ComfyUI\ComfyUI")]
+    [InlineData("")]
+    public async Task An_existing_install_is_refused_however_the_folder_is_spelled(string tail)
+    {
+        // The pipeline drops a trailing folder named after the repository (PathNormalizer), so
+        // "X\ComfyUI" installs into X\ComfyUI. The pre-flight must look there, not at
+        // X\ComfyUI\ComfyUI, or Next is enabled on top of a live installation.
+        var root = Path.Combine(Path.GetTempPath(), $"dn-existing-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "ComfyUI"));
+        File.WriteAllText(Path.Combine(root, "ComfyUI", "main.py"), "");
+        try
+        {
+            var module = await Module(Selection());
+
+            module.TargetFolder = Path.Combine(root, tail);
+
+            module.DestinationFolder.Should().Be(Path.Combine(root, "ComfyUI"));
+            module.Validate().IsValid.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("AI")]
+    [InlineData(@"""E:\x")]
+    [InlineData(@"\\nas")]
+    [InlineData(@"\\?\E:\AI")]
+    public async Task An_install_folder_that_is_not_a_full_path_is_refused(string folder)
+    {
+        // A relative folder installed under the app's working directory.
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().ErrorMessage.Should().Contain("full path");
+    }
+
+    [Theory]
+    [InlineData(@"E:\AI!new")]
+    [InlineData(@"E:\AI 100%")]
+    [InlineData(@"E:\pct%x")]
+    [InlineData(@"E:\A^B")]
+    [InlineData(@"D:\R&D")]
+    public async Task An_install_folder_the_start_script_cannot_carry_is_refused(string folder)
+    {
+        // Run in real cmd: ComfyUI's run_nvidia.bat (enabledelayedexpansion, then
+        // call "%~dp0venv\...") never activates the venv in a folder with ! % or ^, and the
+        // A1111/Forge webui-user.bat's set "PYTHON="%~dp0venv\..."" leaves %~dp0 unquoted, so an
+        // & splits that line.
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().ErrorMessage.Should().Contain("& ! % or ^");
+        module.DestinationFolder.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("https://github.com/comfyanonymous/ComfyUI", RepositoryType.ComfyUI, @"E:\AI\ComfyUI\ComfyUI", @"E:\AI\ComfyUI")]
+    [InlineData("https://github.com/ostris/ai-toolkit", RepositoryType.AIToolkit, @"E:\AI\AI-Toolkit\AI-Toolkit", @"E:\AI\ai-toolkit")]
+    public async Task A_folder_named_after_the_repository_twice_is_refused_naming_the_real_one(
+        string url, RepositoryType type, string chosen, string install)
+    {
+        // The SDK strips the name twice, so the install lands one level up and the chosen folder
+        // is never created: no log file, a finished-screen button into nothing, and for
+        // AI-Toolkit an embedded Python written where the clone then refuses to go.
+        var selection = Selection(url);
+        selection.Workload.Repository.Type = type;
+        var module = await Module(selection);
+
+        module.TargetFolder = chosen;
+
+        module.Validate().ErrorMessage.Should().Contain("one level up").And.Contain(install);
+    }
+
+    [Theory]
+    [InlineData(@"E:\My AI")]
+    [InlineData(@"E:\AI-#2 (new)")]
+    public async Task An_install_folder_with_spaces_and_ordinary_punctuation_is_fine(string folder)
+    {
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("AI")]
+    [InlineData(@"\\?\E:\AI")]
+    [InlineData(@"C:\a<b")]
+    public async Task A_refused_folder_shows_no_will_be_created_line(string folder)
+    {
+        // "Will be created: AI\ComfyUI" right under "Enter the full path…" contradicted it.
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().IsValid.Should().BeFalse();
+        module.DestinationFolder.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_install_folder_Windows_cannot_name_is_refused()
+    {
+        var module = await Module(Selection());
+
+        module.TargetFolder = @"C:\a<b";
+
+        module.Validate().ErrorMessage.Should().Be(FolderInput.InvalidNameMessage);
+    }
+
     [Fact]
     public async Task The_destination_follows_the_remembered_folder_right_after_initialization()
     {

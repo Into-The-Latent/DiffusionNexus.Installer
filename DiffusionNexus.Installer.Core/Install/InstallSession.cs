@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
@@ -237,8 +238,8 @@ public sealed class InstallSession : IInstallSession, IDisposable
 
     /// <summary>
     /// What the 1.x wizard did when a run ended: the whole log into a timestamped file in the
-    /// install folder, so a user can find and send it without the installer still being open
-    /// (issue #14). Nowhere to write it -- the folder never got created -- means no file, never a
+    /// install folder (see <see cref="LogFolder"/>), so a user can find and send it without the
+    /// installer still being open (issue #14). Nowhere to write it -- the folder never got created -- means no file, never a
     /// failed run; InstallLogFile.TryWrite owns that rule.
     /// </summary>
     private void WriteLogFile(WizardPlan plan)
@@ -250,11 +251,44 @@ public sealed class InstallSession : IInstallSession, IDisposable
         var text = InstallLogFile.Compose(
             plan.Selection.Workload.Name, plan.Selection.TargetFolder, outcome, now, lines, truncated);
 
-        var path = InstallLogFile.TryWrite(plan.Selection.TargetFolder, text, now);
+        var path = InstallLogFile.TryWrite(LogFolder(plan.Selection), text, now);
         if (path is null) return;
 
         LogFilePath = path;
         Append(new InstallLogLine(now, $"Log saved to: {path}", SdkLogLevel.Success));
+    }
+
+    /// <summary>
+    /// Where the log goes: the chosen folder, as the 1.x wizard did -- except while the chosen
+    /// folder is itself the install ("E:\ComfyUI" installs into E:\ComfyUI) and the run put
+    /// nothing in it yet, or never created it. A log there would make the install-folder check
+    /// refuse the retry as "not empty", so it goes beside the install instead (E:\) -- the same
+    /// place whether or not the user had made the empty folder first. If that place refuses the file
+    /// (C:\ for a standard user) there is no file: the on-screen log and Copy log remain, and a
+    /// blocked retry is the worse outcome. Never throws, like TryWrite: it runs in StartAsync's
+    /// <c>finally</c>, ahead of the notification that ends the run on screen.
+    /// </summary>
+    private static string? LogFolder(WizardSelection selection)
+    {
+        var chosen = selection.TargetFolder;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(chosen)) return null;
+
+            var install = RepositoryPaths.Resolve(selection.Workload, chosen);
+            var chosenIsTheInstall = string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(install)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(chosen)),
+                StringComparison.OrdinalIgnoreCase);
+
+            return chosenIsTheInstall && (!Directory.Exists(install) || !Directory.EnumerateFileSystemEntries(install).Any())
+                ? RepositoryPaths.NormalizedTarget(selection.Workload, chosen)
+                : chosen;
+        }
+        catch (Exception)
+        {
+            return chosen;
+        }
     }
 
     public void Cancel()

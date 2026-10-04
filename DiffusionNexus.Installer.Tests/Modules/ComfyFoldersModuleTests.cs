@@ -277,6 +277,62 @@ public class ComfyFoldersModuleTests
     }
 
     [Fact]
+    public async Task A_folder_named_after_the_repository_twice_still_guards_the_real_install()
+    {
+        // SDK 2.1.0 strips a trailing "ComfyUI" twice (orchestrator, then the clone step), so
+        // E:\AI\ComfyUI\ComfyUI installs into E:\AI\ComfyUI.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = @"E:\AI\ComfyUI\ComfyUI";
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = @"E:\AI\ComfyUI\renders";
+
+        module.DefaultOutputFolder.Should().Be(@"E:\AI\ComfyUI\output");
+        module.OutputFolderProblem.Should().Contain(@"inside the ComfyUI install (E:\AI\ComfyUI)");
+    }
+
+    [Theory]
+    [InlineData("AI")]
+    [InlineData(@"E:\AI!new")]
+    [InlineData(@"C:\a<b")]
+    public async Task A_refused_install_folder_names_no_default_folders(string target)
+    {
+        // The install box refuses these and hides "Will be created"; the switch hints must not
+        // name "AI\ComfyUI\output" under them, nor the inside-the-install check resolve a
+        // relative root against the app's working directory.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = target;
+
+        module.DefaultOutputFolder.Should().BeEmpty();
+        module.DefaultModelsFolder.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(@"\\.\E:\Installer\9\ComfyUI\output")]
+    [InlineData(@"\\?\E:\Installer\9\ComfyUI\output")]
+    public async Task A_device_path_into_the_install_is_refused(string folder)
+    {
+        // The inside-the-install check compares plain paths; a device path never matched it.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = @"E:\Installer\9";
+        module.UseOwnOutputFolder = true;
+        module.UseModelLibraryFolder = true;
+        module.OutputFolder = folder;
+        module.ModelBaseFolder = folder;
+
+        module.OutputFolderProblem.Should().Contain("full path");
+        module.ModelFolderProblem.Should().Contain("full path");
+    }
+
+    [Fact]
     public async Task An_install_folder_pasted_with_quotes_still_guards_the_output_folder()
     {
         // The install folder box cleans a "Copy as path" paste the same way, so the inside-the-
