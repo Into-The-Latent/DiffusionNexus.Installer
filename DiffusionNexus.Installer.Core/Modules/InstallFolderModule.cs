@@ -119,6 +119,13 @@ public sealed class InstallFolderModule(
         if (_selection is null)
             return ModuleValidation.Ok();
 
+        if (RepositoryPaths.EndsInRepositoryNameTwice(_selection.Workload, folder))
+        {
+            var install = RepositoryPaths.Resolve(_selection.Workload, folder);
+            return ModuleValidation.Error(
+                $"This folder is never created: the software installs one level up, into {install}. Choose {Path.GetDirectoryName(install)} instead.");
+        }
+
         if (!string.Equals(_validatedPath, folder, StringComparison.Ordinal))
         {
             _validatedPath = folder;

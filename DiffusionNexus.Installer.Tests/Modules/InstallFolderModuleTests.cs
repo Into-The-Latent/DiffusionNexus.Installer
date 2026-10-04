@@ -173,6 +173,24 @@ public class InstallFolderModuleTests
     }
 
     [Theory]
+    [InlineData("https://github.com/comfyanonymous/ComfyUI", RepositoryType.ComfyUI, @"E:\AI\ComfyUI\ComfyUI", @"E:\AI\ComfyUI")]
+    [InlineData("https://github.com/ostris/ai-toolkit", RepositoryType.AIToolkit, @"E:\AI\AI-Toolkit\AI-Toolkit", @"E:\AI\ai-toolkit")]
+    public async Task A_folder_named_after_the_repository_twice_is_refused_naming_the_real_one(
+        string url, RepositoryType type, string chosen, string install)
+    {
+        // The SDK strips the name twice, so the install lands one level up and the chosen folder
+        // is never created: no log file, a finished-screen button into nothing, and for
+        // AI-Toolkit an embedded Python written where the clone then refuses to go.
+        var selection = Selection(url);
+        selection.Workload.Repository.Type = type;
+        var module = await Module(selection);
+
+        module.TargetFolder = chosen;
+
+        module.Validate().ErrorMessage.Should().Contain("one level up").And.Contain(install);
+    }
+
+    [Theory]
     [InlineData(@"E:\My AI")]
     [InlineData(@"E:\AI-#2 (new)")]
     public async Task An_install_folder_with_spaces_and_ordinary_punctuation_is_fine(string folder)

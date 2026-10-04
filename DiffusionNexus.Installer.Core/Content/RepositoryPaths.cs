@@ -32,9 +32,28 @@ public static class RepositoryPaths
         ArgumentNullException.ThrowIfNull(workload);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetFolder);
 
-        var url = workload.Repository.RepositoryUrl;
-        var folderName = workload.Repository.Type == RepositoryType.AIToolkit ? "AI-Toolkit" : null;
-        var once = PathNormalizer.NormalizeTargetDirectory(targetFolder, url, folderName);
-        return PathNormalizer.NormalizeTargetDirectory(once, url, folderName);
+        return NormalizeOnce(workload, NormalizeOnce(workload, targetFolder));
     }
+
+    /// <summary>
+    /// Whether the folder ends in the repository's folder name twice ("E:\AI\ComfyUI\ComfyUI").
+    /// The pipeline strips both, so the install lands one level above the chosen folder, which is
+    /// never created -- and for AI-Toolkit the embedded Python step, which sees only the first
+    /// strip, writes into the folder the clone then refuses. Such a folder is asked for again.
+    /// </summary>
+    public static bool EndsInRepositoryNameTwice(InstallationConfiguration workload, string targetFolder)
+    {
+        ArgumentNullException.ThrowIfNull(workload);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetFolder);
+
+        var once = NormalizeOnce(workload, targetFolder);
+        return !string.Equals(once, targetFolder, StringComparison.Ordinal)
+               && !string.Equals(NormalizeOnce(workload, once), once, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeOnce(InstallationConfiguration workload, string targetFolder) =>
+        PathNormalizer.NormalizeTargetDirectory(
+            targetFolder,
+            workload.Repository.RepositoryUrl,
+            workload.Repository.Type == RepositoryType.AIToolkit ? "AI-Toolkit" : null);
 }

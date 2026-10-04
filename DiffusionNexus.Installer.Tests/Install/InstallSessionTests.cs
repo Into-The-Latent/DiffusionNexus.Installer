@@ -545,6 +545,31 @@ public class InstallSessionTests
     }
 
     [Fact]
+    public async Task A_first_install_that_failed_before_creating_its_folder_still_leaves_a_log_beside_it()
+    {
+        // D:\AI\ComfyUI chosen, never created: GitSetup or PythonCheck failed. The log goes to
+        // D:\AI, as it would had the user made the empty folder first.
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Path.Combine(parent, "ComfyUI");
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1, InstallationResult.Failure("git missing")));
+
+            await session.StartAsync(plan);
+
+            Directory.Exists(chosen).Should().BeFalse("the session must not create install folders on its own");
+            Directory.GetFiles(parent, "installation-log-verbose-*.txt").Should().ContainSingle();
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task A_folder_named_after_the_repository_keeps_the_log_once_the_install_is_in_it()
     {
         // "E:\ComfyUI" is a common choice. Once the install has put anything there, the log goes

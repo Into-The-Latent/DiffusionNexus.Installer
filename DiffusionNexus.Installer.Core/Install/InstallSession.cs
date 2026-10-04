@@ -261,8 +261,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
     /// <summary>
     /// Where the log goes: the chosen folder, as the 1.x wizard did -- except while the chosen
     /// folder is itself the install ("E:\ComfyUI" installs into E:\ComfyUI) and the run put
-    /// nothing in it yet. A log there would make the install-folder check refuse the retry as
-    /// "not empty", so it goes beside the install instead (E:\). If that place refuses the file
+    /// nothing in it yet, or never created it. A log there would make the install-folder check
+    /// refuse the retry as "not empty", so it goes beside the install instead (E:\) -- the same
+    /// place whether or not the user had made the empty folder first. If that place refuses the file
     /// (C:\ for a standard user) there is no file: the on-screen log and Copy log remain, and a
     /// blocked retry is the worse outcome. Never throws, like TryWrite: it runs in StartAsync's
     /// <c>finally</c>, ahead of the notification that ends the run on screen.
@@ -280,7 +281,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
                 Path.TrimEndingDirectorySeparator(Path.GetFullPath(chosen)),
                 StringComparison.OrdinalIgnoreCase);
 
-            return chosenIsTheInstall && Directory.Exists(install) && !Directory.EnumerateFileSystemEntries(install).Any()
+            return chosenIsTheInstall && (!Directory.Exists(install) || !Directory.EnumerateFileSystemEntries(install).Any())
                 ? RepositoryPaths.NormalizedTarget(selection.Workload, chosen)
                 : chosen;
         }
