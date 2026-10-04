@@ -129,10 +129,10 @@
                     </button>
                 </div>
 
-                @* The install-folder and ComfyUI folders panels show their own messages right next to
-                   the box they are about; listing them here too would put the same sentence on the
+                @* A module whose panel shows its own message right next to the box it is about says
+                   so (ShowsOwnValidation); listing it here too would put the same sentence on the
                    page twice, the copy down here under the buttons and off screen on a short window. *@
-                @foreach (var module in _run.CurrentModules.Where(m => m is not (InstallFolderModule or ComfyFoldersModule)))
+                @foreach (var module in _run.CurrentModules.Where(m => !m.ShowsOwnValidation))
                 {
                     @if (module.Validate() is { IsValid: false, ErrorMessage: { } error })
                     {

@@ -61,19 +61,21 @@
         <p class="validation-error" data-role="library-problem">@modelProblem</p>
     }
 
+    @* With the library, not in Advanced: it changes the install, and the Advanced badge speaks
+       only for the folder names and additional folders, so ticked in there it went unseen. *@
+    @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+    {
+        <label class="checkbox switch-body">
+            <input type="checkbox" data-role="overwrite-yaml" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
+            Overwrite an existing extra_model_paths.yaml
+        </label>
+    }
+
     <AdvancedDisclosure Subtitle="custom model folders" Badge="@(Module.HasCustomFolders ? "custom folders in use" : null)">
         <p class="panel-hint">
             Only needed if your library uses different folder names than ComfyUI's standard ones,
             or holds extra folders. Everything here is remembered for your next install.
         </p>
-
-        @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
-        {
-            <label class="checkbox">
-                <input type="checkbox" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
-                Overwrite an existing extra_model_paths.yaml
-            </label>
-        }
 
         <div class="advanced-head">
             <h3>Folder names inside the library</h3>

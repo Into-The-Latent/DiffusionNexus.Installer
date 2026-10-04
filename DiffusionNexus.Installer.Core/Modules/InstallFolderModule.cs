@@ -35,6 +35,9 @@ public sealed class InstallFolderModule(
     public int Order => 0;
     public WorkloadCapability Satisfies => WorkloadCapability.None;
 
+    /// <summary>The panel shows the message under the folder box.</summary>
+    public bool ShowsOwnValidation => true;
+
     private string _targetFolder = string.Empty;
 
     public string TargetFolder

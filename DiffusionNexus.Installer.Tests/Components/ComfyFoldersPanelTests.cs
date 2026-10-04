@@ -51,7 +51,8 @@ public class ComfyFoldersPanelTests : BunitContext
 
         cut.Markup.Should().NotContain("saved model folder");
         cut.FindAll("[data-folder-key]").Should().BeEmpty("the per-type list is advanced");
-        cut.FindAll(".checkbox").Should().BeEmpty("the overwrite choice is advanced too");
+        cut.Find("[data-role='overwrite-yaml']").Should().NotBeNull(
+            "overwriting the YAML changes the install, so it sits with the library, not out of sight");
         cut.FindAll(".path-row input").Should().ContainSingle("only the library box, under its switch")
             .Which.GetAttribute("data-role").Should().Be("library");
         cut.Find(".advanced-toggle").TextContent.Should().Contain("Advanced");
@@ -117,7 +118,6 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.Find("[data-folder-key='checkpoints']").GetAttribute("value").Should().Be("checkpoints");
         cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Reset to standard");
         cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "+ Add folder");
-        cut.Find(".checkbox").TextContent.Should().Contain("Overwrite");
     }
 
     [Fact]

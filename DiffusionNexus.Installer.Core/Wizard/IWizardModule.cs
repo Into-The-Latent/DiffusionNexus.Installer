@@ -40,6 +40,14 @@ public interface IWizardModule
     bool IsAdvanced => false;
 
     /// <summary>
+    /// Whether the module's panel shows its validation message itself, next to the box it is
+    /// about. The page then leaves it out of its list under the buttons, so the message is not
+    /// shown twice -- once of them off screen. Declared here, as <see cref="IsAdvanced"/> is, so
+    /// the page keeps no list of such modules.
+    /// </summary>
+    bool ShowsOwnValidation => false;
+
+    /// <summary>
     /// Writes the module's answers back to user settings so the next run starts from them. The
     /// page calls it for every module of the stage being left, on every stage's Next (including
     /// Confirm's "Start installation"). Implementations must re-read the

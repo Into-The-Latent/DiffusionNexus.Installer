@@ -198,6 +198,98 @@ public class ComfyFoldersModuleTests
         draft.OutputFolder.Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(@"D:\Renders|old")]
+    [InlineData(@"D:\Out>log")]
+    [InlineData(@"D:\In<put")]
+    [InlineData(@"D:\Say""Cheese")]
+    [InlineData(@"D:\What?")]
+    [InlineData(@"D:\St*r")]
+    [InlineData(@"D:\Out:Stream")]
+    [InlineData("D:\\Tab\tOut")]
+    public async Task An_output_folder_Windows_cannot_name_is_refused(string folder)
+    {
+        // IsPathFullyQualified checks only the shape: "D:\Renders|old" on the launcher line pipes
+        // ComfyUI into a command named "old" and it writes to D:\Renders.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = folder;
+
+        module.OutputFolderProblem.Should().Contain("Windows folder name");
+        module.Validate().IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_path_copied_with_Copy_as_path_is_used_without_its_quotes()
+    {
+        // Explorer's "Copy as path" wraps the path in quotes; the user did enter the full path.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.UseModelLibraryFolder = true;
+        module.OutputFolder = @"""D:\My Output""";
+        module.ModelBaseFolder = @" ""D:\My Models\"" ";
+
+        module.Validate().IsValid.Should().BeTrue();
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.OutputFolder.Should().Be(@"D:\My Output");
+        draft.ModelBaseFolder.Should().Be(@"D:\My Models");
+    }
+
+    [Fact]
+    public async Task A_pair_of_empty_quotes_is_a_blank_folder()
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = "\"\"";
+
+        module.OutputFolderProblem.Should().StartWith("Choose an output folder");
+    }
+
+    [Theory]
+    [InlineData(@"D:\AI #2\Models", false)]
+    [InlineData(@"D:\Models|old", false)]
+    [InlineData(@"D:\AI#2\Models", true)]
+    [InlineData(@"D:\Art & Models", true)]
+    public async Task A_library_the_model_paths_file_cannot_carry_is_refused(string folder, bool usable)
+    {
+        // base_path is written unquoted: YAML reads " #2/Models/" as a comment and ComfyUI looks
+        // in D:/AI. A # without a space before it is fine, and the launcher never sees the library.
+        var module = Module();
+        await module.InitializeAsync(Selection(RepositoryType.ComfyUI));
+        module.UseModelLibraryFolder = true;
+        module.ModelBaseFolder = folder;
+
+        (module.ModelFolderProblem is null).Should().Be(usable, module.ModelFolderProblem);
+    }
+
+    [Theory]
+    [InlineData(@"E:\Installer\9\ComfyUI\renders", false)]
+    [InlineData(@"E:\Installer\9\comfyui", false)]
+    [InlineData(@"E:\Installer\9\renders", true)]
+    [InlineData(@"E:\Installer\9\ComfyUI-renders", true)]
+    public async Task A_folder_inside_the_install_is_refused_since_it_is_deleted_with_it(string folder, bool usable)
+    {
+        // The install-folder question wants E:\Installer\9\ComfyUI empty or new, so a reinstall
+        // means clearing it -- and a folder inside goes with it. Next to it is fine.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = @"E:\Installer\9";
+        module.UseOwnOutputFolder = true;
+        module.UseModelLibraryFolder = true;
+        module.OutputFolder = folder;
+        module.ModelBaseFolder = folder;
+
+        (module.OutputFolderProblem is null).Should().Be(usable, module.OutputFolderProblem);
+        (module.ModelFolderProblem is null).Should().Be(usable, module.ModelFolderProblem);
+        if (!usable) module.OutputFolderProblem.Should().Contain(@"E:\Installer\9\ComfyUI");
+    }
+
     // ---- The model switch on needs a library too (PR #47 review round 2) -----------------------
     // With no library there is no extra_model_paths.yaml, and Persist saves an empty folder, so the
     // switch is off at the next start and any renamed folder types quietly stop applying.
