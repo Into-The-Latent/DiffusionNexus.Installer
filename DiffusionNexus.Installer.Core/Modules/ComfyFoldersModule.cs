@@ -382,9 +382,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     {
         if (!on) return null;
         if (FolderInput.Clean(typed) is not { } folder) return blank;
-        if (!FolderInput.IsFullPath(folder)) return notFull;
-        if (FolderInput.HasInvalidName(folder)) return FolderInput.InvalidNameMessage;
-        if (carrierProblem(folder) is { } problem) return problem;
+        if ((FolderInput.ShapeProblem(folder, notFull) ?? carrierProblem(folder)) is { } problem) return problem;
         if (InstallContaining(folder) is { } install)
             return $"This folder is inside the ComfyUI install ({install}) and would be deleted with it. Choose a folder outside it.";
         return null;

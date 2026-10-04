@@ -58,6 +58,16 @@ public static class FolderInput
             .Any(name => name.IndexOfAny(InvalidNameChars) >= 0);
     }
 
+    /// <summary>
+    /// The checks every folder box runs on the cleaned folder, in order: a full path, then names
+    /// Windows accepts. Null when both pass. One place, so a rule added here reaches all three
+    /// boxes; each box adds only what its own carrier cannot hold.
+    /// </summary>
+    public static string? ShapeProblem(string folder, string notFullMessage) =>
+        !IsFullPath(folder) ? notFullMessage
+        : HasInvalidName(folder) ? InvalidNameMessage
+        : null;
+
     public const string InvalidNameMessage =
         "A Windows folder name cannot contain < > : \" | ? or *. Choose a folder without them.";
 

@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
@@ -250,7 +251,13 @@ public sealed class InstallSession : IInstallSession, IDisposable
         var text = InstallLogFile.Compose(
             plan.Selection.Workload.Name, plan.Selection.TargetFolder, outcome, now, lines, truncated);
 
-        var path = InstallLogFile.TryWrite(plan.Selection.TargetFolder, text, now);
+        // Into the folder the install is created in, not the one typed: for "E:\AI\ComfyUI" that
+        // is E:\AI. Inside E:\AI\ComfyUI, a run that failed before cloning left the folder
+        // non-empty, and the install-folder check then refused the retry.
+        var target = plan.Selection.TargetFolder;
+        var path = InstallLogFile.TryWrite(
+            string.IsNullOrWhiteSpace(target) ? target : RepositoryPaths.NormalizedTarget(plan.Selection.Workload, target),
+            text, now);
         if (path is null) return;
 
         LogFilePath = path;

@@ -152,6 +152,35 @@ public class InstallFolderModuleTests
     }
 
     [Fact]
+    public async Task An_install_folder_with_an_exclamation_mark_is_refused()
+    {
+        // run_nvidia.bat runs setlocal enabledelayedexpansion, then call "%~dp0venv\...": a lone
+        // ! in the expanded folder is dropped, so E:\AI!new\... becomes E:\AInew\... and the
+        // venv is never found. & % ^ are harmless there (quoted, no second expansion).
+        var module = await Module(Selection());
+
+        module.TargetFolder = @"E:\AI!new";
+
+        module.Validate().ErrorMessage.Should().Contain("!");
+        module.DestinationFolder.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("AI")]
+    [InlineData(@"\\?\E:\AI")]
+    [InlineData(@"C:\a<b")]
+    public async Task A_refused_folder_shows_no_will_be_created_line(string folder)
+    {
+        // "Will be created: AI\ComfyUI" right under "Enter the full path…" contradicted it.
+        var module = await Module(Selection());
+
+        module.TargetFolder = folder;
+
+        module.Validate().IsValid.Should().BeFalse();
+        module.DestinationFolder.Should().BeNull();
+    }
+
+    [Fact]
     public async Task An_install_folder_Windows_cannot_name_is_refused()
     {
         var module = await Module(Selection());
