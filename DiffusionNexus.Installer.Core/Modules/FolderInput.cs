@@ -75,23 +75,24 @@ public static class FolderInput
     /// </summary>
     public static string? InstallFolderProblem(string folder) =>
         ShapeProblem(folder, @"Enter the full path of the install folder, for example D:\AI.")
-        ?? (BreaksLauncher(folder, quoted: true)
-            ? "The start scripts cannot work in a folder whose path contains ! % or ^. Choose a folder without them."
+        ?? (BreaksLauncher(folder)
+            ? "The start scripts cannot work in a folder whose path contains & ! % or ^. Choose a folder without them."
             : null);
 
     /// <summary>
-    /// Whether the generated run_nvidia.bat (SDK BatchScriptGenerator) mangles a path holding
-    /// these characters. It runs setlocal enabledelayedexpansion, and run in real cmd: the install
-    /// folder, quoted in call "%~dp0venv\...", breaks on ! % ^ (CALL expands % a second time and
-    /// doubles ^, delayed expansion drops !), while &amp; and spaces are fine. The output folder is
-    /// written unquoted unless it holds a space, so there an &amp; ends the command as well.
-    /// Refused until the SDK's launcher quotes and escapes properly.
+    /// Whether a start script the SDK generates (BatchScriptGenerator, 2.1.0) mangles a path
+    /// holding these characters. Run in real cmd: ComfyUI's run_nvidia.bat runs setlocal
+    /// enabledelayedexpansion, and its call "%~dp0venv\..." never activates the venv in a folder
+    /// with ! % or ^ (CALL expands % a second time and doubles ^, delayed expansion drops !). The
+    /// A1111/Forge webui-user.bat writes set "PYTHON="%~dp0venv\..."", which leaves %~dp0 outside
+    /// the quotes, and --output-directory is unquoted unless it holds a space: there an &amp; ends
+    /// the command. One list for both folders: a launcher fails quietly at its first start, so a
+    /// rare character refused at the wizard is the cheaper mistake. Until the SDK quotes and
+    /// escapes properly.
     /// </summary>
-    public static bool BreaksLauncher(string folder, bool quoted) =>
-        folder.IndexOfAny(quoted ? QuotedLauncherBreakers : UnquotedLauncherBreakers) >= 0;
+    public static bool BreaksLauncher(string folder) => folder.IndexOfAny(LauncherBreakers) >= 0;
 
-    private static readonly char[] QuotedLauncherBreakers = ['!', '%', '^'];
-    private static readonly char[] UnquotedLauncherBreakers = ['&', '!', '%', '^'];
+    private static readonly char[] LauncherBreakers = ['&', '!', '%', '^'];
 
     public const string InvalidNameMessage =
         "A Windows folder name cannot contain < > : \" | ? or *. Choose a folder without them.";

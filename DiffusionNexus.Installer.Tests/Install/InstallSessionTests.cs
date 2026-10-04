@@ -545,10 +545,37 @@ public class InstallSessionTests
     }
 
     [Fact]
-    public async Task When_the_folder_beside_the_install_refuses_the_log_it_goes_into_the_chosen_folder()
+    public async Task A_folder_named_after_the_repository_keeps_the_log_once_the_install_is_in_it()
+    {
+        // "E:\ComfyUI" is a common choice. Once the install has put anything there, the log goes
+        // in with it, as before -- not loose at the root of E:\ on every run.
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
+        File.WriteAllText(Path.Combine(chosen, "main.py"), "");
+        try
+        {
+            var plan = await PlanInAsync(chosen);
+            plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
+            plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var session = new InstallSession(LoggingOrchestrator(1));
+
+            await session.StartAsync(plan);
+
+            Directory.GetFiles(chosen, "installation-log-verbose-*.txt").Should().ContainSingle();
+            Directory.GetFiles(parent, "installation-log-verbose-*.txt").Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task An_empty_install_folder_never_gets_the_log_even_when_the_folder_beside_it_refuses_it()
     {
         // "C:\ComfyUI" puts the log beside the install at C:\, where a standard user may not
-        // create files. Losing the log is worse than leaving it inside the chosen folder.
+        // create files. Writing it into the still-empty C:\ComfyUI instead would make the
+        // install-folder check refuse the retry; the on-screen log and Copy log remain.
         var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
         var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
         var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
@@ -564,11 +591,13 @@ public class InstallSessionTests
             var plan = await PlanInAsync(chosen);
             plan.Selection.Workload.Repository.Type = RepositoryType.ComfyUI;
             plan.Selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
-            var session = new InstallSession(LoggingOrchestrator(1));
+            var session = new InstallSession(LoggingOrchestrator(1, InstallationResult.Failure("git missing")));
 
             await session.StartAsync(plan);
 
-            session.LogFilePath.Should().NotBeNull().And.StartWith(chosen);
+            session.Phase.Should().Be(InstallPhase.Failed);
+            session.LogFilePath.Should().BeNull();
+            Directory.EnumerateFileSystemEntries(chosen).Should().BeEmpty();
         }
         finally
         {

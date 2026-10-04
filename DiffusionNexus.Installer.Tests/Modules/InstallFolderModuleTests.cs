@@ -112,6 +112,7 @@ public class InstallFolderModuleTests
     [Theory]
     [InlineData("ComfyUI")]
     [InlineData(@"ComfyUI\")]
+    [InlineData(@"ComfyUI\ComfyUI")]
     [InlineData("")]
     public async Task An_existing_install_is_refused_however_the_folder_is_spelled(string tail)
     {
@@ -156,23 +157,25 @@ public class InstallFolderModuleTests
     [InlineData(@"E:\AI 100%")]
     [InlineData(@"E:\pct%x")]
     [InlineData(@"E:\A^B")]
+    [InlineData(@"D:\R&D")]
     public async Task An_install_folder_the_start_script_cannot_carry_is_refused(string folder)
     {
-        // run_nvidia.bat runs setlocal enabledelayedexpansion, then call "%~dp0venv\...". Run in
-        // real cmd: a folder with ! % or ^ never activates the venv (CALL expands % a second time
-        // and doubles ^; delayed expansion drops !). & and spaces are fine inside the quotes.
+        // Run in real cmd: ComfyUI's run_nvidia.bat (enabledelayedexpansion, then
+        // call "%~dp0venv\...") never activates the venv in a folder with ! % or ^, and the
+        // A1111/Forge webui-user.bat's set "PYTHON="%~dp0venv\..."" leaves %~dp0 unquoted, so an
+        // & splits that line.
         var module = await Module(Selection());
 
         module.TargetFolder = folder;
 
-        module.Validate().ErrorMessage.Should().Contain("! % or ^");
+        module.Validate().ErrorMessage.Should().Contain("& ! % or ^");
         module.DestinationFolder.Should().BeNull();
     }
 
     [Theory]
-    [InlineData(@"E:\Art & AI")]
     [InlineData(@"E:\My AI")]
-    public async Task An_install_folder_with_an_ampersand_or_space_is_fine(string folder)
+    [InlineData(@"E:\AI-#2 (new)")]
+    public async Task An_install_folder_with_spaces_and_ordinary_punctuation_is_fine(string folder)
     {
         var module = await Module(Selection());
 

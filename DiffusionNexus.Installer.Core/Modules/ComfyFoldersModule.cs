@@ -349,8 +349,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         UseOwnOutputFolder, OutputFolder,
         blank: "Choose an output folder, or turn off \"Use my own output folder\".",
         notFull: @"Enter the full path of the output folder, for example D:\Renders.",
-        // --output-directory is written unquoted unless the path holds a space.
-        carrierProblem: folder => FolderInput.BreaksLauncher(folder, quoted: false)
+        carrierProblem: folder => FolderInput.BreaksLauncher(folder)
             ? "ComfyUI's start script cannot pass & ! % or ^ in a folder name. Choose a folder without them."
             : null);
 

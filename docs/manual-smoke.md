@@ -127,7 +127,7 @@ the catalog reaches those lists correctly.
    "already exists and is not empty" message shows, and Next stays disabled. Type `AI`.
    **Expect:** "Enter the full path of the install folder…", no "Will be created" line, and the
    output switch's off hint names no default folder. Type `E:\AI 100%`. **Expect:** "The start
-   scripts cannot work in a folder whose path contains ! % or ^…".
+   scripts cannot work in a folder whose path contains & ! % or ^…".
 5. Click Browse. **Expect:** a native folder dialog opens. Dismiss it. **Expect:** the field is
    unchanged and nothing crashes.
 6. Pick Krea-2-Turbo. **Expect:** after Location comes a Content screen showing ONLY the

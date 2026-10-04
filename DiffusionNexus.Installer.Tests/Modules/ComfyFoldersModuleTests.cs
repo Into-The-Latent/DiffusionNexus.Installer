@@ -276,6 +276,23 @@ public class ComfyFoldersModuleTests
         module.Validate().IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_folder_named_after_the_repository_twice_still_guards_the_real_install()
+    {
+        // SDK 2.1.0 strips a trailing "ComfyUI" twice (orchestrator, then the clone step), so
+        // E:\AI\ComfyUI\ComfyUI installs into E:\AI\ComfyUI.
+        var module = Module();
+        var selection = Selection(RepositoryType.ComfyUI);
+        selection.Workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(selection);
+        selection.TargetFolder = @"E:\AI\ComfyUI\ComfyUI";
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = @"E:\AI\ComfyUI\renders";
+
+        module.DefaultOutputFolder.Should().Be(@"E:\AI\ComfyUI\output");
+        module.OutputFolderProblem.Should().Contain(@"inside the ComfyUI install (E:\AI\ComfyUI)");
+    }
+
     [Theory]
     [InlineData("AI")]
     [InlineData(@"E:\AI!new")]
