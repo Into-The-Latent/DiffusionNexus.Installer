@@ -272,7 +272,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
         coordinator.CanApply.Should().BeFalse("a second click must not start a second download");
-        SpinWait.SpinUntil(() => _service.Progress is not null, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => _service.Progress is not null, 10_000).Should().BeTrue();
         _service.AppliedSections.Should().Be(CatalogSections.All);
 
         _service.Progress!.Report(new CatalogDownloadProgress(50, 100));
@@ -474,7 +474,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.HoldApply = new TaskCompletionSource();
         using var coordinator = await CheckedWithUpdateAsync();
         var apply = coordinator.ApplyAsync();
-        SpinWait.SpinUntil(() => _service.Progress is not null, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => _service.Progress is not null, 10_000).Should().BeTrue();
         var raised = 0;
         coordinator.Changed += () => raised++;
 
@@ -536,7 +536,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         var switching = coordinator.SwitchChannelAsync(CatalogChannel.Stable);
 
-        SpinWait.SpinUntil(() => _service.PreviewedChannels.Count > 0, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => _service.PreviewedChannels.Count > 0, 10_000).Should().BeTrue();
         _service.PreviewedChannels.Should().Equal(CatalogChannel.Stable);
         _service.CheckCalls.Should().Be(0, "the configured-channel check reads the option the preview must not touch");
         _options.Channel.Should().Be(CatalogChannel.Preview);

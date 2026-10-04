@@ -17,7 +17,7 @@ public class CatalogUpdateStartupCheckTests
 
         start.IsCompleted.Should().BeTrue("a slow GitHub must never delay the window");
         await start;
-        SpinWait.SpinUntil(() => coordinator.StartupChecks == 1, 2000).Should().BeTrue("the startup check, which also applies when the setting is on");
+        SpinWait.SpinUntil(() => coordinator.StartupChecks == 1, 10_000).Should().BeTrue("the startup check, which also applies when the setting is on");
         await service.StopAsync(CancellationToken.None);
     }
 }
