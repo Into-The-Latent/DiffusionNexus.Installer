@@ -94,11 +94,27 @@ the catalog reaches those lists correctly.
    models, workflows) appears.
 2. Pick Blanck-ComfyUI. **Expect:** the Install location panel says "Where the software gets
    installed" and, once a folder is typed, a grey "Will be created: <folder>\ComfyUI" line under
-   the box. The folders panel shows only the Output folder box, empty, with grey
-   `<folder>\ComfyUI\output` text inside, and below it a full-width closed "Advanced settings · custom model folders"
-   bar. No "saved model folders" checkbox, no library box outside Advanced. Click the bar.
-   **Expect:** it opens with the Model library folder box first (grey `<folder>\ComfyUI\models`
-   inside when empty), the overwrite checkbox (only when a library is set), 21 folder-name boxes
+   the box. Below it come two separate panels, "Output folder" and "Model folder" (issue #27),
+   each with its own switch; with nothing saved both switches are off and neither panel shows a
+   box; the output switch's off hint names `<folder>\ComfyUI\output`. Turn "Use my own output
+   folder" on. **Expect:** an empty box saying "Choose a folder…" and Browse; Next is disabled and
+   "Choose an output folder, or turn off…" shows in red right under the box (not under the
+   buttons) until a folder is typed. Type `Renders`. **Expect:** "Enter the full path…". Type
+   `D:\Art&Out`. **Expect:** the start-script message. Type `D:\Renders|old`. **Expect:** "A
+   Windows folder name cannot contain…". Type `<folder>\ComfyUI\renders`. **Expect:** "This
+   folder is inside the ComfyUI install…". In Explorer, right-click a real folder, Copy as path,
+   and paste it with its quotes. **Expect:** no message, Next enabled. Type a real folder ending in `\`, press
+   Next, cancel the wizard and pick Blanck-ComfyUI again. **Expect:** the output switch is on with
+   that folder, without the trailing `\`. Turn it off. **Expect:** the box hides and the hint says
+   the folder will be forgotten when you continue. Cancel and pick again: the switch is still on
+   (nothing was saved). Turn it off, press Next, cancel, pick again: the switch is off. Turn "Use
+   my own model folder" on. **Expect:** a "Choose your model library folder" box right under the
+   switch with its red message under it and Next disabled, then a full-width closed "Advanced
+   settings · custom model folders" bar. No "saved model folders" checkbox. Type `D:\AI #2\Models`.
+   **Expect:** "ComfyUI's model paths file cannot hold a space followed by #…". Type a real
+   library folder. **Expect:** the message goes and an "Overwrite an existing
+   extra_model_paths.yaml" checkbox shows under the box, outside Advanced. Click the bar.
+   **Expect:** it opens with 21 folder-name boxes
    prefilled with ComfyUI's standard names (or your saved custom ones), "Reset to standard", and
    an empty "Additional folders" list with "+ Add folder". Type `MyLoras` into LoRAs, press Next,
    then Back. **Expect:** the closed line now says "custom folders in use". Cancel the wizard and

@@ -15,9 +15,10 @@ using Xunit;
 namespace DiffusionNexus.Installer.Tests.Components;
 
 /// <summary>
-/// The folders page shows the output folder and the "use my own model folder" switch. Only with
-/// the switch on does the model library appear, and then behind an "Advanced" toggle that is
-/// closed by default (issue #15).
+/// The folders page shows two panels (issue #27): the output folder behind its own "use my own
+/// output folder" switch, and the "use my own model folder" switch. Only with that switch on does
+/// the model library box appear, right under it, with the per-type names and additional folders
+/// behind an "Advanced" toggle that is closed by default (issue #15).
 /// </summary>
 public class ComfyFoldersPanelTests : BunitContext
 {
@@ -44,26 +45,33 @@ public class ComfyFoldersPanelTests : BunitContext
             .Add(x => x.Changed, EventCallback.Factory.Create(this, () => changed?.Invoke())));
 
     [Fact]
-    public async Task Only_the_output_folder_shows_until_advanced_is_opened()
+    public async Task With_the_model_switch_on_the_library_box_shows_and_the_rest_waits_in_advanced()
     {
         var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models", DefaultLorasFolder = "Lora" }));
 
         cut.Markup.Should().NotContain("saved model folder");
         cut.FindAll("[data-folder-key]").Should().BeEmpty("the per-type list is advanced");
-        cut.FindAll("[data-role='library']").Should().BeEmpty("the model library moved into advanced");
-        cut.FindAll(".checkbox").Should().BeEmpty("the overwrite choice is advanced too");
-        cut.FindAll(".path-row input").Should().ContainSingle("output only");
+        cut.Find("[data-role='overwrite-yaml']").Should().NotBeNull(
+            "overwriting the YAML changes the install, so it sits with the library, not out of sight");
+        cut.FindAll(".path-row input").Should().ContainSingle("only the library box, under its switch")
+            .Which.GetAttribute("data-role").Should().Be("library");
         cut.Find(".advanced-toggle").TextContent.Should().Contain("Advanced");
     }
 
     [Fact]
-    public async Task The_output_box_shows_the_install_default_as_grey_text()
+    public async Task The_output_box_asks_for_a_folder_and_the_off_hint_names_the_install_default()
     {
-        var cut = RenderPanel(await Module());
+        // On needs a folder, so the box must not show the default as grey text: that reads as the
+        // value an empty box gets. The default belongs to off, so off names it.
+        var module = await Module();
+        var cut = RenderPanel(module);
+        cut.Find("[data-role='output-panel'] .switch-hint").TextContent.Should().Contain(@"E:\Installer\9\ComfyUI\output");
+
+        cut.Find("input[data-role='use-output']").Change(true);
 
         var output = cut.Find("[data-role='output']");
         output.GetAttribute("value").Should().BeNullOrEmpty();
-        output.GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\output");
+        output.GetAttribute("placeholder").Should().StartWith("Choose a folder");
     }
 
     [Fact]
@@ -75,21 +83,23 @@ public class ComfyFoldersPanelTests : BunitContext
         var custom = RenderPanel(await Module(new UserSettings { DefaultLorasFolder = "Lora" }, on: true));
         custom.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
 
+        // The library sits under the switch now, in plain sight; the tag is for what Advanced hides.
         var library = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
-        library.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
+        library.Find(".advanced-toggle").TextContent.Should().NotContain("custom folders in use");
     }
 
     [Fact]
-    public async Task The_library_box_is_first_in_advanced_and_shows_the_install_default_as_grey_text()
+    public async Task The_library_box_sits_under_the_switch_outside_advanced_and_asks_for_a_folder()
     {
+        // On needs a library, and a required box cannot hide in a closed section. Like the output
+        // box it asks for a folder instead of showing the default, which belongs to off.
         var module = await Module(on: true);
         var changed = false;
         var cut = RenderPanel(module, () => changed = true);
-        cut.Find(".advanced-toggle").Click();
 
-        var library = cut.Find(".advanced input");
-        library.GetAttribute("data-role").Should().Be("library");
-        library.GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\models");
+        var library = cut.Find("[data-role='library']");
+        library.Closest(".advanced").Should().BeNull();
+        library.GetAttribute("placeholder").Should().StartWith("Choose your model library");
 
         library.Input(@"D:\Models");
 
@@ -108,7 +118,6 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.Find("[data-folder-key='checkpoints']").GetAttribute("value").Should().Be("checkpoints");
         cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Reset to standard");
         cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "+ Add folder");
-        cut.Find(".checkbox").TextContent.Should().Contain("Overwrite");
     }
 
     [Fact]
@@ -174,8 +183,7 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.FindAll(".advanced-toggle").Should().BeEmpty("off means ComfyUI's own folders: nothing to configure");
         cut.FindAll("[data-role='library']").Should().BeEmpty();
         cut.FindAll("[data-folder-key]").Should().BeEmpty();
-        cut.FindAll("[data-role='output']").Should().ContainSingle("the output folder is not a model folder");
-        cut.Find(".switch-text").TextContent.Should().Contain("Off:").And.Contain("extra_model_paths.yaml", "the user is told what off means")
+        cut.Find("[data-role='model-panel'] .switch-hint").TextContent.Should().Contain("Off:").And.Contain("extra_model_paths.yaml", "the user is told what off means")
             .And.NotContain("library folder (");
     }
 
@@ -185,32 +193,36 @@ public class ComfyFoldersPanelTests : BunitContext
         var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
 
         cut.Find("input[data-role='use-library']").HasAttribute("checked").Should().BeTrue();
-        cut.Find(".advanced-toggle").TextContent.Should().Contain("custom folders in use");
+        cut.Find("[data-role='library']").GetAttribute("value").Should().Be(@"D:\Models");
     }
 
     [Fact]
-    public async Task Turning_the_switch_off_says_the_typed_library_will_not_be_remembered()
+    public async Task Turning_the_switch_off_says_the_typed_library_is_forgotten_on_continue()
     {
+        // Forgotten on Next (PersistAsync), not on the flip: cancelling keeps the saved folder.
         var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
 
         cut.Find("input[data-role='use-library']").Change(false);
 
-        cut.Find(".switch-text").TextContent.Should().Contain(@"D:\Models").And.Contain("will not be remembered");
+        cut.Find("[data-role='model-panel'] .switch-hint").TextContent.Should().Contain(@"D:\Models")
+            .And.Contain("library folder").And.Contain("forgotten when you continue");
     }
 
     [Fact]
-    public async Task Turning_the_switch_on_reveals_the_advanced_section_and_raises_Changed()
+    public async Task Turning_the_switch_on_reveals_the_library_box_and_advanced_and_raises_Changed()
     {
         var module = await Module();
         var changed = false;
         var cut = RenderPanel(module, () => changed = true);
+        cut.Find("[data-role='model-panel'] .switch-hint").TextContent.Should().Contain(@"E:\Installer\9\ComfyUI\models",
+            "off names the folders it falls back to");
 
         cut.Find("input[data-role='use-library']").Change(true);
 
         module.UseModelLibraryFolder.Should().BeTrue();
         changed.Should().BeTrue();
-        cut.Find(".advanced-toggle").Click();
-        cut.Find("[data-role='library']").GetAttribute("placeholder").Should().Be(@"E:\Installer\9\ComfyUI\models");
+        cut.FindAll("[data-role='library']").Should().ContainSingle();
+        cut.FindAll(".advanced-toggle").Should().ContainSingle();
     }
 
     [Fact]
@@ -224,6 +236,130 @@ public class ComfyFoldersPanelTests : BunitContext
 
         module.UseModelLibraryFolder.Should().BeFalse();
         cut.FindAll(".advanced-toggle").Should().BeEmpty();
+        cut.FindAll("[data-role='library']").Should().BeEmpty();
         module.ModelBaseFolder.Should().Be(@"D:\Models");
+    }
+
+    // ---- Two panels and the output switch (issue #27) ------------------------------------------
+
+    [Fact]
+    public async Task Output_and_model_folder_are_separate_panels_each_with_its_own_switch()
+    {
+        var cut = RenderPanel(await Module());
+
+        var panels = cut.FindAll("section.panel");
+        panels.Should().HaveCount(2);
+        panels[0].GetAttribute("data-role").Should().Be("output-panel");
+        panels[0].QuerySelector("h2")!.TextContent.Should().Be("Output folder");
+        panels[0].QuerySelector("input[data-role='use-output']").Should().NotBeNull();
+        panels[1].GetAttribute("data-role").Should().Be("model-panel");
+        panels[1].QuerySelector("h2")!.TextContent.Should().Be("Model folder");
+        panels[1].QuerySelector("input[data-role='use-library']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Without_a_remembered_output_folder_the_output_switch_is_off_and_the_box_hidden()
+    {
+        var cut = RenderPanel(await Module());
+
+        var toggle = cut.Find("input[data-role='use-output']");
+        toggle.GetAttribute("role").Should().Be("switch");
+        toggle.HasAttribute("checked").Should().BeFalse();
+        cut.FindAll("[data-role='output']").Should().BeEmpty();
+        cut.Find("[data-role='output-panel'] .switch-hint").TextContent.Should().Contain("Off:")
+            .And.Contain("ComfyUI's own output folder");
+    }
+
+    [Fact]
+    public async Task A_remembered_output_folder_starts_the_output_switch_on_with_the_folder_shown()
+    {
+        var cut = RenderPanel(await Module(new UserSettings { OutputFolder = @"D:\Out" }));
+
+        cut.Find("input[data-role='use-output']").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-role='output']").GetAttribute("value").Should().Be(@"D:\Out");
+        cut.Find("input[data-role='use-library']").HasAttribute("checked").Should().BeFalse("the switches are independent");
+    }
+
+    [Fact]
+    public async Task Turning_the_output_switch_on_reveals_the_box_and_raises_Changed()
+    {
+        var module = await Module();
+        var changed = false;
+        var cut = RenderPanel(module, () => changed = true);
+
+        cut.Find("input[data-role='use-output']").Change(true);
+
+        module.UseOwnOutputFolder.Should().BeTrue();
+        changed.Should().BeTrue();
+        cut.FindAll("[data-role='output']").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Turning_the_output_switch_off_hides_the_box_and_says_the_folder_is_forgotten_on_continue()
+    {
+        var module = await Module(new UserSettings { OutputFolder = @"D:\Out" });
+        var cut = RenderPanel(module);
+
+        cut.Find("input[data-role='use-output']").Change(false);
+
+        module.UseOwnOutputFolder.Should().BeFalse();
+        module.OutputFolder.Should().Be(@"D:\Out", "kept for this run");
+        cut.FindAll("[data-role='output']").Should().BeEmpty();
+        cut.Find("[data-role='output-panel'] .switch-hint").TextContent.Should().Contain(@"D:\Out")
+            .And.Contain("output folder (").And.Contain("forgotten when you continue");
+    }
+
+    // ---- Problems next to their box (PR #47 review round 2) ------------------------------------
+
+    [Fact]
+    public async Task An_output_problem_shows_right_under_the_output_box_and_clears_once_answered()
+    {
+        // The page leaves this module out of its list under the buttons, which sits below the
+        // whole model panel and off screen on a short window -- Next greyed with no visible reason.
+        var module = await Module();
+        var cut = RenderPanel(module);
+
+        cut.Find("input[data-role='use-output']").Change(true);
+
+        var problem = cut.Find("[data-role='output-panel'] .validation-error");
+        problem.TextContent.Should().Contain("Choose an output folder");
+        problem.PreviousElementSibling!.ClassList.Should().Contain("path-row", "it sits under the box it is about");
+
+        cut.Find("[data-role='output']").Input("Renders");
+        cut.Find("[data-role='output-panel'] .validation-error").TextContent.Should().Contain("full path");
+
+        cut.Find("[data-role='output']").Input(@"D:\Renders");
+        cut.FindAll(".validation-error").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_library_problem_shows_right_under_the_library_box()
+    {
+        var cut = RenderPanel(await Module(on: true));
+
+        var problem = cut.Find("[data-role='model-panel'] .validation-error");
+        problem.TextContent.Should().Contain("model library");
+        problem.PreviousElementSibling!.QuerySelector("[data-role='library']").Should().NotBeNull();
+        cut.FindAll("[data-role='output-panel'] .validation-error").Should().BeEmpty("the output switch is off");
+    }
+
+    // ---- Accessibility (PR #47 review round 2) -------------------------------------------------
+
+    [Theory]
+    [InlineData("use-output", "Use my own output folder")]
+    [InlineData("use-library", "Use my own model folder")]
+    public async Task A_switch_is_named_by_its_label_alone_and_described_by_its_hint(string role, string label)
+    {
+        // Everything inside the <label> becomes the control's accessible name. With the hint in
+        // there, a screen reader read the whole paragraph as the name -- a new one on every flip.
+        var cut = RenderPanel(await Module(new UserSettings { OutputFolder = @"D:\Out" }));
+
+        var input = cut.Find($"input[data-role='{role}']");
+        input.Closest("label")!.TextContent.Trim().Should().Be(label);
+
+        var hintId = input.GetAttribute("aria-describedby");
+        hintId.Should().NotBeNullOrEmpty();
+        cut.Find($"#{hintId}").ClassList.Should().Contain("switch-hint");
+        cut.FindAll($"#{hintId}").Should().ContainSingle("the id must be unique on the page");
     }
 }

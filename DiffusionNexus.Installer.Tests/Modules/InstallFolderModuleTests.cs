@@ -43,6 +43,29 @@ public class InstallFolderModuleTests
     }
 
     [Fact]
+    public async Task A_null_install_folder_in_the_settings_file_loads_as_none_chosen()
+    {
+        // System.Text.Json loads "DefaultTargetInstallFolder": null as null.
+        var module = await Module(Selection(), remembered: null!);
+
+        module.TargetFolder.Should().BeEmpty();
+        module.DestinationFolder.Should().BeNull();
+        module.Validate().ErrorMessage.Should().Be("Choose a folder to install into.");
+    }
+
+    [Fact]
+    public async Task A_path_pasted_with_Copy_as_path_quotes_is_the_same_folder()
+    {
+        var selection = Selection();
+        var module = await Module(selection);
+
+        module.TargetFolder = @" ""E:\Installer\9\"" ";
+
+        selection.TargetFolder.Should().Be(@"E:\Installer\9");
+        module.DestinationFolder.Should().Be(@"E:\Installer\9\ComfyUI");
+    }
+
+    [Fact]
     public async Task The_selection_and_the_destination_use_the_trimmed_folder()
     {
         // Review finding: a pasted trailing space made "Will be created" show one folder while
