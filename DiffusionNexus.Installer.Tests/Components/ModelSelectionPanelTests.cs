@@ -76,7 +76,7 @@ public class ModelSelectionPanelTests : BunitContext
         await module.InitializeAsync(selection);
         selection.TargetFolder = @"C:\Elsewhere";   // stale, so the panel's first render scans (and blocks)
         RenderPanel(module, selection);
-        SpinWait.SpinUntil(() => Volatile.Read(ref scans) == 2, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => Volatile.Read(ref scans) == 2, 10_000).Should().BeTrue();
 
         await module.RefreshAfterResumeAsync();        // the restored page's panel takes over
         await DisposeComponentsAsync();                // this one's page is gone

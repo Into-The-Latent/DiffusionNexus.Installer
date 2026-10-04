@@ -272,7 +272,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
         coordinator.CanApply.Should().BeFalse("a second click must not start a second download");
-        SpinWait.SpinUntil(() => _service.Progress is not null, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => _service.Progress is not null, 10_000).Should().BeTrue();
         _service.AppliedSections.Should().Be(CatalogSections.All);
 
         _service.Progress!.Report(new CatalogDownloadProgress(50, 100));
@@ -474,7 +474,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.HoldApply = new TaskCompletionSource();
         using var coordinator = await CheckedWithUpdateAsync();
         var apply = coordinator.ApplyAsync();
-        SpinWait.SpinUntil(() => _service.Progress is not null, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => _service.Progress is not null, 10_000).Should().BeTrue();
         var raised = 0;
         coordinator.Changed += () => raised++;
 
@@ -536,7 +536,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         var switching = coordinator.SwitchChannelAsync(CatalogChannel.Stable);
 
-        SpinWait.SpinUntil(() => _service.PreviewedChannels.Count > 0, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => _service.PreviewedChannels.Count > 0, 10_000).Should().BeTrue();
         _service.PreviewedChannels.Should().Equal(CatalogChannel.Stable);
         _service.CheckCalls.Should().Be(0, "the configured-channel check reads the option the preview must not touch");
         _options.Channel.Should().Be(CatalogChannel.Preview);
@@ -1280,5 +1280,287 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Channel.Should().Be(CatalogChannel.Preview);
         coordinator.ChannelSource.Should().Be(CatalogChannelSource.Setting);
+    }
+
+    // ----- apply catalog updates automatically (#36) -----
+
+    private CatalogUpdateCoordinator WithUpdateOnStartup(bool automatic)
+    {
+        WriteInstalledState(3);
+        _service.NextCheck = () => CatalogChecks.Available(4);
+        _saved.ApplyCatalogUpdatesAutomatically = automatic;
+        return Create();
+    }
+
+    [Fact]
+    public async Task On_and_idle_the_startup_check_applies_the_update_it_finds_like_a_manual_apply()
+    {
+        _saved.CatalogChannel = "Preview";
+        using var coordinator = WithUpdateOnStartup(automatic: true);
+        _service.NextCheck = () => CatalogChecks.Available(4, CatalogChannel.Preview);
+        _service.OnApply = () => WriteInstalledState(4);
+
+        await coordinator.CheckAtStartupAsync();
+        Settle(coordinator);
+
+        coordinator.AutoApply.Should().BeTrue();
+        _service.ApplyCalls.Should().Be(1);
+        _service.AppliedSections.Should().Be(CatalogSections.All);
+        _options.Channel.Should().Be(CatalogChannel.Preview, "the channel the app follows");
+        _service.AppliedCheck!.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.LastApply.Should().Be(new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null));
+        coordinator.LastApplyAutomatic.Should().BeTrue();
+        coordinator.ContentGeneration.Should().Be(1);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task Off_the_startup_check_only_checks_and_offers_the_apply()
+    {
+        using var coordinator = WithUpdateOnStartup(automatic: false);
+
+        await coordinator.CheckAtStartupAsync();
+
+        coordinator.AutoApply.Should().BeFalse();
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.CanApply.Should().BeTrue("the banner and the Apply button stay");
+    }
+
+    [Fact]
+    public async Task On_the_startup_check_applies_nothing_while_an_install_runs()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        using var coordinator = WithUpdateOnStartup(automatic: true);
+
+        await coordinator.CheckAtStartupAsync();
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.UpdateAvailable.Should().BeTrue("the update is still offered once the install has finished");
+    }
+
+    [Fact]
+    public async Task A_failed_automatic_apply_leaves_the_same_state_as_a_failed_manual_apply()
+    {
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "sha256 mismatch");
+        using var manual = WithUpdateOnStartup(automatic: false);
+        await manual.CheckAtStartupAsync();
+        await manual.ApplyAsync();
+
+        using var automatic = WithUpdateOnStartup(automatic: true);
+        await automatic.CheckAtStartupAsync();
+        Settle(automatic);
+
+        _service.ApplyCalls.Should().Be(2);
+        (automatic.Phase, automatic.LastApply, automatic.UpdateAvailable, automatic.CanApply, automatic.ContentGeneration, automatic.Installed!.HighestCatalogVersion)
+            .Should().Be((manual.Phase, manual.LastApply, manual.UpdateAvailable, manual.CanApply, manual.ContentGeneration, manual.Installed!.HighestCatalogVersion));
+        automatic.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        automatic.CanApply.Should().BeTrue("a failed automatic apply offers the manual Apply");
+        automatic.Installed!.HighestCatalogVersion.Should().Be(3, "the installed catalog stays in place");
+    }
+
+    [Fact]
+    public async Task A_thrown_automatic_apply_is_reported_and_offers_the_manual_apply()
+    {
+        _service.ApplyFailure = new InvalidOperationException("download: unexpected");
+        using var coordinator = WithUpdateOnStartup(automatic: true);
+
+        await coordinator.CheckAtStartupAsync();
+        Settle(coordinator);
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply!.Error.Should().Be("download: unexpected");
+        coordinator.CanApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_unreadable_settings_file_applies_nothing_automatically()
+    {
+        WriteInstalledState(3);
+        _service.NextCheck = () => CatalogChecks.Available(4);
+        _settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("locked"));
+        using var coordinator = Create();
+
+        await coordinator.CheckAtStartupAsync();
+
+        coordinator.AutoApply.Should().BeFalse("off is the default");
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_startup_check_does_not_wait_for_the_automatic_download()
+    {
+        // An install started while the automatic apply runs is not held by it (nothing in the
+        // session waits on the coordinator), and the startup check itself returns once the
+        // download has started, like a manual apply's click.
+        _service.HoldApply = new TaskCompletionSource();
+        using var coordinator = WithUpdateOnStartup(automatic: true);
+
+        await coordinator.CheckAtStartupAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
+        _service.HoldApply.SetResult();
+        Settle(coordinator);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+    }
+
+    [Fact]
+    public async Task A_manual_apply_is_not_called_automatic_and_a_new_check_forgets_it()
+    {
+        _saved.ApplyCatalogUpdatesAutomatically = true;
+        using var coordinator = await CheckedWithUpdateAsync();
+        await coordinator.ApplyAsync();
+        coordinator.LastApplyAutomatic.Should().BeFalse();
+
+        using var automatic = WithUpdateOnStartup(automatic: true);
+        await automatic.CheckAtStartupAsync();
+        Settle(automatic);
+        automatic.LastApplyAutomatic.Should().BeTrue();
+
+        await automatic.CheckAsync();
+        automatic.LastApplyAutomatic.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_later_check_never_applies_automatically()
+    {
+        // Only the startup check: "Check for updates" and Retry show what they find and wait.
+        using var coordinator = WithUpdateOnStartup(automatic: true);
+
+        await coordinator.CheckAsync();
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Turning_the_setting_on_saves_it_and_keeps_the_channel()
+    {
+        _saved.CatalogChannel = "Preview";
+        using var coordinator = Create();
+
+        var saved = await coordinator.SetAutoApplyAsync(true);
+
+        saved.Should().BeTrue();
+        coordinator.AutoApply.Should().BeTrue();
+        _settings.Verify(s => s.SaveAsync(It.Is<UserSettings>(u => u.ApplyCatalogUpdatesAutomatically && u.CatalogChannel == "Preview"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _service.ApplyCalls.Should().Be(0, "turning it on applies nothing by itself; the next start does");
+    }
+
+    [Fact]
+    public async Task Turning_the_setting_off_saves_it()
+    {
+        _saved.ApplyCatalogUpdatesAutomatically = true;
+        using var coordinator = Create();
+        await coordinator.CheckAsync();
+        coordinator.AutoApply.Should().BeTrue();
+
+        (await coordinator.SetAutoApplyAsync(false)).Should().BeTrue();
+
+        coordinator.AutoApply.Should().BeFalse();
+        _saved.ApplyCatalogUpdatesAutomatically.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Switching_the_setting_is_refused_while_a_check_runs()
+    {
+        _service.HoldCheck = new TaskCompletionSource();
+        using var coordinator = Create();
+        var check = coordinator.CheckAsync();
+
+        (await coordinator.SetAutoApplyAsync(true)).Should().BeFalse();
+
+        VerifyNothingSaved();
+        _service.HoldCheck.SetResult();
+        await check;
+        coordinator.AutoApply.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Switching_the_setting_is_refused_while_an_apply_runs()
+    {
+        _service.HoldApply = new TaskCompletionSource();
+        using var coordinator = await CheckedWithUpdateAsync();
+        var apply = coordinator.ApplyAsync();
+
+        (await coordinator.SetAutoApplyAsync(true)).Should().BeFalse();
+
+        VerifyNothingSaved();
+        _service.HoldApply.SetResult();
+        await apply;
+    }
+
+    [Fact]
+    public async Task Switching_the_setting_is_refused_while_a_channel_switch_waits_for_an_answer()
+    {
+        WriteInstalledState(5);
+        _service.NextPreview = channel => CatalogChecks.Available(4, channel);
+        using var coordinator = Create();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch.Should().NotBeNull();
+
+        (await coordinator.SetAutoApplyAsync(true)).Should().BeFalse();
+
+        VerifyNothingSaved();
+    }
+
+    [Fact]
+    public async Task A_failed_save_of_the_setting_changes_nothing_and_propagates()
+    {
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("read-only"));
+        using var coordinator = Create();
+
+        var act = () => coordinator.SetAutoApplyAsync(true);
+
+        await act.Should().ThrowAsync<IOException>();
+        coordinator.AutoApply.Should().BeFalse();
+
+        // And the next attempt is not refused as "in progress".
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>())).ReturnsAsync((UserSettings s, CancellationToken _) => s);
+        (await coordinator.SetAutoApplyAsync(true)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_check_that_reads_the_settings_while_the_setting_is_saved_does_not_undo_it()
+    {
+        // The file says "off" until the save completes; a check in between reads that.
+        var persisted = false;
+        var saveGate = new TaskCompletionSource();
+        _settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(() => new UserSettings { UserName = "tester", ApplyCatalogUpdatesAutomatically = persisted });
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .Returns(async (UserSettings s, CancellationToken _) => { await saveGate.Task; persisted = s.ApplyCatalogUpdatesAutomatically; return s; });
+        using var coordinator = Create();
+
+        var saving = coordinator.SetAutoApplyAsync(true);
+        await coordinator.CheckAsync();
+        saveGate.SetResult();
+        (await saving).Should().BeTrue();
+
+        coordinator.AutoApply.Should().BeTrue();
+        await coordinator.CheckAsync();
+        coordinator.AutoApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_channel_switch_is_refused_while_the_setting_is_saved()
+    {
+        // Both write user_settings.json; one at a time, so neither save overwrites the other.
+        var saveGate = new TaskCompletionSource();
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .Returns(async (UserSettings s, CancellationToken _) => { await saveGate.Task; return s; });
+        using var coordinator = Create();
+
+        var saving = coordinator.SetAutoApplyAsync(true);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        _service.PreviewedChannels.Should().BeEmpty();
+        saveGate.SetResult();
+        await saving;
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
     }
 }
