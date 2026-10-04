@@ -221,13 +221,13 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // apply block its caller for the length of an unrelated network check.
             if (_inFlight is { IsCompleted: false })
             {
-                _logger.LogInformation("Catalog apply refused: an apply or check is already in flight");
+                _logger.LogInformation("Catalog apply{Automatic} refused: an apply or check is already in flight", automatic ? " (automatic, setting on)" : string.Empty);
                 return Task.CompletedTask;
             }
             if (_switching || !CanApply)
             {
-                _logger.LogInformation("Catalog apply refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}",
-                    Phase, UpdateAvailable, InstallRunning, _switching);
+                _logger.LogInformation("Catalog apply{Automatic} refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}",
+                    automatic ? " (automatic, setting on)" : string.Empty, Phase, UpdateAvailable, InstallRunning, _switching);
                 return Task.CompletedTask;
             }
             if (automatic) _logger.LogInformation("Applying the catalog update automatically (setting on)");
@@ -700,7 +700,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         {
             // Not "following Stable": a channel a switch already latched stays. The line below
             // (ApplyResolution) names the channel when this read decides it.
-            _logger.LogWarning(ex, "User settings could not be read; reading them again on the next check");
+            _logger.LogWarning(ex, "User settings could not be read; read again on the next check, switch or app update check. A startup check that cannot read them applies nothing by itself");
             readSucceeded = false;
         }
 

@@ -73,4 +73,17 @@ public class JukeboxScriptTests
         // leak is silent.
         Script().Should().Contain("dispose()").And.Contain("removeEventListener('scroll'").And.Contain("resize.disconnect()");
     }
+
+    [Fact]
+    public void A_changed_tile_count_is_reported()
+    {
+        // Welcome rebuilds the strip when a catalog apply lands while it is shown (#36). The
+        // track's own box is set by the grid, so more or fewer tiles change its scrollWidth
+        // without resizing it: the ResizeObserver stays silent and an arrow stays disabled in
+        // front of a tile it could reach. Watching the track's children reports it.
+        var script = Script();
+        script.Should().MatchRegex(@"new MutationObserver\(report\)");
+        script.Should().MatchRegex(@"\.observe\(track,\s*\{\s*childList:\s*true\s*\}\)");
+        script.Should().Contain("tiles.disconnect()");
+    }
 }

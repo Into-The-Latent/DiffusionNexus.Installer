@@ -158,13 +158,20 @@
         await LoadAsync();
     }
 
+    // Which read is the newest. A read still running when an apply lands starts a second one, and
+    // the first can finish last: only the newest publishes.
+    private int _loads;
+
     private async Task LoadAsync()
     {
         _readUnder = Catalog.ContentGeneration;
+        var load = ++_loads;
         try
         {
             // The old strip stays on screen until the new one is built: no flash of "Loading".
-            _software = await Builder.BuildAsync();
+            var software = await Builder.BuildAsync();
+            if (load != _loads) return;
+            _software = software;
 
             // Read after the build: the catalog populates diagnostics during the load the build
             // triggers, so asking earlier reports on a catalog that has not been resolved yet.
@@ -175,7 +182,7 @@
         {
             // A catalog failure must say why the page is empty rather than take it down with an
             // unhandled exception out of the component lifecycle.
-            _loadError = ex.Message;
+            if (load == _loads) _loadError = ex.Message;
         }
     }
 

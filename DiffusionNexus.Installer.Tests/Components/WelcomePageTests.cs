@@ -508,6 +508,36 @@ public class WelcomePageTests : BunitContext
     }
 
     [Fact]
+    public async Task A_read_that_finishes_after_a_newer_one_does_not_replace_it()
+    {
+        // The page's first read is still running when an apply lands; the second read sees the
+        // new content and finishes first. The first must not put the old strip back for good.
+        var first = new TaskCompletionSource<IReadOnlyList<InstallationConfiguration>>();
+        var source = new Mock<IWorkloadSource>();
+        source.SetupSequence(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .Returns(first.Task)
+              .ReturnsAsync([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"), Workload(RepositoryType.Fooocus, "Fooocus")]);
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = Render<Welcome>();
+        _signals.Catalog.ContentGeneration = 1;
+        _signals.Catalog.RaiseChanged();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+
+        // The first read ends OnInitializedAsync, which renders once more: wait for that render.
+        var renders = cut.RenderCount;
+        await cut.InvokeAsync(() => first.SetResult([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo")]));
+        cut.WaitForState(() => cut.RenderCount > renders);
+
+        cut.FindAll(".software-card").Should().HaveCount(2);
+        cut.Markup.Should().Contain("Fooocus");
+    }
+
+    [Fact]
     public async Task Unsubscribes_from_the_coordinator_on_dispose()
     {
         Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
