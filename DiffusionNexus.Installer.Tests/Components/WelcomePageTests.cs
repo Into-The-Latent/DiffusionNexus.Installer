@@ -538,6 +538,33 @@ public class WelcomePageTests : BunitContext
     }
 
     [Fact]
+    public async Task A_read_that_fails_after_a_newer_one_does_not_cover_it_with_its_error()
+    {
+        var first = new TaskCompletionSource<IReadOnlyList<InstallationConfiguration>>();
+        var source = new Mock<IWorkloadSource>();
+        source.SetupSequence(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .Returns(first.Task)
+              .ReturnsAsync([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo")]);
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = Render<Welcome>();
+        _signals.Catalog.ContentGeneration = 1;
+        _signals.Catalog.RaiseChanged();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+
+        var renders = cut.RenderCount;
+        await cut.InvokeAsync(() => first.SetException(new IOException("catalog moved away mid-read")));
+        cut.WaitForState(() => cut.RenderCount > renders);
+
+        cut.FindAll(".gallery-error").Should().BeEmpty();
+        cut.FindAll(".software-card").Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task Unsubscribes_from_the_coordinator_on_dispose()
     {
         Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));

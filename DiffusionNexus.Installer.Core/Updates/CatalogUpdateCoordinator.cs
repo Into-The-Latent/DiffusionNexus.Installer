@@ -221,13 +221,13 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // apply block its caller for the length of an unrelated network check.
             if (_inFlight is { IsCompleted: false })
             {
-                _logger.LogInformation("Catalog apply{Automatic} refused: an apply or check is already in flight", automatic ? " (automatic, setting on)" : string.Empty);
+                _logger.LogInformation("Catalog apply refused: an apply or check is already in flight, automatic {Automatic}", automatic);
                 return Task.CompletedTask;
             }
             if (_switching || !CanApply)
             {
-                _logger.LogInformation("Catalog apply{Automatic} refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}",
-                    automatic ? " (automatic, setting on)" : string.Empty, Phase, UpdateAvailable, InstallRunning, _switching);
+                _logger.LogInformation("Catalog apply refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}, automatic {Automatic}",
+                    Phase, UpdateAvailable, InstallRunning, _switching, automatic);
                 return Task.CompletedTask;
             }
             if (automatic) _logger.LogInformation("Applying the catalog update automatically (setting on)");
