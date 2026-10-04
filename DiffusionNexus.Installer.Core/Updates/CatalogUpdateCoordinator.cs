@@ -198,9 +198,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     {
         await CheckAsync(ct).ConfigureAwait(false);
 
-        bool start;
-        lock (_gate) start = AutoApply && UpdateAvailable && Phase == CatalogUpdatePhase.Checked;
-        if (!start) return;
+        bool wanted;
+        lock (_gate) wanted = AutoApply && UpdateAvailable;
+        if (!wanted) return;
 
         if (InstallRunning)
         {
@@ -212,8 +212,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
         // Not awaited, and not under the caller's token: this returns once the download has
         // started, and the apply reports through Changed like a manual one. StartApply decides
-        // again under the lock, so a manual click or an install in between wins.
-        _logger.LogInformation("Applying the catalog update automatically (setting on)");
+        // under the lock and logs why it refuses, so a manual click, a second check or an install
+        // in between wins and the log says which.
+        _logger.LogInformation("Starting the catalog update automatically (setting on)");
         _ = StartApply(automatic: true, CancellationToken.None);
     }
 
