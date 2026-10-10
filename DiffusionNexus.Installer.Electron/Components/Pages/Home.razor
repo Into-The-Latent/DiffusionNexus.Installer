@@ -70,6 +70,34 @@
         {
             <p class="validation-error">@_channelError</p>
         }
+
+        @* #36: off by default; updating stays the user's choice unless they make it once, here.
+           Keyed like the radios: a refused or failed save renders the same "checked" as before,
+           and only a rebuild puts the toggle back where the setting is. Only the label text sits
+           inside the <label> (accessible name); the hint is its description. *@
+        <label class="switch auto-apply-switch" @key="_autoApplyGeneration">
+            <input type="checkbox" role="switch" data-role="auto-apply" aria-describedby="auto-apply-hint"
+                   checked="@Catalog.AutoApply"
+                   disabled="@(CatalogBusy || _busy || _switchBusy || _autoApplyBusy || SwitchPending)"
+                   @onchange="SetAutoApplyAsync" />
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="switch-text">Apply catalog updates automatically</span>
+        </label>
+        <p class="panel-hint switch-hint" id="auto-apply-hint">
+            @if (Catalog.AutoApply)
+            {
+                <text>When the installer starts and finds a catalog update on @Catalog.Channel, it applies it without asking. Never while an install is running; then the update waits here.</text>
+            }
+            else
+            {
+                <text>A catalog update the installer finds is shown here, and you apply it.</text>
+            }
+        </p>
+
+        @if (_autoApplyError is not null)
+        {
+            <p class="validation-error auto-apply-error">@_autoApplyError</p>
+        }
     </section>
 
     <section class="catalog">
@@ -120,6 +148,12 @@
                 finished &mdash; applying it now would restart the app mid-install and leave that
                 folder unfinished.
             </p>
+        }
+
+        @* After an automatic apply the user never saw the list before it landed: show what changed. *@
+        @if (Catalog.Phase == CatalogUpdatePhase.Applied && Catalog.LastApplyAutomatic && Catalog.LastCheck is { } applied)
+        {
+            @ChangeList(applied)
         }
 
         @if (Catalog.UpdateAvailable && Catalog.LastCheck is { } available && Catalog.Phase != CatalogUpdatePhase.Checking)
@@ -173,6 +207,9 @@
     private bool _switchBusy;
     private string? _channelError;
     private int _radioGeneration;
+    private bool _autoApplyBusy;
+    private string? _autoApplyError;
+    private int _autoApplyGeneration;
 
     private static bool ElectronActive => ElectronHost.IsActive;
 
@@ -292,6 +329,32 @@
         }
 
         await AppUpdates.CheckAsync();
+    }
+
+    private async Task SetAutoApplyAsync(ChangeEventArgs e)
+    {
+        var on = e.Value is true;
+        _autoApplyError = null;
+        _autoApplyBusy = true;
+        try
+        {
+            if (!await Catalog.SetAutoApplyAsync(on))
+            {
+                _autoApplyError = "The setting was not changed: a catalog check, update or channel switch is in progress. Try again when it has finished.";
+            }
+        }
+        catch (Exception ex)
+        {
+            // Under the switch, like a failed channel save, rather than the Blazor error banner.
+            _autoApplyError = $"The setting could not be saved: {ex.Message}";
+        }
+        finally
+        {
+            _autoApplyBusy = false;
+        }
+
+        // Refused or failed: the toggle shows what the user clicked, not what is saved.
+        if (Catalog.AutoApply != on) _autoApplyGeneration++;
     }
 
     // Saves nothing. The new key rebuilds the radios from the channel in effect.
@@ -418,7 +481,12 @@
         {
             if (Catalog.PendingSwitch is { } pending) return $"Switching to {pending.Target} waits for your answer above.";
             if (Catalog.Phase == CatalogUpdatePhase.Checking) return "Checking the catalog…";
-            if (Catalog.Phase == CatalogUpdatePhase.Applied) return $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion}.";
+            if (Catalog.Phase == CatalogUpdatePhase.Applied)
+            {
+                return Catalog.LastApplyAutomatic
+                    ? $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion} automatically."
+                    : $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion}.";
+            }
             return Catalog.LastCheck switch
             {
                 null => "Not checked yet.",

@@ -44,11 +44,16 @@
 
     private string? Attention => (Catalog.UpdateAvailable, AppAttention) switch
     {
-        (true, { } app) => $"Catalog update available and {char.ToLowerInvariant(app[0])}{app[1..]}",
-        (true, null) => "Catalog update available",
+        (true, { } app) => $"{CatalogAttention} and {char.ToLowerInvariant(app[0])}{app[1..]}",
+        (true, null) => CatalogAttention,
         (false, { } app) => app,
         _ => null,
     };
+
+    // The automatic apply (#36) runs without a click, so while it does the hover does not ask for one.
+    private string CatalogAttention => Catalog.Phase == CatalogUpdatePhase.Applying
+        ? "Catalog update being applied"
+        : "Catalog update available";
 
     // Lit from the moment the app update is found: electron-updater downloads it straight away,
     // and that can take minutes the user would otherwise spend not knowing.

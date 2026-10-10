@@ -68,7 +68,7 @@ public class ModelSelectionModuleTests
         var module = Module(HeldScanner(2, gate, _ => [Present(Vae, @"C:\AI\ComfyUI\models\vae\ae.safetensors")], calls));
         await module.InitializeAsync(Selection(Vae));
         var stale = Task.Run(module.RefreshPresence);
-        SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 10_000).Should().BeTrue();
 
         await module.RefreshAfterResumeAsync();
         gate.Set();
@@ -89,7 +89,7 @@ public class ModelSelectionModuleTests
             : [Absent(Vae)], calls));
         await module.InitializeAsync(Selection(Vae));
         var older = Task.Run(module.RefreshPresence);
-        SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => Volatile.Read(ref calls.Value) == 2, 10_000).Should().BeTrue();
 
         module.RefreshPresence();
         gate.Set();

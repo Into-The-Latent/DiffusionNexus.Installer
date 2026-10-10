@@ -8,7 +8,8 @@ namespace DiffusionNexus.Installer.Electron.Services;
 /// installer is a short-lived, occasionally-run app: if it waited for the user to ask, most
 /// installs would never see a newer catalog. Fire-and-forget so a slow or unreachable GitHub
 /// cannot delay the window. Unlike the app updater it does not need Electron, so it also runs
-/// under plain `dotnet run`.
+/// under plain `dotnet run`. With "Apply catalog updates automatically" on, the coordinator also
+/// applies what it finds (#36).
 /// </summary>
 public sealed class CatalogUpdateStartupCheck(ICatalogUpdateCoordinator coordinator, ILogger<CatalogUpdateStartupCheck>? logger = null) : IHostedService
 {
@@ -20,11 +21,11 @@ public sealed class CatalogUpdateStartupCheck(ICatalogUpdateCoordinator coordina
         {
             try
             {
-                await coordinator.CheckAsync(CancellationToken.None).ConfigureAwait(false);
+                await coordinator.CheckAtStartupAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // CheckAsync never throws; this keeps an unobserved task exception from ever
+                // CheckAtStartupAsync never throws; this keeps an unobserved task exception from ever
                 // becoming the reason the app looks broken.
                 _logger.LogWarning(ex, "Startup catalog update check failed");
             }

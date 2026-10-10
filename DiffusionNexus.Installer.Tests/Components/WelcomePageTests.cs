@@ -459,6 +459,112 @@ public class WelcomePageTests : BunitContext
     }
 
     [Fact]
+    public void Says_the_update_is_being_applied_rather_than_asking_for_it_while_it_applies()
+    {
+        // The automatic apply (#36) starts while the user is on this screen; "Review and apply"
+        // would ask for something already happening.
+        Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Applying;
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var notice = cut.Find(Notice);
+            notice.TextContent.Should().Contain("A catalog update is being applied.");
+            notice.TextContent.Should().NotContain("Review and apply");
+            notice.QuerySelector("a[href='/updates']")!.TextContent.Should().Be("See progress");
+        });
+    }
+
+    [Fact]
+    public void Rebuilds_the_strip_when_an_apply_lands_while_the_page_is_shown()
+    {
+        // The automatic apply (#36) lands on this screen, the first one after launch. The strip
+        // read before it must not stay: a tile for a removed workload would lead nowhere.
+        var source = new Mock<IWorkloadSource>();
+        source.SetupSequence(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .ReturnsAsync([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo")])
+              .ReturnsAsync([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"), Workload(RepositoryType.Fooocus, "Fooocus")]);
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = Render<Welcome>();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+
+        // A re-render without new content does not read the catalog again.
+        _signals.Catalog.RaiseChanged();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+
+        _signals.Catalog.ContentGeneration = 1;
+        _signals.Catalog.RaiseChanged();
+
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+        cut.Markup.Should().Contain("Fooocus");
+    }
+
+    [Fact]
+    public async Task A_read_that_finishes_after_a_newer_one_does_not_replace_it()
+    {
+        // The page's first read is still running when an apply lands; the second read sees the
+        // new content and finishes first. The first must not put the old strip back for good.
+        var first = new TaskCompletionSource<IReadOnlyList<InstallationConfiguration>>();
+        var source = new Mock<IWorkloadSource>();
+        source.SetupSequence(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .Returns(first.Task)
+              .ReturnsAsync([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"), Workload(RepositoryType.Fooocus, "Fooocus")]);
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = Render<Welcome>();
+        _signals.Catalog.ContentGeneration = 1;
+        _signals.Catalog.RaiseChanged();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+
+        // The first read ends OnInitializedAsync, which renders once more: wait for that render.
+        var renders = cut.RenderCount;
+        await cut.InvokeAsync(() => first.SetResult([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo")]));
+        cut.WaitForState(() => cut.RenderCount > renders);
+
+        cut.FindAll(".software-card").Should().HaveCount(2);
+        cut.Markup.Should().Contain("Fooocus");
+    }
+
+    [Fact]
+    public async Task A_read_that_fails_after_a_newer_one_does_not_cover_it_with_its_error()
+    {
+        var first = new TaskCompletionSource<IReadOnlyList<InstallationConfiguration>>();
+        var source = new Mock<IWorkloadSource>();
+        source.SetupSequence(s => s.GetInstallerWorkloadsAsync(It.IsAny<CancellationToken>()))
+              .Returns(first.Task)
+              .ReturnsAsync([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo")]);
+        source.SetupGet(s => s.Diagnostics).Returns(Array.Empty<CatalogDiagnostic>());
+        var gallery = new GalleryBuilder(source.Object, new WizardModuleRegistry(() => []));
+        Services.AddSingleton(source.Object);
+        Services.AddSingleton(gallery);
+        Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
+
+        var cut = Render<Welcome>();
+        _signals.Catalog.ContentGeneration = 1;
+        _signals.Catalog.RaiseChanged();
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+
+        var renders = cut.RenderCount;
+        await cut.InvokeAsync(() => first.SetException(new IOException("catalog moved away mid-read")));
+        cut.WaitForState(() => cut.RenderCount > renders);
+
+        cut.FindAll(".gallery-error").Should().BeEmpty();
+        cut.FindAll(".software-card").Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task Unsubscribes_from_the_coordinator_on_dispose()
     {
         Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));

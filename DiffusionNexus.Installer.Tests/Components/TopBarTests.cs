@@ -101,6 +101,19 @@ public class TopBarTests : BunitContext
         cut.Find(Updates).GetAttribute("title").Should().Be("Catalog update available");
     }
 
+    [Fact]
+    public void Says_the_catalog_update_is_being_applied_while_it_applies()
+    {
+        // The automatic apply (#36) runs without a click; the hover must not ask for one.
+        _signals.Catalog.LastCheck = CatalogChecks.Available();
+        _signals.Catalog.Phase = CatalogUpdatePhase.Applying;
+
+        var cut = Render<TopBar>();
+
+        cut.Find(Updates).ClassList.Should().Contain("top-bar-attention");
+        cut.Find(Updates).GetAttribute("title").Should().Be("Catalog update being applied");
+    }
+
     // A dot was too quiet to notice: the button now says it, on the accent background.
     [Fact]
     public void Says_update_available_instead_of_check_for_updates_when_something_is_waiting()

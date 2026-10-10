@@ -2052,6 +2052,17 @@ progress {
     margin-top: .85rem;
 }
 
+/* Any disabled switch. The one that is disabled today is "Apply catalog updates automatically" on
+   /updates, refused while a check, apply or switch runs. */
+.switch:has(input:disabled) {
+    cursor: default;
+}
+
+.switch input:disabled + .switch-track,
+.switch input:disabled ~ .switch-text {
+    opacity: .55;
+}
+
 /* The workload screen's "Show legacy workloads" switch, at the far end of the type filters' row
    and speaking at their size. After .switch so it wins on source order. */
 .filters-switch {

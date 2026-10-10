@@ -358,6 +358,33 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    applied, go back and install. **Expect:** the report names the catalog the wizard was opened
    on, not the one applied meanwhile: the plan installs what the wizard read.
 
+## 7b. Apply catalog updates automatically (#36)
+
+Needs a catalog update on the channel followed (publish one with the editor's **Preview** and
+follow Preview, as in section 7). A Release build, no catalog override.
+
+1. Open `/updates`. **Expect:** under the channel radios, **Apply catalog updates automatically**,
+   off, with "A catalog update the installer finds is shown here, and you apply it." Turn it on.
+   **Expect:** the hint names the channel and says it applies at start, never during an install;
+   nothing is downloaded; `%LocalAppData%\DiffusionNexus\user_settings.json` has
+   `"applyCatalogUpdatesAutomatically": true`.
+2. Quit and launch. **Expect:** without a click, the log shows "Applying the catalog update
+   automatically (setting on)", and `/updates` reads "Catalog updated to vN+1 automatically."
+   with the change list under it; the top bar says "Check for Updates". Stay on the welcome
+   screen for this launch: while the download runs it reads "A catalog update is being applied.",
+   and the tiles change to the new content when it lands, without leaving the screen.
+3. Make `catalog.zip` unreachable (disconnect the network after the check, or publish a broken
+   archive) and launch with the setting on. **Expect:** "The catalog update failed: … Nothing was
+   changed." with **Apply catalog update**, as after a failed manual apply; the gallery still
+   lists the old content and any workload can be installed.
+4. With the setting on and an update pending, start an install right after launch while the
+   download runs. **Expect:** the install starts and runs with the catalog that was installed.
+5. Press **Check for updates** and, while it runs, look at the switch. **Expect:** disabled, like
+   the radios. Make `user_settings.json` read-only and flip the switch. **Expect:** "The setting
+   could not be saved: …" and the switch back where it was. Clear the read-only flag.
+6. Turn it off and relaunch with an update pending. **Expect:** today's behaviour: the update
+   offered, nothing applied.
+
 ## 8. App updates on the Preview channel
 
 The app follows the same channel as the catalog (issue #19). Needs two **installed** copies of

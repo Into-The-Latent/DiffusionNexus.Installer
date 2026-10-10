@@ -871,4 +871,137 @@ public class UpdatesPageTests : BunitContext
 
         _catalog.Subscribers.Should().Be(0);
     }
+
+    // ----- apply catalog updates automatically (#36) -----
+
+    private const string AutoApply = "input[data-role='auto-apply']";
+
+    [Fact]
+    public void The_auto_apply_switch_sits_with_the_channel_and_is_off_by_default()
+    {
+        Register(InstallPhase.Idle);
+
+        var page = Render<UpdatesPage>();
+
+        var toggle = page.Find(".update-channel " + AutoApply);
+        toggle.HasAttribute("checked").Should().BeFalse();
+        toggle.HasAttribute("disabled").Should().BeFalse();
+        page.Find(".auto-apply-switch").TextContent.Trim().Should().Be("Apply catalog updates automatically");
+    }
+
+    [Fact]
+    public void Turning_the_switch_on_saves_it_and_says_what_it_does()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Channel = CatalogChannel.Preview;
+        var page = Render<UpdatesPage>();
+
+        page.Find(AutoApply).Change(true);
+
+        _catalog.AutoApplySet.Should().Equal(true);
+        page.Find(AutoApply).HasAttribute("checked").Should().BeTrue();
+        page.Find("#auto-apply-hint").TextContent.Should().Contain("finds a catalog update on Preview, it applies it without asking");
+        page.FindAll(".auto-apply-error").Should().BeEmpty();
+        _catalog.Applies.Should().Be(0, "turning it on applies nothing by itself");
+    }
+
+    [Fact]
+    public void A_refused_change_says_so_and_shows_the_setting_still_in_effect()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.RefuseChannelChange = true;
+        var page = Render<UpdatesPage>();
+
+        page.Find(AutoApply).Change(true);
+
+        page.Find(".auto-apply-error").TextContent.Should().Contain("The setting was not changed: a catalog check, update or channel switch is in progress");
+        page.Find(AutoApply).HasAttribute("checked").Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_failed_save_shows_the_error_under_the_switch()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.AutoApplySaveFailure = new IOException("settings.json is locked");
+        var page = Render<UpdatesPage>();
+
+        page.Find(AutoApply).Change(true);
+
+        page.Find(".auto-apply-error").TextContent.Should().Be("The setting could not be saved: settings.json is locked");
+        page.Find(AutoApply).HasAttribute("checked").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(CatalogUpdatePhase.Checking)]
+    [InlineData(CatalogUpdatePhase.Applying)]
+    public void Disables_the_switch_while_the_coordinator_would_refuse_it(CatalogUpdatePhase phase)
+    {
+        Register(InstallPhase.Idle);
+        _catalog.Phase = phase;
+        var page = Render<UpdatesPage>();
+
+        page.Find(AutoApply).HasAttribute("disabled").Should().BeTrue();
+
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.RaiseChanged();
+        page.WaitForAssertion(() => page.Find(AutoApply).HasAttribute("disabled").Should().BeFalse());
+    }
+
+    [Fact]
+    public void Disables_the_switch_while_a_channel_switch_waits_for_an_answer()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.PendingSwitch = StableSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(AutoApply).HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void An_automatic_apply_shows_the_outcome_and_what_changed()
+    {
+        Register(InstallPhase.Idle);
+        Available(CatalogChecks.WorkloadAdded("Flux-Krea", "V1.0"));
+        _catalog.AutoApply = true;
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _catalog.LastApplyAutomatic = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v4 automatically.");
+        page.FindAll(".catalog-change-name").Select(n => n.TextContent).Should().Equal("Flux-Krea");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+    }
+
+    [Fact]
+    public void A_running_automatic_apply_shows_progress_like_a_manual_one()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.LastApplyAutomatic = true;
+        _catalog.Progress = new CatalogDownloadProgress(50, 100);
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Downloading… 50%");
+        page.FindAll(".catalog-changes").Should().ContainSingle("the list once, not again for the automatic apply");
+    }
+
+    [Fact]
+    public void A_failed_automatic_apply_shows_the_error_and_offers_the_manual_apply()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.AutoApply = true;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "sha256 mismatch");
+        _catalog.LastApplyAutomatic = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-error").TextContent.Should().Be("The catalog update failed: sha256 mismatch. Nothing was changed.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
 }

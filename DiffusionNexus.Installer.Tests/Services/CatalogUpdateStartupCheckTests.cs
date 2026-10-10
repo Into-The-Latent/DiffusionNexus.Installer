@@ -8,7 +8,7 @@ namespace DiffusionNexus.Installer.Tests.Services;
 public class CatalogUpdateStartupCheckTests
 {
     [Fact]
-    public async Task Start_returns_at_once_and_runs_one_check_in_the_background()
+    public async Task Start_returns_at_once_and_runs_one_startup_check_in_the_background()
     {
         var coordinator = new StubCatalogUpdateCoordinator();
         var service = new CatalogUpdateStartupCheck(coordinator);
@@ -17,7 +17,7 @@ public class CatalogUpdateStartupCheckTests
 
         start.IsCompleted.Should().BeTrue("a slow GitHub must never delay the window");
         await start;
-        SpinWait.SpinUntil(() => coordinator.Checks == 1, 2000).Should().BeTrue();
+        SpinWait.SpinUntil(() => coordinator.StartupChecks == 1, 10_000).Should().BeTrue("the startup check, which also applies when the setting is on");
         await service.StopAsync(CancellationToken.None);
     }
 }

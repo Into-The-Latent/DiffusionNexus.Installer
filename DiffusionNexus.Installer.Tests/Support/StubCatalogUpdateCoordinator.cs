@@ -76,5 +76,24 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
 
     public void KeepChannel() { Keeps++; PendingSwitch = null; }
 
+    public bool AutoApply { get; set; }
+    public bool LastApplyAutomatic { get; set; }
+    public int StartupChecks { get; private set; }
+    public List<bool> AutoApplySet { get; } = [];
+
+    /// <summary>When set, saving the setting throws this.</summary>
+    public Exception? AutoApplySaveFailure { get; set; }
+
+    public Task CheckAtStartupAsync(CancellationToken ct = default) { StartupChecks++; return Task.CompletedTask; }
+
+    public Task<bool> SetAutoApplyAsync(bool on, CancellationToken ct = default)
+    {
+        AutoApplySet.Add(on);
+        if (RefuseChannelChange) return Task.FromResult(false);
+        if (AutoApplySaveFailure is not null) return Task.FromException<bool>(AutoApplySaveFailure);
+        AutoApply = on;
+        return Task.FromResult(true);
+    }
+
     public void RaiseChanged() => Changed?.Invoke();
 }

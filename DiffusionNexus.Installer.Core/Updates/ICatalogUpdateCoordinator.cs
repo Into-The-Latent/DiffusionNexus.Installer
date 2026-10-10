@@ -75,6 +75,34 @@ public interface ICatalogUpdateCoordinator
     Task ApplyAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// "Apply catalog updates automatically" (#36), as saved in user_settings.json. False until the
+    /// settings are read (the first check or channel resolution), and while they cannot be.
+    /// </summary>
+    bool AutoApply { get; }
+
+    /// <summary>
+    /// True when the apply in <see cref="LastApply"/>, or the one running, was started by
+    /// <see cref="CheckAtStartupAsync"/> rather than a click. The page then also shows the change
+    /// list after it landed: the user never saw it before the apply.
+    /// </summary>
+    bool LastApplyAutomatic { get; }
+
+    /// <summary>
+    /// The startup check: <see cref="CheckAsync"/>, then, with <see cref="AutoApply"/> on, the
+    /// apply of the update it found -- on the channel followed, unless an install runs, exactly
+    /// as <see cref="ApplyAsync"/> would. Returns once the download has started. Never throws.
+    /// Off, or when the apply cannot start, the update is offered as usual.
+    /// </summary>
+    Task CheckAtStartupAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Saves <see cref="AutoApply"/>. False, with nothing saved, while a check, an apply or a
+    /// channel switch runs (like <see cref="SwitchChannelAsync"/>). Settings I/O errors propagate,
+    /// and then nothing was changed. Applies nothing by itself.
+    /// </summary>
+    Task<bool> SetAutoApplyAsync(bool on, CancellationToken ct = default);
+
+    /// <summary>
     /// A switch waiting for Switch or Keep: the target channel's content removes or changes
     /// something. While it is set, checks, applies and other switches are refused, and
     /// <see cref="UpdateAvailable"/> is false (the last check describes the channel being left).

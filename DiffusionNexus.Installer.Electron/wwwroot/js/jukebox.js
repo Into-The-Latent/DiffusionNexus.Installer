@@ -41,16 +41,22 @@ export function observe(track, owner) {
 
     track.addEventListener('scroll', report, { passive: true });
 
-    // Catches a resized window and a changed tile count alike: both change how much of the strip
-    // fits without scrolling it, so neither fires `scroll`. Observing fires once immediately,
-    // which is also the initial report.
+    // Catches a resized window: it changes how much of the strip fits without scrolling it, so it
+    // does not fire `scroll`. Observing fires once immediately, which is also the initial report.
     const resize = new ResizeObserver(report);
     resize.observe(track);
+
+    // Catches a changed tile count (Welcome rebuilds the strip when a catalog apply lands, #36).
+    // The track's own box is set by the grid, so tiles coming or going change its scrollWidth
+    // without resizing it, and the ResizeObserver above stays silent.
+    const tiles = new MutationObserver(report);
+    tiles.observe(track, { childList: true });
 
     return {
         dispose() {
             track.removeEventListener('scroll', report);
             resize.disconnect();
+            tiles.disconnect();
         }
     };
 }
