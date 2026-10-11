@@ -47,7 +47,7 @@ public sealed class CatalogChannelConfirmations
     public void Confirm(CatalogChannel channel, LocalCatalogState installed, bool otherFoldersUntouched)
     {
         ArgumentNullException.ThrowIfNull(installed);
-        if (installed.Workloads is null && installed.Workflows is null) return;
+        if (!installed.RecordsAnything()) return;
 
         var sections = new ConfirmedSections(installed.Workloads, installed.Workflows);
         lock (_write)

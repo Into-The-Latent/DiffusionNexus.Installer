@@ -49,6 +49,15 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
             CatalogAudience.Installer(includeDrafts),
             confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
 
+    /// <summary>SDK 2.3.0 shared folders (what the installer runs with): one folder per channel under a shared root.</summary>
+    private CatalogOptions Shared(CatalogChannel followed = CatalogChannel.Stable) =>
+        new() { SharedRoot = Path.Combine(_dir, "shared"), Channel = followed };
+
+    private CatalogUpdateCoordinator Create(CatalogOptions options, CatalogChannelConfirmations? confirmations = null) =>
+        new(_service, _catalog.Object, options, _settings.Object, _session.Object, () => _environment,
+            CatalogAudience.Installer(false),
+            confirmations: confirmations ?? new CatalogChannelConfirmations(ConfirmationsPath));
+
     /// <summary>What an apply leaves on disk. A channel is recorded per section, as SDK 2.1.0 does; null is a 2.0.0 state.</summary>
     private void WriteInstalledState(int version, CatalogChannel? channel = null) =>
         State(version, channel).Save(_options.InstalledCatalogPath);
@@ -661,9 +670,12 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     // apply of a switch preview checks that folder itself and fills it when it is missing or behind.
     public async Task A_switch_to_the_same_content_still_hands_the_preview_to_the_sdk()
     {
+        _saved.CatalogChannel = "Preview";
+        var options = Shared(CatalogChannel.Preview);
+        State(5, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.None, null);
-        using var coordinator = CreateOnPreview();
+        using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
         Settle(coordinator);
@@ -677,7 +689,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked, "nothing landed, so nothing was 'updated'");
         coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpToDate);
         coordinator.LastCheck.Channel.Should().Be(CatalogChannel.Stable);
-        coordinator.ContentGeneration.Should().Be(0);
+        coordinator.ContentGeneration.Should().Be(1, "the app reads another folder now, downloaded or not");
         coordinator.SwitchIncomplete.Should().BeFalse();
     }
 
@@ -1077,6 +1089,8 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         VerifySaved("Stable");
         _service.ApplyCalls.Should().Be(0, "never swap content under a running plan");
+        // The held switch checks the folder now followed in the background (#53); the button follows that check.
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
         coordinator.ApplyBlockedReason.Should().Be("It can be applied once Krea-2-Turbo has finished.");
         coordinator.SwitchIncomplete.Should().BeTrue();
 
@@ -1724,20 +1738,25 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _session.SetupGet(s => s.Plan).Returns(plan);
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
         _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline");   // the check of the folder now followed fails too
-        using var coordinator = CreateOnPreview();
+        _saved.CatalogChannel = "Preview";
+        var options = Shared();
+        State(5, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
+        using var coordinator = Create(options);
+        await coordinator.CheckAsync();   // Installed: the Preview folder
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
 
         VerifySaved("Stable");
         _service.ApplyCalls.Should().Be(0, "never swap content under a running plan");
         coordinator.Channel.Should().Be(CatalogChannel.Stable);
-        coordinator.SwitchIncomplete.Should().BeTrue("nothing could check the Stable folder; the content is still what Preview left");
+        coordinator.SwitchIncomplete.Should().BeTrue("nothing could check the Stable folder; what the app knows is still Preview's content");
         coordinator.UpdateAvailable.Should().BeFalse();
 
         // Retry is a check of the followed channel; the state written by the apply ends the incomplete switch.
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
         _service.NextCheck = () => CatalogChecks.Available(5, CatalogChannel.Stable);
-        _service.OnApply = () => WriteInstalledState(5, CatalogChannel.Stable);
+        _service.OnApply = () => State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
         await coordinator.CheckAsync();
         await coordinator.ApplyAsync();
         Settle(coordinator);
@@ -1822,26 +1841,34 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
     }
 
+    // Round 4: the SDK tried to fill the target folder and failed, so the folder needs the release
+    // whatever the preview said. Apply (the switch apply again) is the retry; no fetch, no guessing.
     [Fact]
-    public async Task A_failed_switch_apply_of_a_same_content_preview_shows_the_error_and_a_check_offers_the_retry()
+    public async Task A_failed_switch_apply_of_a_same_content_preview_shows_the_error_and_offers_apply_as_the_retry()
     {
         _saved.CatalogChannel = "Stable";
-        WriteInstalledState(5, CatalogChannel.Stable);
-        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        var options = Shared();
+        State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel, Remote = CatalogChecks.Remote(6, channel) };
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
         _service.NextCheck = () => throw new InvalidOperationException("no check expected");
-        using var coordinator = Create();
+        using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
         Settle(coordinator);
 
         coordinator.LastApplyFailed.Should().BeTrue();
-        coordinator.UpdateAvailable.Should().BeFalse("the preview said up to date; nothing is known to be behind");
+        coordinator.UpdateAvailable.Should().BeTrue("the SDK found the folder needs the release, download or not");
+        coordinator.CanApply.Should().BeTrue();
         _service.CheckCalls.Should().Be(0);
 
-        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Preview);   // Check for updates: the folder is behind
-        await coordinator.CheckAsync();
-        coordinator.CanApply.Should().BeTrue();
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _service.OnApply = () => State(6, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
+        await coordinator.ApplyAsync();
+        Settle(coordinator);
+        _service.AppliedCheck!.IsSwitchPreview.Should().BeTrue();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.UpdateAvailable.Should().BeFalse();
     }
 
     // Round 3: while the held switch checks the folder now followed, the page offered the preview's Apply
@@ -1863,15 +1890,17 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = CreateOnPreview();
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);   // the removal warned
-        var confirming = coordinator.ConfirmSwitchAsync();              // starts the held path, which waits on the check
+        var confirming = coordinator.ConfirmSwitchAsync();              // starts the held path; the check runs on
 
+        // Round 4: the switch returns once the choice is saved (the interface contract); the check of the
+        // folder now followed runs in the background like an apply, under Checking.
+        confirming.Wait(2000).Should().BeTrue("a slow manifest fetch must not hold the radios");
         SpinWait.SpinUntil(() => _service.CheckCalls == 1, 10_000).Should().BeTrue();
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checking);
         coordinator.CanApply.Should().BeFalse();
 
         hold.SetResult();
-        await confirming;
-        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
         coordinator.ApplyBlockedReason.Should().Be("It can be applied once Krea-2-Turbo has finished.");
     }
 
@@ -1948,8 +1977,13 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _session.SetupGet(s => s.Plan).Returns(plan);
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
         _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline");   // the held switch cannot check the Stable folder either
-        using var coordinator = CreateOnPreview();
+        _saved.CatalogChannel = "Preview";
+        var options = Shared();
+        State(5, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
+        using var coordinator = Create(options);
+        await coordinator.CheckAsync();
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
         coordinator.SwitchIncomplete.Should().BeTrue();
 
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
@@ -1961,7 +1995,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.UpdateAvailable.Should().BeTrue("the release completes the switch the user asked for");
         coordinator.CanApply.Should().BeTrue();
 
-        _service.OnApply = () => WriteInstalledState(5, CatalogChannel.Stable);
+        _service.OnApply = () => State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
         await coordinator.ApplyAsync();
         Settle(coordinator);
         coordinator.SwitchIncomplete.Should().BeFalse();
@@ -2135,15 +2169,40 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.LastCheck.Audience.Should().NotBeNull();
     }
 
+    // Round 4: one installed folder (an explicit InstalledCatalogPath; SDK 2.0-2.2 hosts) -- the preview
+    // compared the target's release with that very folder, so "up to date" means there is nothing the
+    // SDK could fill: the preference is saved and the content confirmed current, no apply, no fetch.
+    [Fact]
+    public async Task A_same_content_switch_with_one_folder_only_saves_the_preference_and_confirms_the_content()
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(5, CatalogChannel.Stable);
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        _service.NextApply = () => throw new InvalidOperationException("no apply expected");
+        _service.NextCheck = () => throw new InvalidOperationException("no check expected");
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.SwitchIncomplete.Should().BeFalse("found current on Preview, whatever the state records");
+    }
+
+    // Round 4: with shared folders the SDK's apply of a same-content preview may still have to fill the
+    // target folder, and a failed fill leaves the preview as the retry.
     [Fact]
     public async Task A_switch_whose_apply_landed_nothing_confirms_the_content_current_on_the_target()
     {
         // The Preview folder holds the embedded seed, stamped Stable. The SDK's re-check found it current on Preview.
         _saved.CatalogChannel = "Stable";
-        WriteInstalledState(5, CatalogChannel.Stable);
+        var options = Shared();
+        State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
+        State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.None, null);
-        using var coordinator = Create();
+        using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
         Settle(coordinator);

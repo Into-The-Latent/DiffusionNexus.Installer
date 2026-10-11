@@ -191,6 +191,43 @@ public class UpdatesPageTests : BunitContext
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
     }
 
+    // #53 round 4: a same-content switch whose fill failed. The SDK found the folder needs the release;
+    // the row says so and Apply (the switch apply again) is the retry.
+    [Fact]
+    public void A_failed_same_content_switch_offers_apply_as_the_retry()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with
+        {
+            Channel = CatalogChannel.Preview, Remote = CatalogChecks.Remote(6, CatalogChannel.Preview), IsSwitchPreview = true,
+        };
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v6 is available on Preview.");
+        page.Find(".catalog-error").TextContent.Should().Contain("The download stalled.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // #53 round 4: a release published between the preview and Switch: the SDK applies the newer one
+    // (its own check of the folder), so the outcome names what landed, not what the preview said.
+    [Fact]
+    public void After_an_apply_the_outcome_names_the_version_that_landed()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.Installed = new LocalCatalogState
+        {
+            Workloads = new SectionState(7, "abc", DateTimeOffset.UnixEpoch) { Channel = CatalogChannel.Preview },
+            Workflows = new SectionState(7, "abc", DateTimeOffset.UnixEpoch) { Channel = CatalogChannel.Preview },
+        };
+
+        Render<UpdatesPage>().Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v7.");
+    }
+
     // #53 round 2: every switch passes through Applying while the SDK checks the target folder; most
     // of them download nothing, so "Downloading…" with no bytes is wrong half the time.
     [Fact]

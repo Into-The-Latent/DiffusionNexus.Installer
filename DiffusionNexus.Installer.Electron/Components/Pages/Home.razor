@@ -477,7 +477,7 @@
     private string InstalledText => Catalog.Installed switch
     {
         null => "unknown",
-        { Workloads: null, Workflows: null } => "not yet installed",
+        var s when !s.RecordsAnything() => "not yet installed",
         var s => $"{InstalledCatalogDescription.Short(s)}, applied {(s.Workloads?.AppliedAt ?? s.Workflows?.AppliedAt)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}",
     };
 
@@ -489,13 +489,18 @@
             if (Catalog.Phase == CatalogUpdatePhase.Checking) return "Checking the catalog…";
             if (Catalog.Phase == CatalogUpdatePhase.Applied)
             {
+                // What landed, from the state: a switch applies the SDK's own check of the target folder,
+                // which may be a release newer than the preview named.
+                var landed = Catalog.Installed is { } s && s.RecordsAnything() ? s.HighestCatalogVersion : Catalog.LastCheck?.Remote?.CatalogVersion;
                 return Catalog.LastApplyAutomatic
-                    ? $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion} automatically."
-                    : $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion}.";
+                    ? $"Catalog updated to v{landed} automatically."
+                    : $"Catalog updated to v{landed}.";
             }
             return Catalog.LastCheck switch
             {
                 null => "Not checked yet.",
+                // A same-content switch whose fill failed: the SDK found the folder needs the release, and Apply is the retry.
+                { IsSwitchPreview: true } c when Catalog.UpdateAvailable => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
                 { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
                 // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
                 // A release the coordinator does not offer (nothing in it for the installer, no failed apply

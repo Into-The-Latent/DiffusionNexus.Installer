@@ -34,8 +34,8 @@ public static class InstalledCatalogDescription
         // ICatalog reads its state tolerantly, so an empty one may be a file that was held during
         // the load. Read, not Load: Load answers "no state" for a locked file, and the report would
         // then state something false instead of saying it could not look.
-        return Describe(loaded is { Workloads: not null } or { Workflows: not null }
-            ? loaded
+        return Describe(loaded is { } l && l.RecordsAnything()
+            ? l
             : LocalCatalogState.Read(options.InstalledCatalogPath));
     }
 
