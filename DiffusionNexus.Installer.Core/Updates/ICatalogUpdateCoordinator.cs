@@ -46,7 +46,9 @@ public interface ICatalogUpdateCoordinator
     /// least one section, a partial one included. A screen built from the catalog compares it
     /// with the value it was built under to know it is stale (#32). No phase says this: a partial
     /// apply ends in Checked, and a switch that applies nothing passes through Checking back to
-    /// whatever phase it found, Applied included. An apply that throws counts when the state file
+    /// whatever phase it found, Applied included. With SDK 2.3.0's folder per channel a switch
+    /// counts as soon as the channel changes, downloaded or not: the app reads another folder. An
+    /// apply that throws counts when the state file
     /// shows a section moved, or when the state cannot be read back (a needless "go home" is cheap
     /// where a missed one is #32). Safe to read from any thread without the coordinator's lock.
     /// </summary>
@@ -55,8 +57,11 @@ public interface ICatalogUpdateCoordinator
     /// <summary>
     /// The followed channel's release changes something the installer shows (#53). A release that
     /// changes only the other app's workloads is not announced: the startup check applies it when
-    /// <see cref="AutoApply"/> is on, and otherwise the folder catches up with the next apply.
+    /// <see cref="AutoApply"/> is on, and otherwise the folder catches up with the next apply. One
+    /// exception: while <see cref="SwitchIncomplete"/>, the release that completes the switch is
+    /// offered whoever its changes are for -- it is what the user asked for, and Apply is the way out.
     /// <see cref="LastCheck"/> is always filtered for the installer (its <c>Audience</c> is set).
+    /// After a switch it is a check of the folder now followed, not the preview the user agreed to.
     /// </summary>
     bool UpdateAvailable { get; }
     bool CanApply { get; }

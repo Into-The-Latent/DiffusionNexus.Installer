@@ -605,7 +605,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         appliesAtSave.Should().Be(0, "the preference is saved before the download starts, so a failed download cannot lose the choice");
         _service.AppliedCheck.Should().BeSameAs(preview, "the apply downloads from and stamps the channel the preview read");
         _service.AppliedSections.Should().Be(CatalogSections.All);
-        _service.CheckCalls.Should().Be(0, "no second check: the preview is what the user agreed to");
+        _service.CheckCalls.Should().Be(1, "the preview is what the user agreed to and is applied as is; afterwards the page shows what the SDK found in the target folder (#53 review)");
         coordinator.Channel.Should().Be(CatalogChannel.Stable);
         _options.Channel.Should().Be(CatalogChannel.Stable);
         coordinator.PendingSwitch.Should().BeNull();
@@ -719,6 +719,8 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
         using var coordinator = CreateOnPreview();
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        // The check after the failed apply finds the Stable folder still behind (#53 review).
+        _service.NextCheck = () => StableRemoves("Qwen-Image-2.1");
 
         await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
@@ -727,6 +729,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.Channel.Should().Be(CatalogChannel.Stable);
         coordinator.SwitchIncomplete.Should().BeTrue();
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastApply!.Error.Should().Be("The download stalled.");
         coordinator.CanApply.Should().BeTrue("the Apply button is the retry");
 
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
@@ -841,6 +844,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "stalled");
         using var coordinator = Create();
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        _service.NextCheck = () => StableRemoves("Qwen-Image-2.1");   // the check after the failed apply finds the folder still behind (#53)
         await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
         coordinator.SwitchIncomplete.Should().BeTrue();
@@ -1271,10 +1275,12 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         saveGate.SetResult();
         await switching;
+        // The switch applies the previewed channel (the SDK fills its folder) and checks it afterwards (#53).
+        Settle(coordinator);
 
         await coordinator.CheckAsync();
 
-        _service.CheckCalls.Should().Be(1);
+        _service.CheckCalls.Should().Be(2, "the check after the switch's apply, and this one");
         _options.Channel.Should().Be(CatalogChannel.Preview);
     }
 
@@ -1756,6 +1762,111 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         options.Channel.Should().Be(CatalogChannel.Preview);
         coordinator.Installed!.HighestCatalogVersion.Should().Be(6, "the Catalog row describes the folder the app reads now");
         coordinator.SwitchIncomplete.Should().BeFalse();
+        coordinator.ContentGeneration.Should().Be(1, "the app reads another folder now, though nothing was downloaded (#53 review)");
+    }
+
+    // ----- #53 whole-branch review -----
+
+    // C1: the preview compares the target's release with the folder being left; the SDK's apply checks
+    // the target folder itself. The page must show what the SDK found there, not the preview.
+    [Fact]
+    public async Task A_switch_whose_apply_lands_nothing_shows_the_sdk_verdict_not_the_preview()
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(5, CatalogChannel.Stable);
+        _service.NextPreview = channel => CatalogChecks.Available(6, channel, [CatalogChecks.WorkloadAdded("Ernie", "V1.0")]);   // additions only: no warning
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.None, null);   // the Preview folder was current already
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = CatalogChannel.Preview };
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(1);
+        _service.CheckCalls.Should().Be(1, "a check of the folder now followed, after the apply");
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpToDate);
+        coordinator.UpdateAvailable.Should().BeFalse("otherwise Apply is offered and applies nothing, forever");
+        coordinator.CanApply.Should().BeFalse();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+    }
+
+    [Fact]
+    public async Task A_failed_switch_apply_keeps_its_error_and_the_fresh_check_offers_the_retry()
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(5, CatalogChannel.Stable);
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Preview);   // the folder is still behind
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        coordinator.LastApply!.Error.Should().Be("The download stalled.");
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpdatesAvailable);
+        coordinator.CanApply.Should().BeTrue("the Apply button is the retry");
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+    }
+
+    // C2: a switch held or failed, the target folder seeded from the embedded catalog, and the release
+    // differs from the seed only in the other app's workloads. Retry alone would check forever.
+    [Fact]
+    public async Task An_incomplete_switch_offers_the_release_that_completes_it_even_when_its_changes_are_the_other_apps()
+    {
+        var plan = await new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = new InstallationConfiguration { Name = "Krea-2-Turbo" } });
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _session.SetupGet(s => s.Plan).Returns(plan);
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        using var coordinator = CreateOnPreview();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        coordinator.SwitchIncomplete.Should().BeTrue();
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _service.NextCheck = () => CatalogChecks.Available(5, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore);
+        await coordinator.CheckAsync();
+
+        coordinator.LastCheck!.HasChanges.Should().BeFalse();
+        coordinator.UpdateAvailable.Should().BeTrue("the release completes the switch the user asked for");
+        coordinator.CanApply.Should().BeTrue();
+
+        _service.OnApply = () => WriteInstalledState(5, CatalogChannel.Stable);
+        await coordinator.ApplyAsync();
+        Settle(coordinator);
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    // I1: a switch that starts no apply (the preview failed) into a folder that does not exist yet.
+    // The app reads the embedded seed from then on; the row and the "still from" line must say so.
+    [Fact]
+    public async Task A_failed_preview_into_a_missing_folder_describes_the_seed_the_app_reads()
+    {
+        var options = new CatalogOptions { SharedRoot = Path.Combine(_dir, "shared"), Channel = CatalogChannel.Stable };
+        State(4, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
+        _catalog.SetupGet(c => c.State).Returns(State(5, CatalogChannel.Stable));   // what the SDK seeds into the Preview folder on the first read
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "No such host is known.") with { Channel = channel };
+        using var coordinator = new CatalogUpdateCoordinator(_service, _catalog.Object, options, _settings.Object, _session.Object, () => _environment,
+            CatalogAudience.Installer(false), confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(5, "the seed is what the app reads now");
+        coordinator.SwitchIncompleteReason.Should().Be("The installed catalog is still from Stable (v5).");
+    }
+
+    // M3: the catch paths build Failed checks by hand; they are filtered like every other.
+    [Fact]
+    public async Task A_check_that_throws_still_leaves_a_filtered_check()
+    {
+        _service.NextCheck = () => throw new InvalidOperationException("boom");
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.Failed);
+        coordinator.LastCheck.Audience.Should().NotBeNull();
     }
 
     [Fact]

@@ -133,6 +133,55 @@ public class UpdatesPageTests : BunitContext
         page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
     }
 
+    // #53 review C2: the switch to Stable did not land and the Stable release differs from what the
+    // folder holds only in the other app's workloads. Applying it is the way out, so it is offered.
+    [Fact]
+    public void An_incomplete_switch_offers_the_release_that_completes_it()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(5, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.SwitchIncompleteReason = "The installed catalog is still from Preview (v6).";
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v5 is available on Stable.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Retry", "Apply is the retry");
+    }
+
+    // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";
+    // the download and its failure must be visible even when nothing is offered to apply.
+    [Fact]
+    public void Progress_is_shown_while_any_apply_runs()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.Progress = new CatalogDownloadProgress(512 * 1024, 1024 * 1024);
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Should().Contain("50");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+    }
+
+    [Fact]
+    public void A_failed_apply_is_shown_even_when_nothing_is_offered()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-error").TextContent.Should().Contain("The download stalled.");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+    }
+
     [Fact]
     public void Says_not_checked_yet_before_any_check()
     {

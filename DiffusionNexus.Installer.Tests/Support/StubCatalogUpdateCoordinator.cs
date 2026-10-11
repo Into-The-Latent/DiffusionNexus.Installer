@@ -20,7 +20,8 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public string? ApplyBlockedReason { get; set; }
 
     // Mirrors the real rule (#53): announced only when the release changes something the installer shows.
-    public bool UpdateAvailable => PendingSwitch is null && LastCheck?.HasChanges == true && Phase != CatalogUpdatePhase.Applied;
+    public bool UpdateAvailable => PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied
+        && (LastCheck.HasChanges || _incompleteReason is not null);
     public bool CanApply => UpdateAvailable && Phase == CatalogUpdatePhase.Checked && ApplyBlockedReason is null;
 
     public event Action? Changed;
