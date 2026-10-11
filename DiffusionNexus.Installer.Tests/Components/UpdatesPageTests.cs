@@ -171,6 +171,41 @@ public class UpdatesPageTests : BunitContext
         page.Find(".catalog-progress").TextContent.Trim().Should().Be("Downloading… 40%");
     }
 
+    // #53 round 2: the startup apply of a release with nothing for the installer failed; the error line
+    // alone left the user nothing to press. Apply is the retry, and the row says the release is there.
+    [Fact]
+    public void A_failed_apply_of_a_release_with_no_installer_changes_offers_the_retry()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+        _catalog.LastApplyAutomatic = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 is available on Stable.");
+        page.Find(".catalog-error").TextContent.Should().Contain("The download stalled.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // #53 round 2: every switch passes through Applying while the SDK checks the target folder; most
+    // of them download nothing, so "Downloading…" with no bytes is wrong half the time.
+    [Fact]
+    public void Progress_without_bytes_says_the_catalog_is_being_applied()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.Progress = null;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Applying the catalog…");
+    }
+
     // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";
     // the download and its failure must be visible even when nothing is offered to apply.
     [Fact]

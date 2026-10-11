@@ -105,6 +105,8 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     private CatalogApplyResult? _uncertainApply;
     public bool LastApplyUncertain { get { lock (_gate) return LastApply is not null && ReferenceEquals(LastApply, _uncertainApply); } }
 
+    public bool LastApplyFailed { get { lock (_gate) return LastApply is { } r && (r.Error is not null || r.Failed != CatalogSections.None); } }
+
     public bool AutoApply { get; private set; }
 
     public bool LastApplyAutomatic { get { lock (_gate) return _applyAutomatic && (LastApply is not null || Phase is CatalogUpdatePhase.Applying or CatalogUpdatePhase.Applied); } }
@@ -120,8 +122,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         get
         {
             // One read: a render thread evaluates this while a switch may set LastCheck to null.
+            // A failed apply is offered again whoever the changes are for: the startup apply is the
+            // only automatic one, so without this the error would sit there with nothing to press.
             var check = LastCheck;
-            return IsReleaseAvailable(check) && (check!.HasChanges || SwitchIncompleteReason is not null);
+            return IsReleaseAvailable(check) && (check!.HasChanges || LastApplyFailed || SwitchIncompleteReason is not null);
         }
     }
 
@@ -290,9 +294,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // embedded seed in a channel folder records the embedded manifest's channel). Before
             // the phase flips: a reader that waits for Applying to end must find it recorded.
             if (succeeded) _confirmations.Confirm(check.Channel, installed);
-            // A switch that landed everything needs no further check: the SDK applied a fresh check of
-            // that very folder, and the preview names the landed version for the outcome line.
-            var fresh = check.IsSwitchPreview && !(succeeded && landedSomething) ? await CheckAfterSwitchAsync().ConfigureAwait(false) : null;
+            var fresh = await AfterSwitchAsync(check, landedEverything: succeeded && landedSomething, folderCurrent: succeeded && !landedSomething, installed).ConfigureAwait(false);
 
             lock (_gate)
             {
@@ -336,7 +338,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             var allLanded = landed == CatalogSections.All;
 
             var result = new CatalogApplyResult(landed ?? CatalogSections.None, CatalogSections.All & ~(landed ?? CatalogSections.None), ex.Message);
-            var fresh = check.IsSwitchPreview ? await CheckAfterSwitchAsync().ConfigureAwait(false) : null;
+            var fresh = await AfterSwitchAsync(check, landedEverything: allLanded, folderCurrent: false, after).ConfigureAwait(false);
             lock (_gate)
             {
                 if (landed != CatalogSections.None) Interlocked.Increment(ref _contentGeneration);
@@ -354,12 +356,23 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     }
 
     /// <summary>
-    /// After the apply of a switch preview: what the SDK found in the folder now followed. The preview
-    /// compared the target's release with the folder being left; the SDK's apply checked the target
-    /// folder itself and may have found the opposite (current already, or still behind after a failed
-    /// download). Showing the preview on would offer an Apply that applies nothing, or hide the retry
-    /// (#53 review). Never throws; a check that throws is a Failed check.
+    /// What <see cref="LastCheck"/> becomes after the apply of a switch preview, or null to keep it. The
+    /// preview compared the target's release with the folder being left; the SDK's apply checked the
+    /// target folder itself and may have found the opposite. Landed everything: the preview stands (it
+    /// names the landed release; the SDK just checked that folder). Landed nothing without an error:
+    /// the SDK's verdict that the folder is current, recorded as an up-to-date check without a second
+    /// fetch. Otherwise (failed, threw, partial): a check of the folder now followed, so the page offers
+    /// the retry or says what is wrong (#53 review).
     /// </summary>
+    private async Task<CatalogUpdateCheck?> AfterSwitchAsync(CatalogUpdateCheck check, bool landedEverything, bool folderCurrent, LocalCatalogState? installed)
+    {
+        if (!check.IsSwitchPreview || landedEverything) return null;
+        if (folderCurrent)
+            return new CatalogUpdateCheck(CatalogUpdateOutcome.UpToDate, check.Channel, check.Remote, installed ?? new LocalCatalogState(), [], [], null).For(_audience);
+        return await CheckAfterSwitchAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>A check of the folder now followed, after a switch. Never throws; a check that throws is a Failed check.</summary>
     private async Task<CatalogUpdateCheck> CheckAfterSwitchAsync()
     {
         try
@@ -653,16 +666,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         // Saved before the download starts: a stalled or failed apply must not lose the choice
         // (rule 1), and the next check then offers the same diff with Apply.
         var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
-        // The target channel's folder (#53): with shared folders it is the one the app reads from
-        // here on. Outside the lock: the read enumerates the format folders.
-        var installedAtTarget = LocalCatalogState.Load(_options.ReadFolderFor(target));
         var applying = false;
+        var heldByInstall = false;
         lock (_gate)
         {
             var left = Channel;
             ApplyResolution(_readEnvironment(), saved);
             _channelResolved = true;
-            Installed = installedAtTarget;
+            // Installed stays what it was until the real read below (or the apply's): with shared
+            // folders the target folder may not exist yet, and an empty state would read "not yet installed".
             _overrideActive = overrideActive;
             LastApply = null;
             _applyAutomatic = false;
@@ -699,6 +711,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                     // Failed, needs newer software, override: the installed content stays and the
                     // page says so. During an install the apply (or the retry) waits for it.
                     Phase = CatalogUpdatePhase.Checked;
+                    heldByInstall = preview.Outcome is CatalogUpdateOutcome.UpdatesAvailable or CatalogUpdateOutcome.UpToDate;
                 }
             }
         }
@@ -707,7 +720,18 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // Nothing will reload the state after an apply: describe the catalog the app reads now --
             // reading it seeds a channel folder that does not exist yet (#53 review).
             var state = await StateOfReadCatalogAsync().ConfigureAwait(false);
-            lock (_gate) Installed = state;
+            // Held by a running install: the preview compared against the folder being left and says
+            // nothing about the one now followed. Check that one, so the Apply after the install lands
+            // what it needs -- or the page says it is current (#53 review round 2).
+            var fresh = heldByInstall ? await CheckAfterSwitchAsync().ConfigureAwait(false) : null;
+            var current = fresh?.Outcome == CatalogUpdateOutcome.UpToDate;
+            lock (_gate)
+            {
+                Installed = state;
+                if (fresh is not null) LastCheck = fresh;
+                if (current) _notLanded = null;
+            }
+            if (current) _confirmations.Confirm(target, state);
         }
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
             applying ? (preview.Outcome == CatalogUpdateOutcome.UpToDate ? "checking its folder" : "applying v" + preview.Remote?.CatalogVersion)

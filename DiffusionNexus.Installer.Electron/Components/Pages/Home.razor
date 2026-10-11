@@ -499,7 +499,7 @@
                 { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
                 // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
                 // Not while it is being applied anyway (the startup apply with the setting on): "Downloading…" renders below.
-                { Outcome: CatalogUpdateOutcome.UpdatesAvailable, HasChanges: false } c when Catalog.Phase != CatalogUpdatePhase.Applying && !Catalog.SwitchIncomplete
+                { Outcome: CatalogUpdateOutcome.UpdatesAvailable, HasChanges: false } c when Catalog.Phase != CatalogUpdatePhase.Applying && !Catalog.LastApplyFailed && !Catalog.SwitchIncomplete
                     => $"Catalog v{c.Remote?.CatalogVersion} has no changes for the installer.",
                 { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
                 { Outcome: CatalogUpdateOutcome.RequiresNewerSoftware } => "This catalog update needs a newer version of the installer. Install the app update above first.",
@@ -510,9 +510,11 @@
         }
     }
 
+    // No bytes yet: a switch first has the SDK check the target folder, and most switches download
+    // nothing at all; the percent appears once a download starts.
     private string ProgressText => Catalog.Progress switch
     {
-        null => "Downloading…",
+        null => "Applying the catalog…",
         { TotalBytes: > 0 } p => $"Downloading… {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
         var p => $"Downloading… {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
     };

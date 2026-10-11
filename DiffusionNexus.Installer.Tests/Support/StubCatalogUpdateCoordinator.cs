@@ -19,9 +19,11 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public bool LastApplyUncertain { get; set; }
     public string? ApplyBlockedReason { get; set; }
 
-    // Mirrors the real rule (#53): announced only when the release changes something the installer shows.
+    // Mirrors the real rule (#53): announced only when the release changes something the installer shows,
+    // or when applying it completes a switch or retries a failed apply.
     public bool UpdateAvailable => PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied
-        && (LastCheck.HasChanges || _incompleteReason is not null);
+        && (LastCheck.HasChanges || _incompleteReason is not null || LastApplyFailed);
+    public bool LastApplyFailed => LastApply is { } r && (r.Error is not null || r.Failed != CatalogSections.None);
     public bool CanApply => UpdateAvailable && Phase == CatalogUpdatePhase.Checked && ApplyBlockedReason is null;
 
     public event Action? Changed;

@@ -41,6 +41,9 @@ public interface ICatalogUpdateCoordinator
     /// </summary>
     bool LastApplyUncertain { get; }
 
+    /// <summary>The apply in <see cref="LastApply"/> failed or landed only part of the release. False whenever LastApply is null.</summary>
+    bool LastApplyFailed { get; }
+
     /// <summary>
     /// How many applies have changed installed content in this run: one per apply that landed at
     /// least one section, a partial one included. A screen built from the catalog compares it
@@ -60,8 +63,11 @@ public interface ICatalogUpdateCoordinator
     /// <see cref="AutoApply"/> is on, and otherwise the folder catches up with the next apply. One
     /// exception: while <see cref="SwitchIncomplete"/>, the release that completes the switch is
     /// offered whoever its changes are for -- it is what the user asked for, and Apply is the way out.
+    /// Likewise after a failed apply: Apply is the retry, whoever the changes were for.
     /// <see cref="LastCheck"/> is always filtered for the installer (its <c>Audience</c> is set).
-    /// After a switch it is a check of the folder now followed, not the preview the user agreed to.
+    /// After a switch that landed its release it is the preview the user agreed to (which names that
+    /// release); after one that landed nothing, failed, or was held by an install it describes the
+    /// folder now followed (up to date, or what is still to apply).
     /// </summary>
     bool UpdateAvailable { get; }
     bool CanApply { get; }
