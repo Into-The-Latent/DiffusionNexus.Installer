@@ -17,7 +17,7 @@
   },
   {
     "name": "@types/node",
-    "version": "22.20.4",
+    "version": "22.20.5",
     "license": "MIT",
     "author": "",
     "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
@@ -25,7 +25,7 @@
   },
   {
     "name": "@types/ws",
-    "version": "8.18.1",
+    "version": "8.18.2",
     "license": "MIT",
     "author": "",
     "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
