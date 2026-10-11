@@ -1,5 +1,6 @@
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
+using DiffusionNexus.Installer.SDK.Models.Enums;
 
 namespace DiffusionNexus.Installer.Tests.Support;
 
@@ -40,4 +41,16 @@ internal static class CatalogChecks
 
     public static WorkflowChange WorkflowUpdated(string name, string from, string to, params string[] workloadNames) =>
         new(Guid.NewGuid(), name, workloadNames, ChangeKind.Updated, from, to);
+
+    /// <summary>The check with every workload it mentions marked as <paramref name="target"/>'s, workflows owned by all of them. What a 2.3.0 manifest carries.</summary>
+    public static CatalogUpdateCheck Targeting(this CatalogUpdateCheck check, WorkloadTargetType target, bool released = true)
+    {
+        IReadOnlyList<Guid> owners = check.Workloads.Select(w => w.Id).ToList();
+        return check with
+        {
+            Index = new CatalogAudienceIndex(
+                check.Workloads.ToDictionary(w => w.Id, _ => new WorkloadAudienceInfo(target, released)),
+                check.Workflows.ToDictionary(w => w.Id, _ => owners)),
+        };
+    }
 }

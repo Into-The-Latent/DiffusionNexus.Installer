@@ -22,6 +22,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     private readonly IUserSettingsRepository _settings;
     private readonly IInstallSession _session;
     private readonly Func<string?> _readEnvironment;
+    // What this app shows (#53): every check and switch preview is filtered for it, so the page
+    // announces only changes to installer workloads. The catalog itself is shared with the
+    // DiffusionNexus app and always applied whole.
+    private readonly CatalogAudience _audience;
     private readonly ILogger<CatalogUpdateCoordinator> _logger;
 
     // One lock for the state the UI reads; the in-flight task is the concurrency guard.
@@ -67,6 +71,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         IUserSettingsRepository settings,
         IInstallSession session,
         Func<string?> readEnvironment,
+        CatalogAudience audience,
         ILogger<CatalogUpdateCoordinator>? logger = null,
         CatalogChannelConfirmations? confirmations = null)
     {
@@ -77,6 +82,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         _settings = settings;
         _session = session;
         _readEnvironment = readEnvironment;
+        _audience = audience;
         _logger = logger ?? NullLogger<CatalogUpdateCoordinator>.Instance;
 
         _installRunning = session.Phase == InstallPhase.Running;
@@ -105,7 +111,12 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
     // Not while a switch waits for an answer: the last check describes the channel being left,
     // and its update could not be applied until Switch or Keep (PR #43 review).
-    public bool UpdateAvailable =>
+    // Announced only when the release changes something the installer shows (#53): a release that
+    // changes the other app's workloads alone is applied silently or not at all, never offered.
+    public bool UpdateAvailable => ReleaseAvailable && LastCheck!.HasChanges;
+
+    /// <summary>The followed channel's folder is behind its release, whoever the changes are for.</summary>
+    private bool ReleaseAvailable =>
         PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
 
     // Reads the session live rather than the cached flag: the flag only decides when to re-raise.
@@ -159,7 +170,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             await EnsureChannelAsync(ct).ConfigureAwait(false);
             _logger.LogInformation("Catalog update check started on {Channel}", Channel);
 
-            var check = await _updates.CheckAsync(ct).ConfigureAwait(false);
+            var check = (await _updates.CheckAsync(ct).ConfigureAwait(false)).For(_audience);
             var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
             var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
 
@@ -174,8 +185,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 if (current) _notLanded = null;
             }
             if (current) _confirmations.Confirm(check.Channel, installed);
-            _logger.LogInformation("Catalog update check: {Outcome} (remote v{Remote}, installed v{Installed}, {Workloads} workload / {Workflows} workflow changes){Error}",
+            _logger.LogInformation("Catalog update check: {Outcome} (remote v{Remote}, installed v{Installed}, {Workloads} workload / {Workflows} workflow changes for the installer, {All} in the release){Error}",
                 check.Outcome, check.Remote?.CatalogVersion, installed.HighestCatalogVersion, check.Workloads.Count, check.Workflows.Count,
+                check.Unfiltered!.Workloads.Count + check.Unfiltered.Workflows.Count,
                 check.Error is null ? string.Empty : ": " + check.Error);
         }
         catch (Exception ex)
@@ -199,7 +211,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         await CheckAsync(ct).ConfigureAwait(false);
 
         bool wanted;
-        lock (_gate) wanted = AutoApply && UpdateAvailable;
+        lock (_gate) wanted = AutoApply && ReleaseAvailable;
         if (!wanted) return;
 
         // Not awaited, and not under the caller's token: this returns once the download has
@@ -224,10 +236,16 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 _logger.LogInformation("Catalog apply refused: an apply or check is already in flight, automatic {Automatic}", automatic);
                 return Task.CompletedTask;
             }
-            if (_switching || !CanApply)
+            // A click applies what the page offered (CanApply). The startup check applies the release
+            // whether or not it changes anything for the installer: full snapshots, and the folder is
+            // shared with the other app (#53).
+            var canStart = automatic
+                ? ReleaseAvailable && Phase == CatalogUpdatePhase.Checked && !InstallRunning
+                : CanApply;
+            if (_switching || !canStart)
             {
-                _logger.LogInformation("Catalog apply refused: phase {Phase}, update available {Available}, install running {Running}, switching {Switching}, automatic {Automatic}",
-                    Phase, UpdateAvailable, InstallRunning, _switching, automatic);
+                _logger.LogInformation("Catalog apply refused: phase {Phase}, release available {Release}, for the installer {Available}, install running {Running}, switching {Switching}, automatic {Automatic}",
+                    Phase, ReleaseAvailable, UpdateAvailable, InstallRunning, _switching, automatic);
                 return Task.CompletedTask;
             }
             if (automatic) _logger.LogInformation("Applying the catalog update automatically (setting on)");
@@ -456,7 +474,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             }
             Raise();
 
-            var preview = await PreviewAsync(target, ct).ConfigureAwait(false);
+            var preview = await PreviewAsync(current, target, ct).ConfigureAwait(false);
             lock (_gate) Phase = phaseBefore;
 
             if (ChannelSwitchWarning.For(preview) is { } warning)
@@ -520,14 +538,14 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         Raise();
     }
 
-    /// <summary>A check of <paramref name="target"/> that leaves <see cref="CatalogOptions.Channel"/> alone. Never throws.</summary>
-    private async Task<CatalogUpdateCheck> PreviewAsync(CatalogChannel target, CancellationToken ct)
+    /// <summary>The switch from <paramref name="from"/> to <paramref name="target"/>, as the SDK diffs it, filtered for the installer. Leaves <see cref="CatalogOptions.Channel"/> alone. Never throws.</summary>
+    private async Task<CatalogUpdateCheck> PreviewAsync(CatalogChannel from, CatalogChannel target, CancellationToken ct)
     {
         _logger.LogInformation("Catalog channel switch: previewing {Channel}", target);
         try
         {
-            var check = await _updates.CheckAsync(target, ct).ConfigureAwait(false);
-            _logger.LogInformation("Catalog channel preview: {Outcome} (remote v{Remote}, {Workloads} workload / {Workflows} workflow changes){Error}",
+            var check = (await _updates.PreviewSwitchAsync(from, target, ct).ConfigureAwait(false)).For(_audience);
+            _logger.LogInformation("Catalog channel preview: {Outcome} (remote v{Remote}, {Workloads} workload / {Workflows} workflow changes for the installer){Error}",
                 check.Outcome, check.Remote?.CatalogVersion, check.Workloads.Count, check.Workflows.Count,
                 check.Error is null ? string.Empty : ": " + check.Error);
             return check;

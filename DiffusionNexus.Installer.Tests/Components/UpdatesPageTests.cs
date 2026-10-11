@@ -6,6 +6,7 @@ using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,6 +113,24 @@ public class UpdatesPageTests : BunitContext
     {
         _catalog.LastCheck = CatalogChecks.Available(4, CatalogChannel.Preview, workloads.Length == 0 ? null : workloads);
         _catalog.Phase = CatalogUpdatePhase.Checked;
+    }
+
+    // #53: the catalog is shared with the DiffusionNexus app; a release that changes only its
+    // workloads is nothing for the installer user to read or apply.
+    [Fact]
+    public void A_release_with_no_changes_for_the_installer_says_so_and_offers_nothing()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 has no changes for the installer.");
+        page.FindAll(".catalog-changes").Should().BeEmpty();
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
     }
 
     [Fact]

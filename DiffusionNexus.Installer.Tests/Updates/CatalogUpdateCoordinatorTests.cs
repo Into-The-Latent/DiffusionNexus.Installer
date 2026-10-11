@@ -5,6 +5,7 @@ using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
 using DiffusionNexus.Installer.Tests.Support;
@@ -43,8 +44,9 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     private string ConfirmationsPath => Path.Combine(_dir, CatalogChannelConfirmations.FileName);
 
     /// <summary>A new coordinator is a restart: it shares only the files with the ones before it.</summary>
-    private CatalogUpdateCoordinator Create() =>
+    private CatalogUpdateCoordinator Create(bool includeDrafts = false) =>
         new(_service, _catalog.Object, _options, _settings.Object, _session.Object, () => _environment,
+            CatalogAudience.Installer(includeDrafts),
             confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
 
     /// <summary>What an apply leaves on disk. A channel is recorded per section, as SDK 2.1.0 does; null is a 2.0.0 state.</summary>
@@ -1561,6 +1563,135 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         _service.PreviewedChannels.Should().BeEmpty();
         saveGate.SetResult();
         await saving;
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+    }
+
+    // ----- per-app notices (#53) -----
+    // The catalog is shared with the DiffusionNexus app. Every check is filtered for the installer's
+    // audience, so the page announces only changes to the workloads it shows.
+
+    [Fact]
+    public async Task A_release_that_changes_nothing_for_the_installer_is_not_announced()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Stable,
+            [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")], [CatalogChecks.WorkflowAdded("Qwen edit", "V1.0", "Qwen-Image-2512")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore);
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpdatesAvailable, "the folder is behind; the release is still a full snapshot");
+        coordinator.LastCheck.HasChanges.Should().BeFalse();
+        coordinator.LastCheck.Workloads.Should().BeEmpty();
+        coordinator.LastCheck.Workflows.Should().BeEmpty();
+        coordinator.UpdateAvailable.Should().BeFalse();
+        coordinator.CanApply.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_release_that_changes_nothing_for_the_installer_is_still_applied_automatically()
+    {
+        using var coordinator = WithUpdateOnStartup(automatic: true);
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore);
+        _service.OnApply = () => WriteInstalledState(7);
+
+        await coordinator.CheckAtStartupAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(1, "full snapshots: the folder both apps read stays current");
+        coordinator.LastApplyAutomatic.Should().BeTrue();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task A_release_for_the_installer_is_announced_with_only_its_rows()
+    {
+        // Two workloads, one per app, built by hand so the index can differ per row.
+        var krea = CatalogChecks.WorkloadUpdated("Krea-2-Turbo", "V1.0", "V1.1");
+        var qwen = CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0");
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Stable, [krea, qwen]) with
+        {
+            Index = new CatalogAudienceIndex(new Dictionary<Guid, WorkloadAudienceInfo>
+            {
+                [krea.Id] = new(WorkloadTargetType.Installer, true),
+                [qwen.Id] = new(WorkloadTargetType.DiffusionNexusCore, true),
+            }, new Dictionary<Guid, IReadOnlyList<Guid>>()),
+        };
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+
+        coordinator.UpdateAvailable.Should().BeTrue();
+        coordinator.LastCheck!.Workloads.Should().ContainSingle().Which.Name.Should().Be("Krea-2-Turbo");
+    }
+
+    [Fact]
+    public async Task A_check_without_targets_counts_for_the_installer()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(4, CatalogChannel.Stable);   // Index empty: a manifest packed before 2.3.0
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+
+        coordinator.UpdateAvailable.Should().BeTrue();
+        coordinator.LastCheck!.Workloads.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_release_that_changes_only_shared_files_is_announced()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(4, CatalogChannel.Stable, workloads: [], workflows: []);
+        using var coordinator = Create();
+
+        await coordinator.CheckAsync();
+
+        coordinator.UpdateAvailable.Should().BeTrue("repositories.json and wheels.json belong to every app");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_draft_installer_workload_counts_only_in_a_build_that_shows_drafts(bool includeDrafts)
+    {
+        _service.NextCheck = () => CatalogChecks.Available(4, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Draft", "V1.0")])
+            .Targeting(WorkloadTargetType.Installer, released: false);
+        using var coordinator = Create(includeDrafts);
+
+        await coordinator.CheckAsync();
+
+        coordinator.UpdateAvailable.Should().Be(includeDrafts);
+    }
+
+    [Fact]
+    public async Task The_apply_gets_the_check_with_its_whole_release()
+    {
+        _service.NextCheck = () => CatalogChecks.Available(4, CatalogChannel.Stable).Targeting(WorkloadTargetType.Installer);
+        using var coordinator = Create();
+        await coordinator.CheckAsync();
+
+        await coordinator.ApplyAsync();
+        Settle(coordinator);
+
+        _service.AppliedCheck.Should().BeSameAs(coordinator.LastCheck);
+        _service.AppliedCheck!.Unfiltered.Should().NotBeNull();
+        _service.AppliedCheck.Remote!.CatalogVersion.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task A_switch_warns_only_about_installer_workloads()
+    {
+        _service.NextPreview = _ => StableRemoves("Qwen-Image-2.1").Targeting(WorkloadTargetType.DiffusionNexusCore);
+        using var coordinator = CreateOnPreview();
+        _service.OnApply = () => WriteInstalledState(4, CatalogChannel.Stable);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        Settle(coordinator);
+
+        coordinator.PendingSwitch.Should().BeNull("the removal is the other app's");
+        _service.PreviewedSwitches.Should().Equal((CatalogChannel.Preview, CatalogChannel.Stable));
+        _service.ApplyCalls.Should().Be(1);
         coordinator.Channel.Should().Be(CatalogChannel.Stable);
     }
 }

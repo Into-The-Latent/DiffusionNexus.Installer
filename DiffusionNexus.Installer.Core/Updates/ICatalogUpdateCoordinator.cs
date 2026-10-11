@@ -52,6 +52,12 @@ public interface ICatalogUpdateCoordinator
     /// </summary>
     long ContentGeneration { get; }
 
+    /// <summary>
+    /// The followed channel's release changes something the installer shows (#53). A release that
+    /// changes only the other app's workloads is not announced: the startup check applies it when
+    /// <see cref="AutoApply"/> is on, and otherwise the folder catches up with the next apply.
+    /// <see cref="LastCheck"/> is always filtered for the installer (its <c>Audience</c> is set).
+    /// </summary>
     bool UpdateAvailable { get; }
     bool CanApply { get; }
 
