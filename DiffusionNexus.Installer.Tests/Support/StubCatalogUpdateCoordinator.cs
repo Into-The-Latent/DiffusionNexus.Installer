@@ -19,7 +19,10 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public bool LastApplyUncertain { get; set; }
     public string? ApplyBlockedReason { get; set; }
 
-    public bool UpdateAvailable => PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
+    // The real rule (#53), from the same place the coordinator takes it; the incomplete reason is read
+    // without counting (the page must not compute it while hidden, and this is not the page).
+    public bool UpdateAvailable => CatalogUpdateOffer.Offered(LastCheck, Phase, PendingSwitch is not null, LastApplyFailed, () => _incompleteReason is not null);
+    public bool LastApplyFailed => LastApply is { } r && (r.Error is not null || r.Failed != CatalogSections.None);
     public bool CanApply => UpdateAvailable && Phase == CatalogUpdatePhase.Checked && ApplyBlockedReason is null;
 
     public event Action? Changed;

@@ -55,6 +55,8 @@ public static class CoreServiceCollectionExtensions
             sp.GetRequiredService<IUserSettingsRepository>(),
             sp.GetRequiredService<IInstallSession>(),
             () => Environment.GetEnvironmentVariable(CatalogChannelResolver.EnvironmentVariable),
+            // Drafts count in the builds that show them (Debug), exactly as the workload list does.
+            CatalogAudience.Installer(includeDrafts: sp.GetRequiredService<WorkloadVisibility>().IncludeNonRelease),
             sp.GetService<ILogger<CatalogUpdateCoordinator>>(),
             new CatalogChannelConfirmations(CatalogChannelConfirmationsPath, sp.GetService<ILogger<CatalogChannelConfirmations>>())));
 

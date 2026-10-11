@@ -160,24 +160,30 @@
         {
             @ChangeList(available)
 
-            @if (Catalog.Phase == CatalogUpdatePhase.Applying)
+            @if (Catalog.Phase != CatalogUpdatePhase.Applying)
             {
-                <p class="catalog-progress">@ProgressText</p>
+                @if (Catalog.ApplyBlockedReason is { } blocked)
+                {
+                    @* Same rule as "Restart and install" above: never swap content under a running plan. *@
+                    <p class="panel-hint">@blocked</p>
+                }
+                else
+                {
+                    <button class="primary" @onclick="ApplyCatalogAsync" disabled="@(!Catalog.CanApply)">Apply catalog update</button>
+                }
             }
-            else if (Catalog.ApplyBlockedReason is { } blocked)
-            {
-                @* Same rule as "Restart and install" above: never swap content under a running plan. *@
-                <p class="panel-hint">@blocked</p>
-            }
-            else
-            {
-                <button class="primary" @onclick="ApplyCatalogAsync" disabled="@(!Catalog.CanApply)">Apply catalog update</button>
-            }
+        }
 
-            @if (Catalog.LastApply is { } failed && (failed.Error is not null || failed.Failed != CatalogSections.None))
-            {
-                <p class="catalog-error">@ApplyFailureText(failed, Catalog.LastApplyUncertain)</p>
-            }
+        @* Outside the block above: a switch into a channel folder that does not exist yet downloads
+           although its preview said "up to date", and the startup apply runs with nothing to offer.
+           The download and what went wrong are shown whatever is offered (#53 review). *@
+        @if (Catalog.Phase == CatalogUpdatePhase.Applying)
+        {
+            <p class="catalog-progress">@ProgressText</p>
+        }
+        @if (Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApplyFailed && Catalog.LastApply is { } failed)
+        {
+            <p class="catalog-error">@ApplyFailureText(failed, Catalog.LastApplyUncertain)</p>
         }
     </section>
 
@@ -471,7 +477,7 @@
     private string InstalledText => Catalog.Installed switch
     {
         null => "unknown",
-        { Workloads: null, Workflows: null } => "not yet installed",
+        var s when !s.RecordsAnything() => "not yet installed",
         var s => $"{InstalledCatalogDescription.Short(s)}, applied {(s.Workloads?.AppliedAt ?? s.Workflows?.AppliedAt)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}",
     };
 
@@ -483,14 +489,28 @@
             if (Catalog.Phase == CatalogUpdatePhase.Checking) return "Checking the catalog…";
             if (Catalog.Phase == CatalogUpdatePhase.Applied)
             {
-                return Catalog.LastApplyAutomatic
-                    ? $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion} automatically."
-                    : $"Catalog updated to v{Catalog.LastCheck?.Remote?.CatalogVersion}.";
+                // What landed, from the state: a switch applies the SDK's own check of the target folder,
+                // which may be a release newer than the preview named.
+                var landed = Catalog.Installed is { } s && s.RecordsAnything() ? s.HighestCatalogVersion : Catalog.LastCheck?.Remote?.CatalogVersion;
+                if (!Catalog.LastApplyAutomatic) return $"Catalog updated to v{landed}.";
+                // The startup apply with the setting on lands releases with nothing for the installer too
+                // (the folder is shared with the DiffusionNexus app); "updated" with no list would contradict itself.
+                return Catalog.LastCheck is { HasChanges: false }
+                    ? $"Catalog v{landed} applied automatically; no changes for the installer."
+                    : $"Catalog updated to v{landed} automatically.";
             }
             return Catalog.LastCheck switch
             {
                 null => "Not checked yet.",
+                // A same-content switch whose fill failed: the SDK found the folder needs the release, and Apply is the retry.
+                { IsSwitchPreview: true } c when Catalog.UpdateAvailable => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
                 { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
+                // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
+                // A release the coordinator does not offer (nothing in it for the installer, no failed apply
+                // to retry, no switch to complete) -- not while it is being applied anyway (the startup apply
+                // with the setting on): the progress line renders below.
+                { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c when !Catalog.UpdateAvailable && Catalog.Phase != CatalogUpdatePhase.Applying
+                    => $"Catalog v{c.Remote?.CatalogVersion} has no changes for the installer.",
                 { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
                 { Outcome: CatalogUpdateOutcome.RequiresNewerSoftware } => "This catalog update needs a newer version of the installer. Install the app update above first.",
                 { Outcome: CatalogUpdateOutcome.OverrideActive } => $"Update check skipped: a local catalog override is active at {Catalog.OverridePath}.",
@@ -500,9 +520,11 @@
         }
     }
 
+    // No bytes yet: a switch first has the SDK check the target folder, and most switches download
+    // nothing at all; the percent appears once a download starts.
     private string ProgressText => Catalog.Progress switch
     {
-        null => "Downloading…",
+        null => "Applying the catalog…",
         { TotalBytes: > 0 } p => $"Downloading… {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
         var p => $"Downloading… {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
     };

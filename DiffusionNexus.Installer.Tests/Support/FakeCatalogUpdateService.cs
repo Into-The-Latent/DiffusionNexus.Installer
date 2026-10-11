@@ -23,6 +23,7 @@ internal sealed class FakeCatalogUpdateService : ICatalogUpdateService
 
     public int CheckCalls { get; private set; }
     public List<CatalogChannel> PreviewedChannels { get; } = [];
+    public List<(CatalogChannel From, CatalogChannel To)> PreviewedSwitches { get; } = [];
     public int ApplyCalls { get; private set; }
     public CatalogUpdateCheck? AppliedCheck { get; private set; }
 
@@ -43,6 +44,14 @@ internal sealed class FakeCatalogUpdateService : ICatalogUpdateService
         PreviewedChannels.Add(channel);
         if (HoldCheck is not null) await HoldCheck.Task;
         return NextPreview?.Invoke(channel) ?? NextCheck() with { Channel = channel };
+    }
+
+    public async Task<CatalogUpdateCheck> PreviewSwitchAsync(CatalogChannel from, CatalogChannel to, CancellationToken ct = default)
+    {
+        PreviewedSwitches.Add((from, to));
+        PreviewedChannels.Add(to);
+        if (HoldCheck is not null) await HoldCheck.Task;
+        return (NextPreview?.Invoke(to) ?? NextCheck() with { Channel = to }) with { IsSwitchPreview = true, FollowedChannel = from };
     }
 
     public async Task<CatalogApplyResult> ApplyAsync(CatalogUpdateCheck check, CatalogSections sections,

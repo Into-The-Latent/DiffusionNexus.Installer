@@ -16,7 +16,10 @@ There is no single gallery of every workload any more. `/` (§6) asks which soft
 list lives behind each multi-workload software card, at `/software/{type}`. These steps check that
 the catalog reaches those lists correctly.
 
-1. Launch with no catalog installed (delete `%LocalAppData%\DiffusionNexus\catalog`).
+1. Launch with no catalog installed. Since SDK 2.3.0 (#53) the installed catalog is
+   `%LocalAppData%\ITL-Shared\format-1\catalog-stable\` (Preview: `catalog-preview\`), shared with
+   the DiffusionNexus app; delete that folder. Deleting the old `%LocalAppData%\DiffusionNexus\catalog`
+   alone changes nothing — it is only the source of the one-time copy (§7c), and it is left in place.
    **Expect:** the welcome screen populates from the embedded seed — six software cards, no error,
    no empty state.
 2. Click ComfyUI. **Expect:** 16 cards, every one enabled except Config535 — 15 of 16. The catalog
@@ -37,7 +40,7 @@ the catalog reaches those lists correctly.
    so an Audio button appears there by itself the day a ComfyUI workload declares it.
 4. **The upgrade path. Step 1 can never show you this, because it deletes the catalog first.**
    Leave the catalog the previous steps installed in place — do NOT delete
-   `%LocalAppData%\DiffusionNexus\catalog` — and relaunch. Go to ACE-Step.
+   `%LocalAppData%\ITL-Shared\format-1\catalog-stable` — and relaunch. Go to ACE-Step.
    **Expect:** ACE-Step-1.5 still reads **Image**, not Audio.
 
    That is expected, and it is the honest reading of commit `8ad4db6`: the refreshed seed fixes the
@@ -288,10 +291,10 @@ can lag a minute after the release appears). Stable is what users follow.
    notice is gone. Press **← Back**. **Expect:** the welcome screen — an apply sends Back home
    (#32) — unless `/updates` was opened from a finished install's report, which Back returns to.
    Open the workload. **Expect:** the edited description.
-5. Quit. Launch again **without** the variable. **Expect:** `/updates` has Stable checked, the
-   Catalog row still says vN+1 (Preview) — provenance, not preference — and the check
-   says "The catalog is up to date." or offers the stable content back if it differs (the diff is
-   hash-based; a Preview client returning to Stable is simply offered what Stable has).
+5. Quit. Launch again **without** the variable. **Expect:** `/updates` has Stable checked and the
+   Catalog row says vN (Stable): each channel has its own folder (§7c), so the app reads the Stable
+   one again and the Preview content stays in `catalog-preview\`. The check says "The catalog is up
+   to date." (or offers Stable's newer content if there is any).
 6. In a **Release** build open `/updates` (Developer tools no longer has a channel panel).
    **Expect:** an Update channel panel with Stable and Preview radios; the saved one is checked.
    Pick the other. **Expect:** the radios grey out while the new channel is previewed, then the
@@ -329,27 +332,36 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
 3. Press **Keep Preview**. **Expect:** the warning goes, the Preview dot comes back, the radios
    work again, and the settings file and Catalog row are unchanged.
 4. Pick Stable again and press **Switch to Stable**. **Expect:** the settings file says Stable
-   before the download ends, "Downloading… NN%", then "Catalog updated to vS." The Catalog row
-   reads "vS (Stable)" and `%LocalAppData%\DiffusionNexus\catalog\catalog-state.json` has
-   `"channel": "Stable"` at the top and in the workloads section. A workload the warning named as
-   removed is gone from the gallery; a copy of it you installed earlier is untouched on disk.
+   before the download ends, "Downloading… NN%" (only if `catalog-stable\` did not hold vS yet),
+   then "Catalog updated to vS." (or "The catalog is up to date." when nothing had to land). The
+   Catalog row reads "vS (Stable)" and `%LocalAppData%\ITL-Shared\format-1\catalog-stable\catalog-state.json`
+   has `"channel": "Stable"` at the top and in the workloads section; `catalog-preview\` beside it
+   still holds vP. A workload the warning named as removed is gone from the gallery; a copy of it
+   you installed earlier is untouched on disk.
 5. Disconnect the network and pick Preview. **Expect:** no warning (the preview failed), "The
-   catalog check failed: …" and "You follow Preview. The installed catalog is still from Stable
-   (vS)." with **Retry**. Relaunch (still offline). **Expect:** Preview is still checked (the
-   choice was saved) and, once the startup check has failed, the same "still from" line: it is
-   read from `catalog-state.json`, not remembered.
-   Reconnect and press **Retry**. **Expect:** the Preview diff with **Apply catalog update**
-   (the Retry button gives way to it); Apply, and the "still from" line goes.
+   catalog check failed: …", and the Catalog row reads "vP (Preview)": the Preview folder from
+   step 1 is read again, nothing is downloaded, and there is no "still from" line.
+   Now the folder that does not exist yet: still offline, quit, delete `catalog-preview\`, launch,
+   pick Stable, then Preview. **Expect:** "The catalog check failed: …" and "You follow Preview.
+   The installed catalog is still from Stable (vE)." with **Retry**, vE being the embedded
+   catalog's version — the SDK seeded the new folder from it. Relaunch (still offline). **Expect:**
+   Preview is still checked (the choice was saved) and, once the startup check has failed, the same
+   "still from" line: it is read from that folder's `catalog-state.json`, not remembered.
+   Reconnect and press **Retry**. **Expect:** "Catalog vP is available on Preview." with **Apply
+   catalog update** (the Retry button gives way to it) and the rows for installer workloads — the
+   list may be empty when only the app's workloads differ from the seed; Apply is offered anyway,
+   because it completes the switch. Apply, and the "still from" line goes.
 6. Right after an editor **Release** (both channels serve the same content), switch channels.
-   **Expect:** no warning, no download, "The catalog is up to date.", and the choice saved.
+   **Expect:** no warning, "The catalog is up to date.", and the choice saved; a download only if
+   the target folder did not exist yet ("Downloading… NN%" first).
    `catalog_channel_confirmations.json` next to `user_settings.json` names the new channel.
    Disconnect the network and relaunch. **Expect:** the startup check fails, and there is no
    "still from" line: the content was found current on this channel, whatever
    `catalog-state.json` still records.
-7. Start an install, open `/updates` while it runs and switch channels (answer Switch if asked).
-   **Expect:** the choice saved, no download, "It can be applied once <workload> has finished."
-   and the "still from" line. Let the install finish. **Expect:** Apply appears without leaving
-   the page.
+7. Start an install, open `/updates` while it runs and switch to a channel whose release changes
+   an installer workload (answer Switch if asked). **Expect:** the choice saved, no download,
+   "It can be applied once <workload> has finished." and the "still from" line. Let the install
+   finish. **Expect:** Apply appears without leaving the page.
 8. Start any install. **Expect:** the first log line and the first row of the result table read
    "Catalog vS (Stable, <first 7 of the commit in catalog-state.json>)", and the log file the
    install writes into its folder carries the same line. On a state written before this build
@@ -384,6 +396,29 @@ follow Preview, as in section 7). A Release build, no catalog override.
    could not be saved: …" and the switch back where it was. Clear the read-only flag.
 6. Turn it off and relaunch with an update pending. **Expect:** today's behaviour: the update
    offered, nothing applied.
+
+## 7c. Shared catalog folders and notices for installer workloads (SDK 2.3.0, #53)
+
+The catalog is shared with the DiffusionNexus app: one folder per channel under
+`%LocalAppData%\ITL-Shared\format-1\`, both apps read them, either pulls into them, and each
+app announces only changes to its own workloads (`workloadTarget` in the manifest).
+
+1. **The one-time copy.** With `%LocalAppData%\DiffusionNexus\catalog` present (an install on
+   SDK 2.0–2.2) and no `ITL-Shared` folder, launch. **Expect:** `ITL-Shared\format-1\catalog-<the
+   channel the old state recorded>\` appears with the same `catalog-state.json`, the welcome screen
+   shows the same catalog as before, and nothing is downloaded. The old folder is left alone.
+2. **Only installer changes are announced.** Follow a channel whose newest release changes only
+   the app's workloads (Preview v6 adds the DiffusionNexus editor workloads). Press **Check for
+   updates**. **Expect:** the row reads "Catalog v6 has no changes for the installer.", no change
+   list, no Apply button. Switch "Apply catalog updates automatically" on and relaunch.
+   **Expect:** the startup check applies it anyway ("Catalog updated to v6 automatically.", an
+   empty list): the folder is shared, so it stays current for the other app.
+3. **The switch warning counts installer workloads only.** From Stable, pick Preview when Preview
+   differs from Stable only in the app's workloads. **Expect:** no warning; the switch goes ahead,
+   `catalog-preview\` appears, the Catalog row reads "v6 (Preview)". Pick Stable. **Expect:** the
+   Stable folder is read again, no download.
+4. The log (`/updates` → Updater log) shows "Catalog update check: … N workload / M workflow
+   changes for the installer, K in the release" and "Following the Stable catalog channel".
 
 ## 8. App updates on the Preview channel
 

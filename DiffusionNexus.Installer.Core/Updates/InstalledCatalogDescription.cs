@@ -34,8 +34,8 @@ public static class InstalledCatalogDescription
         // ICatalog reads its state tolerantly, so an empty one may be a file that was held during
         // the load. Read, not Load: Load answers "no state" for a locked file, and the report would
         // then state something false instead of saying it could not look.
-        return Describe(loaded is { Workloads: not null } or { Workflows: not null }
-            ? loaded
+        return Describe(loaded is { } l && l.RecordsAnything()
+            ? l
             : LocalCatalogState.Read(options.InstalledCatalogPath));
     }
 
@@ -197,7 +197,18 @@ public sealed class CatalogProvenance(CatalogOptions options, ICatalog catalog) 
     }
 
     /// <summary>Null when the load failed: the reading then falls back to the file, never fails the caller's read.</summary>
-    private async Task<LocalCatalogState?> StateAsync(CancellationToken ct)
+    private Task<LocalCatalogState?> StateAsync(CancellationToken ct) => CatalogStateReads.TryStateAsync(catalog, ct);
+}
+
+/// <summary>The one way the installer reads <see cref="ICatalog.State"/>: off the caller's thread, a failed load as null.</summary>
+internal static class CatalogStateReads
+{
+    /// <summary>
+    /// <see cref="ICatalog.State"/> blocks while a load runs (and, with SDK 2.3.0 shared folders, the
+    /// first read of a channel seeds its folder), so it runs on the pool. Null when the load failed;
+    /// only a cancel propagates.
+    /// </summary>
+    public static async Task<LocalCatalogState?> TryStateAsync(ICatalog catalog, CancellationToken ct = default)
     {
         try
         {

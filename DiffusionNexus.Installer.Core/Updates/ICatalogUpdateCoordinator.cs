@@ -41,17 +41,34 @@ public interface ICatalogUpdateCoordinator
     /// </summary>
     bool LastApplyUncertain { get; }
 
+    /// <summary>The apply in <see cref="LastApply"/> failed or landed only part of the release. False whenever LastApply is null.</summary>
+    bool LastApplyFailed { get; }
+
     /// <summary>
     /// How many applies have changed installed content in this run: one per apply that landed at
     /// least one section, a partial one included. A screen built from the catalog compares it
     /// with the value it was built under to know it is stale (#32). No phase says this: a partial
     /// apply ends in Checked, and a switch that applies nothing passes through Checking back to
-    /// whatever phase it found, Applied included. An apply that throws counts when the state file
+    /// whatever phase it found, Applied included. With SDK 2.3.0's folder per channel a switch
+    /// counts as soon as the channel changes, downloaded or not: the app reads another folder. An
+    /// apply that throws counts when the state file
     /// shows a section moved, or when the state cannot be read back (a needless "go home" is cheap
     /// where a missed one is #32). Safe to read from any thread without the coordinator's lock.
     /// </summary>
     long ContentGeneration { get; }
 
+    /// <summary>
+    /// The followed channel's release changes something the installer shows (#53). A release that
+    /// changes only the other app's workloads is not announced: the startup check applies it when
+    /// <see cref="AutoApply"/> is on, and otherwise the folder catches up with the next apply. One
+    /// exception: while <see cref="SwitchIncomplete"/>, the release that completes the switch is
+    /// offered whoever its changes are for -- it is what the user asked for, and Apply is the way out.
+    /// Likewise after a failed apply: Apply is the retry, whoever the changes were for.
+    /// <see cref="LastCheck"/> is always filtered for the installer (its <c>Audience</c> is set).
+    /// After a switch that landed its release it is the preview the user agreed to (which names that
+    /// release); after one that landed nothing, failed, or was held by an install it describes the
+    /// folder now followed (up to date, or what is still to apply).
+    /// </summary>
     bool UpdateAvailable { get; }
     bool CanApply { get; }
 
@@ -126,7 +143,8 @@ public interface ICatalogUpdateCoordinator
     /// <summary>
     /// Previews <paramref name="target"/> without saving anything (spec 7.1). A diff that removes
     /// or changes something waits in <see cref="PendingSwitch"/>; otherwise the switch goes ahead
-    /// at once, as <see cref="ConfirmSwitchAsync"/> would. Refused (no-op) while checking,
+    /// at once, as <see cref="ConfirmSwitchAsync"/> would, and the SDK fills the target channel's
+    /// folder (SDK 2.3.0 keeps one per channel) when it is missing or behind. Refused (no-op) while checking,
     /// applying or switching. Settings I/O errors propagate, and then nothing was changed.
     /// Completes once the choice is saved (or waits for an answer); a download it starts runs on
     /// and reports through <see cref="Changed"/>, like <see cref="ApplyAsync"/>.
@@ -134,7 +152,8 @@ public interface ICatalogUpdateCoordinator
     Task SwitchChannelAsync(CatalogChannel target, CancellationToken ct = default);
 
     /// <summary>
-    /// "Switch": saves the preference, then starts the apply of the previewed check and completes;
+    /// "Switch": saves the preference, then starts the apply of the previewed check (the SDK
+    /// re-checks the target channel's own folder and applies nothing when it is current) and completes;
     /// the download reports through <see cref="Changed"/>. A failed apply keeps the preference and
     /// the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
     /// <see cref="PendingSwitch"/>. Settings I/O errors propagate, and then nothing was changed.

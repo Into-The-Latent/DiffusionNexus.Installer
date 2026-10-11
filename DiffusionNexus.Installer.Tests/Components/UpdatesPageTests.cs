@@ -6,6 +6,7 @@ using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,6 +113,182 @@ public class UpdatesPageTests : BunitContext
     {
         _catalog.LastCheck = CatalogChecks.Available(4, CatalogChannel.Preview, workloads.Length == 0 ? null : workloads);
         _catalog.Phase = CatalogUpdatePhase.Checked;
+    }
+
+    // #53: the catalog is shared with the DiffusionNexus app; a release that changes only its
+    // workloads is nothing for the installer user to read or apply.
+    [Fact]
+    public void A_release_with_no_changes_for_the_installer_says_so_and_offers_nothing()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 has no changes for the installer.");
+        page.FindAll(".catalog-changes").Should().BeEmpty();
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // #53 review C2: the switch to Stable did not land and the Stable release differs from what the
+    // folder holds only in the other app's workloads. Applying it is the way out, so it is offered.
+    [Fact]
+    public void An_incomplete_switch_offers_the_release_that_completes_it()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(5, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.SwitchIncompleteReason = "The installed catalog is still from Preview (v6).";
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v5 is available on Stable.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Retry", "Apply is the retry");
+    }
+
+    // #53 round 1: the startup apply of a release with nothing for the installer must not say "no
+    // changes for the installer" over its own "Downloading…" line.
+    [Fact]
+    public void A_silent_apply_of_a_release_with_no_installer_changes_says_available_while_it_downloads()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.LastApplyAutomatic = true;
+        _catalog.Progress = new CatalogDownloadProgress(40, 100);
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 is available on Stable.");
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Downloading… 40%");
+    }
+
+    // #53 round 2: the startup apply of a release with nothing for the installer failed; the error line
+    // alone left the user nothing to press. Apply is the retry, and the row says the release is there.
+    [Fact]
+    public void A_failed_apply_of_a_release_with_no_installer_changes_offers_the_retry()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+        _catalog.LastApplyAutomatic = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 is available on Stable.");
+        page.Find(".catalog-error").TextContent.Should().Contain("The download stalled.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // #53 round 4: a same-content switch whose fill failed. The SDK found the folder needs the release;
+    // the row says so and Apply (the switch apply again) is the retry.
+    [Fact]
+    public void A_failed_same_content_switch_offers_apply_as_the_retry()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with
+        {
+            Channel = CatalogChannel.Preview, Remote = CatalogChecks.Remote(6, CatalogChannel.Preview), IsSwitchPreview = true,
+        };
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v6 is available on Preview.");
+        page.Find(".catalog-error").TextContent.Should().Contain("The download stalled.");
+        page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
+    }
+
+    // #53 round 5: the startup apply of a release with nothing for the installer landed. "Updated"
+    // with no list reads as a contradiction; the line says what happened.
+    [Fact]
+    public void A_silent_apply_with_no_installer_changes_says_so_once_it_landed()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.LastApplyAutomatic = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 applied automatically; no changes for the installer.");
+        page.FindAll(".catalog-changes").Should().BeEmpty();
+    }
+
+    // #53 round 4: a release published between the preview and Switch: the SDK applies the newer one
+    // (its own check of the folder), so the outcome names what landed, not what the preview said.
+    [Fact]
+    public void After_an_apply_the_outcome_names_the_version_that_landed()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.Installed = new LocalCatalogState
+        {
+            Workloads = new SectionState(7, "abc", DateTimeOffset.UnixEpoch) { Channel = CatalogChannel.Preview },
+            Workflows = new SectionState(7, "abc", DateTimeOffset.UnixEpoch) { Channel = CatalogChannel.Preview },
+        };
+
+        Render<UpdatesPage>().Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v7.");
+    }
+
+    // #53 round 2: every switch passes through Applying while the SDK checks the target folder; most
+    // of them download nothing, so "Downloading…" with no bytes is wrong half the time.
+    [Fact]
+    public void Progress_without_bytes_says_the_catalog_is_being_applied()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.Progress = null;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Applying the catalog…");
+    }
+
+    // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";
+    // the download and its failure must be visible even when nothing is offered to apply.
+    [Fact]
+    public void Progress_is_shown_while_any_apply_runs()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.Progress = new CatalogDownloadProgress(512 * 1024, 1024 * 1024);
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Should().Contain("50");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
+    }
+
+    [Fact]
+    public void A_failed_apply_is_shown_even_when_nothing_is_offered()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
+        _catalog.Phase = CatalogUpdatePhase.Checked;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "The download stalled.");
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-error").TextContent.Should().Contain("The download stalled.");
+        page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
     }
 
     [Fact]

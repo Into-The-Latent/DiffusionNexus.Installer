@@ -15,8 +15,13 @@ public sealed class CatalogUpdateStartupCheck(ICatalogUpdateCoordinator coordina
 {
     private readonly ILogger<CatalogUpdateStartupCheck> _logger = logger ?? NullLogger<CatalogUpdateStartupCheck>.Instance;
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
+        // Before anything reads the catalog: with one folder per channel (SDK 2.3.0) a first read that
+        // ran ahead of the resolution would read -- and seed -- the Stable folder for a Preview user.
+        // A local settings-file read, never the network; ResolveChannelAsync never throws.
+        await coordinator.ResolveChannelAsync(cancellationToken).ConfigureAwait(false);
+
         _ = Task.Run(async () =>
         {
             try
@@ -30,7 +35,6 @@ public sealed class CatalogUpdateStartupCheck(ICatalogUpdateCoordinator coordina
                 _logger.LogWarning(ex, "Startup catalog update check failed");
             }
         }, CancellationToken.None);
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

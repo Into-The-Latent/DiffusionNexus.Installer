@@ -37,11 +37,17 @@ public sealed class CatalogChannelConfirmations
     /// <summary>A snapshot; never changes under the caller.</summary>
     public IReadOnlyDictionary<CatalogChannel, ConfirmedSections> Current => Volatile.Read(ref _confirmed);
 
-    /// <summary>A check on <paramref name="channel"/> found <paramref name="installed"/> current.</summary>
-    public void Confirm(CatalogChannel channel, LocalCatalogState installed)
+    /// <summary>
+    /// A check on <paramref name="channel"/> found <paramref name="installed"/> current.
+    /// <paramref name="otherFoldersUntouched"/>: SDK 2.3.0 shared folders, where each channel's
+    /// confirmation describes that channel's own folder and this one says nothing about the others.
+    /// False for the single installed folder of SDK 2.0–2.2 (an explicit <c>InstalledCatalogPath</c>),
+    /// where the content just confirmed replaced whatever another channel's confirmation described.
+    /// </summary>
+    public void Confirm(CatalogChannel channel, LocalCatalogState installed, bool otherFoldersUntouched)
     {
         ArgumentNullException.ThrowIfNull(installed);
-        if (installed.Workloads is null && installed.Workflows is null) return;
+        if (!installed.RecordsAnything()) return;
 
         var sections = new ConfirmedSections(installed.Workloads, installed.Workflows);
         lock (_write)
@@ -49,9 +55,10 @@ public sealed class CatalogChannelConfirmations
             var current = _confirmed;
             if (current.TryGetValue(channel, out var known) && known == sections) return;
 
-            // Another channel's confirmation of content that is gone describes nothing any more.
+            // One folder: another channel's confirmation of content that is gone describes nothing any
+            // more. One folder per channel: the other folders are untouched, their confirmations stand.
             var next = current
-                .Where(kv => kv.Key != channel && (kv.Value.Workloads == sections.Workloads || kv.Value.Workflows == sections.Workflows))
+                .Where(kv => kv.Key != channel && (otherFoldersUntouched || kv.Value.Workloads == sections.Workloads || kv.Value.Workflows == sections.Workflows))
                 .ToImmutableDictionary()
                 .SetItem(channel, sections);
             Volatile.Write(ref _confirmed, next);
