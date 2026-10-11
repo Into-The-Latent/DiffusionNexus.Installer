@@ -211,6 +211,24 @@ public class UpdatesPageTests : BunitContext
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == Apply);
     }
 
+    // #53 round 5: the startup apply of a release with nothing for the installer landed. "Updated"
+    // with no list reads as a contradiction; the line says what happened.
+    [Fact]
+    public void A_silent_apply_with_no_installer_changes_says_so_once_it_landed()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.LastApplyAutomatic = true;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 applied automatically; no changes for the installer.");
+        page.FindAll(".catalog-changes").Should().BeEmpty();
+    }
+
     // #53 round 4: a release published between the preview and Switch: the SDK applies the newer one
     // (its own check of the folder), so the outcome names what landed, not what the preview said.
     [Fact]

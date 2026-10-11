@@ -492,9 +492,12 @@
                 // What landed, from the state: a switch applies the SDK's own check of the target folder,
                 // which may be a release newer than the preview named.
                 var landed = Catalog.Installed is { } s && s.RecordsAnything() ? s.HighestCatalogVersion : Catalog.LastCheck?.Remote?.CatalogVersion;
-                return Catalog.LastApplyAutomatic
-                    ? $"Catalog updated to v{landed} automatically."
-                    : $"Catalog updated to v{landed}.";
+                if (!Catalog.LastApplyAutomatic) return $"Catalog updated to v{landed}.";
+                // The startup apply with the setting on lands releases with nothing for the installer too
+                // (the folder is shared with the DiffusionNexus app); "updated" with no list would contradict itself.
+                return Catalog.LastCheck is { HasChanges: false }
+                    ? $"Catalog v{landed} applied automatically; no changes for the installer."
+                    : $"Catalog updated to v{landed} automatically.";
             }
             return Catalog.LastCheck switch
             {
