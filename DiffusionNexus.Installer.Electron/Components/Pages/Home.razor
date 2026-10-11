@@ -181,7 +181,7 @@
         {
             <p class="catalog-progress">@ProgressText</p>
         }
-        @if (Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApply is { } failed && (failed.Error is not null || failed.Failed != CatalogSections.None))
+        @if (Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApplyFailed && Catalog.LastApply is { } failed)
         {
             <p class="catalog-error">@ApplyFailureText(failed, Catalog.LastApplyUncertain)</p>
         }
@@ -498,8 +498,10 @@
                 null => "Not checked yet.",
                 { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
                 // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
-                // Not while it is being applied anyway (the startup apply with the setting on): "Downloading…" renders below.
-                { Outcome: CatalogUpdateOutcome.UpdatesAvailable, HasChanges: false } c when Catalog.Phase != CatalogUpdatePhase.Applying && !Catalog.LastApplyFailed && !Catalog.SwitchIncomplete
+                // A release the coordinator does not offer (nothing in it for the installer, no failed apply
+                // to retry, no switch to complete) -- not while it is being applied anyway (the startup apply
+                // with the setting on): the progress line renders below.
+                { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c when !Catalog.UpdateAvailable && Catalog.Phase != CatalogUpdatePhase.Applying
                     => $"Catalog v{c.Remote?.CatalogVersion} has no changes for the installer.",
                 { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
                 { Outcome: CatalogUpdateOutcome.RequiresNewerSoftware } => "This catalog update needs a newer version of the installer. Install the app update above first.",

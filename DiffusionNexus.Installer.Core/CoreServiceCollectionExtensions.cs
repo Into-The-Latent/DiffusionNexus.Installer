@@ -58,8 +58,7 @@ public static class CoreServiceCollectionExtensions
             // Drafts count in the builds that show them (Debug), exactly as the workload list does.
             CatalogAudience.Installer(includeDrafts: sp.GetRequiredService<WorkloadVisibility>().IncludeNonRelease),
             sp.GetService<ILogger<CatalogUpdateCoordinator>>(),
-            new CatalogChannelConfirmations(CatalogChannelConfirmationsPath, sp.GetService<ILogger<CatalogChannelConfirmations>>(),
-                perChannelFolders: sp.GetRequiredService<CatalogOptions>().UsesSharedFolders)));
+            new CatalogChannelConfirmations(CatalogChannelConfirmationsPath, sp.GetService<ILogger<CatalogChannelConfirmations>>())));
 
         // The SDK's own AddInstallationServices does not register this one — both Avalonia apps
         // construct it by hand — but the install-folder pre-flight needs it. TryAdd so a host that

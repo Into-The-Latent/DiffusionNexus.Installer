@@ -26,27 +26,25 @@ public sealed class CatalogChannelConfirmations
     private readonly Lock _write = new();
     private ImmutableDictionary<CatalogChannel, ConfirmedSections> _confirmed;
 
-    private readonly bool _perChannelFolders;
-
     /// <param name="path">The file; null keeps confirmations for this run only.</param>
-    /// <param name="perChannelFolders">
-    /// SDK 2.3.0 shared folders: each channel's confirmation describes that channel's own folder, so an
-    /// apply into one folder says nothing about the others. False for the single installed folder of
-    /// SDK 2.0–2.2 (an explicit <c>InstalledCatalogPath</c>), where an apply replaces the content.
-    /// </param>
-    public CatalogChannelConfirmations(string? path, ILogger? logger = null, bool perChannelFolders = false)
+    public CatalogChannelConfirmations(string? path, ILogger? logger = null)
     {
         _path = path;
         _logger = logger ?? NullLogger.Instance;
-        _perChannelFolders = perChannelFolders;
         _confirmed = Load();
     }
 
     /// <summary>A snapshot; never changes under the caller.</summary>
     public IReadOnlyDictionary<CatalogChannel, ConfirmedSections> Current => Volatile.Read(ref _confirmed);
 
-    /// <summary>A check on <paramref name="channel"/> found <paramref name="installed"/> current.</summary>
-    public void Confirm(CatalogChannel channel, LocalCatalogState installed)
+    /// <summary>
+    /// A check on <paramref name="channel"/> found <paramref name="installed"/> current.
+    /// <paramref name="otherFoldersUntouched"/>: SDK 2.3.0 shared folders, where each channel's
+    /// confirmation describes that channel's own folder and this one says nothing about the others.
+    /// False for the single installed folder of SDK 2.0–2.2 (an explicit <c>InstalledCatalogPath</c>),
+    /// where the content just confirmed replaced whatever another channel's confirmation described.
+    /// </summary>
+    public void Confirm(CatalogChannel channel, LocalCatalogState installed, bool otherFoldersUntouched)
     {
         ArgumentNullException.ThrowIfNull(installed);
         if (installed.Workloads is null && installed.Workflows is null) return;
@@ -60,7 +58,7 @@ public sealed class CatalogChannelConfirmations
             // One folder: another channel's confirmation of content that is gone describes nothing any
             // more. One folder per channel: the other folders are untouched, their confirmations stand.
             var next = current
-                .Where(kv => kv.Key != channel && (_perChannelFolders || kv.Value.Workloads == sections.Workloads || kv.Value.Workflows == sections.Workflows))
+                .Where(kv => kv.Key != channel && (otherFoldersUntouched || kv.Value.Workloads == sections.Workloads || kv.Value.Workflows == sections.Workflows))
                 .ToImmutableDictionary()
                 .SetItem(channel, sections);
             Volatile.Write(ref _confirmed, next);

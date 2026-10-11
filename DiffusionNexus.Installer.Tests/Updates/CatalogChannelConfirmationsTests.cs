@@ -20,9 +20,9 @@ public sealed class CatalogChannelConfirmationsTests
     public void With_one_folder_confirming_other_content_drops_the_other_channel()
     {
         var confirmations = new CatalogChannelConfirmations(null);
-        confirmations.Confirm(CatalogChannel.Preview, State(6, CatalogChannel.Preview));
+        confirmations.Confirm(CatalogChannel.Preview, State(6, CatalogChannel.Preview), otherFoldersUntouched: false);
 
-        confirmations.Confirm(CatalogChannel.Stable, State(4, CatalogChannel.Stable));
+        confirmations.Confirm(CatalogChannel.Stable, State(4, CatalogChannel.Stable), otherFoldersUntouched: false);
 
         confirmations.Current.Keys.Should().Equal(CatalogChannel.Stable);
     }
@@ -32,10 +32,10 @@ public sealed class CatalogChannelConfirmationsTests
     [Fact]
     public void With_one_folder_per_channel_confirming_one_channel_keeps_the_others()
     {
-        var confirmations = new CatalogChannelConfirmations(null, perChannelFolders: true);
-        confirmations.Confirm(CatalogChannel.Preview, State(6, CatalogChannel.Preview));
+        var confirmations = new CatalogChannelConfirmations(null);
+        confirmations.Confirm(CatalogChannel.Preview, State(6, CatalogChannel.Preview), otherFoldersUntouched: true);
 
-        confirmations.Confirm(CatalogChannel.Stable, State(4, CatalogChannel.Stable));
+        confirmations.Confirm(CatalogChannel.Stable, State(4, CatalogChannel.Stable), otherFoldersUntouched: true);
 
         confirmations.Current.Keys.Should().BeEquivalentTo([CatalogChannel.Preview, CatalogChannel.Stable]);
     }
