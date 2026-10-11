@@ -2925,8 +2925,8 @@ license file is covered by the standard text of its declared license.
 
   MIT            @socket.io/component-emitter 3.1.2
   MIT            @types/cors 2.8.19
-  MIT            @types/node 22.20.4
-  MIT            @types/ws 8.18.1
+  MIT            @types/node 22.20.5
+  MIT            @types/ws 8.18.2
   MIT            accepts 1.3.8
   Python-2.0     argparse 2.0.1
   MIT            builder-util-runtime 9.7.0
@@ -3020,7 +3020,7 @@ Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
 --------------------------------------------------------------------------------
 
-### @types/node 22.20.4 - MIT
+### @types/node 22.20.5 - MIT
 Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
     MIT License
@@ -3047,7 +3047,7 @@ Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
 --------------------------------------------------------------------------------
 
-### @types/ws 8.18.1 - MIT
+### @types/ws 8.18.2 - MIT
 Source: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 
     MIT License
