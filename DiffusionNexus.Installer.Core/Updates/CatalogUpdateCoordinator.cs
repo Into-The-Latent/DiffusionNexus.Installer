@@ -272,6 +272,12 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
             var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
             var succeeded = result.Failed == CatalogSections.None && result.Error is null;
+            var landedSomething = result.Applied != CatalogSections.None;
+
+            // What the folder holds is current on this channel, whatever its sections record (an
+            // embedded seed in a channel folder records the embedded manifest's channel). Before
+            // the phase flips: a reader that waits for Applying to end must find it recorded.
+            if (succeeded) _confirmations.Confirm(check.Channel, installed);
 
             lock (_gate)
             {
@@ -279,8 +285,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 Installed = installed;
                 _overrideActive = overrideActive;
                 Progress = null;
-                if (result.Applied != CatalogSections.None) Interlocked.Increment(ref _contentGeneration);
-                Phase = succeeded ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
+                if (landedSomething) Interlocked.Increment(ref _contentGeneration);
+                // A switch whose target folder was already current applies nothing: nothing was "updated" (#53).
+                Phase = succeeded && landedSomething ? CatalogUpdatePhase.Applied : CatalogUpdatePhase.Checked;
                 if (succeeded) _notLanded = null;
             }
             _logger.LogInformation("Catalog apply finished: applied={Applied} failed={Failed} installed v{Installed}{Error}",
@@ -582,16 +589,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
         // Saved before the download starts: a stalled or failed apply must not lose the choice
         // (rule 1), and the next check then offers the same diff with Apply.
-        var installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
         var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
         var applying = false;
-        var current = false;
         lock (_gate)
         {
             var left = Channel;
             ApplyResolution(_readEnvironment(), saved);
             _channelResolved = true;
-            Installed = installed;
+            // After the resolution: with shared folders the path now names the target channel's folder (#53).
+            Installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
             _overrideActive = overrideActive;
             LastApply = null;
             _applyAutomatic = false;
@@ -606,13 +612,16 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             else
             {
                 LastCheck = preview;
-                current = preview.Outcome == CatalogUpdateOutcome.UpToDate;
-                _notLanded = current || preview.Outcome == CatalogUpdateOutcome.OverrideActive ? null
+                _notLanded = preview.Outcome == CatalogUpdateOutcome.OverrideActive ? null
                     // The content is still from where the first switch that did not land left it;
                     // switching back there is complete, whatever this preview answered.
                     : _notLanded is { From: var from } ? (from == target ? null : (from, target))
                     : (left, target);
-                if (preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable && !InstallRunning)
+                // UpToDate too (#53): the preview compared the target's release with the folder being
+                // left. The SDK's apply checks the target channel's own folder, fills it when it is
+                // missing or behind, and applies nothing when it is current -- then nothing landed and
+                // the switch is complete (ApplyCoreAsync).
+                if (preview.Outcome is CatalogUpdateOutcome.UpdatesAvailable or CatalogUpdateOutcome.UpToDate && !InstallRunning)
                 {
                     // Not under the caller's token: the switch has returned by the time the download
                     // runs, and a caller that cancels afterwards (a page going away) does not own it.
@@ -622,16 +631,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 }
                 else
                 {
-                    // Up to date: same content, only the preference changes. Anything else keeps the
-                    // installed content and says so; during an install the Apply button waits for it.
+                    // Failed, needs newer software, override: the installed content stays and the
+                    // page says so. During an install the apply (or the retry) waits for it.
                     Phase = CatalogUpdatePhase.Checked;
                 }
             }
         }
-        if (current) _confirmations.Confirm(target, installed);
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
-            applying ? "applying v" + preview.Remote?.CatalogVersion
-            : preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable ? "the apply waits for the running install"
+            applying ? (preview.Outcome == CatalogUpdateOutcome.UpToDate ? "checking its folder" : "applying v" + preview.Remote?.CatalogVersion)
+            : preview.Outcome is CatalogUpdateOutcome.UpdatesAvailable or CatalogUpdateOutcome.UpToDate ? "the apply waits for the running install"
             : preview.Outcome.ToString());
     }
 

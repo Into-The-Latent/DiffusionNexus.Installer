@@ -132,7 +132,8 @@ public interface ICatalogUpdateCoordinator
     /// <summary>
     /// Previews <paramref name="target"/> without saving anything (spec 7.1). A diff that removes
     /// or changes something waits in <see cref="PendingSwitch"/>; otherwise the switch goes ahead
-    /// at once, as <see cref="ConfirmSwitchAsync"/> would. Refused (no-op) while checking,
+    /// at once, as <see cref="ConfirmSwitchAsync"/> would, and the SDK fills the target channel's
+    /// folder (SDK 2.3.0 keeps one per channel) when it is missing or behind. Refused (no-op) while checking,
     /// applying or switching. Settings I/O errors propagate, and then nothing was changed.
     /// Completes once the choice is saved (or waits for an answer); a download it starts runs on
     /// and reports through <see cref="Changed"/>, like <see cref="ApplyAsync"/>.
@@ -140,7 +141,8 @@ public interface ICatalogUpdateCoordinator
     Task SwitchChannelAsync(CatalogChannel target, CancellationToken ct = default);
 
     /// <summary>
-    /// "Switch": saves the preference, then starts the apply of the previewed check and completes;
+    /// "Switch": saves the preference, then starts the apply of the previewed check (the SDK
+    /// re-checks the target channel's own folder and applies nothing when it is current) and completes;
     /// the download reports through <see cref="Changed"/>. A failed apply keeps the preference and
     /// the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
     /// <see cref="PendingSwitch"/>. Settings I/O errors propagate, and then nothing was changed.
