@@ -61,6 +61,7 @@ Expected: a count greater than 0 (`CatalogChangeRows`, `ChannelSwitchWarning`, `
 Delete the three Core files and the three test files listed above. Create `DiffusionNexus.Installer.Core/Updates/CatalogChannelSwitch.cs`:
 
 ```csharp
+using DiffusionNexus.Installer.SDK.Catalog.Packaging;
 using DiffusionNexus.Installer.SDK.Catalog.Updates;
 
 namespace DiffusionNexus.Installer.Core.Updates;
