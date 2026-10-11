@@ -498,7 +498,9 @@
                 null => "Not checked yet.",
                 { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
                 // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
-                { Outcome: CatalogUpdateOutcome.UpdatesAvailable, HasChanges: false } c when !Catalog.SwitchIncomplete => $"Catalog v{c.Remote?.CatalogVersion} has no changes for the installer.",
+                // Not while it is being applied anyway (the startup apply with the setting on): "Downloading…" renders below.
+                { Outcome: CatalogUpdateOutcome.UpdatesAvailable, HasChanges: false } c when Catalog.Phase != CatalogUpdatePhase.Applying && !Catalog.SwitchIncomplete
+                    => $"Catalog v{c.Remote?.CatalogVersion} has no changes for the installer.",
                 { Outcome: CatalogUpdateOutcome.UpdatesAvailable } c => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
                 { Outcome: CatalogUpdateOutcome.RequiresNewerSoftware } => "This catalog update needs a newer version of the installer. Install the app update above first.",
                 { Outcome: CatalogUpdateOutcome.OverrideActive } => $"Update check skipped: a local catalog override is active at {Catalog.OverridePath}.",

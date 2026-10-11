@@ -197,7 +197,18 @@ public sealed class CatalogProvenance(CatalogOptions options, ICatalog catalog) 
     }
 
     /// <summary>Null when the load failed: the reading then falls back to the file, never fails the caller's read.</summary>
-    private async Task<LocalCatalogState?> StateAsync(CancellationToken ct)
+    private Task<LocalCatalogState?> StateAsync(CancellationToken ct) => CatalogStateReads.TryStateAsync(catalog, ct);
+}
+
+/// <summary>The one way the installer reads <see cref="ICatalog.State"/>: off the caller's thread, a failed load as null.</summary>
+internal static class CatalogStateReads
+{
+    /// <summary>
+    /// <see cref="ICatalog.State"/> blocks while a load runs (and, with SDK 2.3.0 shared folders, the
+    /// first read of a channel seeds its folder), so it runs on the pool. Null when the load failed;
+    /// only a cancel propagates.
+    /// </summary>
+    public static async Task<LocalCatalogState?> TryStateAsync(ICatalog catalog, CancellationToken ct = default)
     {
         try
         {

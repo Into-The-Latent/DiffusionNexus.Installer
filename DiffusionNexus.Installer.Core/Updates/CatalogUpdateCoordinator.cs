@@ -115,11 +115,21 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     // changes the other app's workloads alone is applied silently or not at all, never offered --
     // unless it completes a switch that did not land: then it is what the user asked for, whoever
     // its changes are for, and Apply is the only way out (#53 review).
-    public bool UpdateAvailable => ReleaseAvailable && (LastCheck!.HasChanges || SwitchIncompleteReason is not null);
+    public bool UpdateAvailable
+    {
+        get
+        {
+            // One read: a render thread evaluates this while a switch may set LastCheck to null.
+            var check = LastCheck;
+            return IsReleaseAvailable(check) && (check!.HasChanges || SwitchIncompleteReason is not null);
+        }
+    }
 
     /// <summary>The followed channel's folder is behind its release, whoever the changes are for.</summary>
-    private bool ReleaseAvailable =>
-        PendingSwitch is null && LastCheck?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
+    private bool ReleaseAvailable => IsReleaseAvailable(LastCheck);
+
+    private bool IsReleaseAvailable(CatalogUpdateCheck? check) =>
+        PendingSwitch is null && check?.Outcome == CatalogUpdateOutcome.UpdatesAvailable && Phase != CatalogUpdatePhase.Applied;
 
     // Reads the session live rather than the cached flag: the flag only decides when to re-raise.
     public bool CanApply => UpdateAvailable && Phase == CatalogUpdatePhase.Checked && !InstallRunning;
@@ -199,7 +209,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             _logger.LogError(ex, "Catalog update check failed unexpectedly");
             lock (_gate)
             {
-                LastCheck = new CatalogUpdateCheck(CatalogUpdateOutcome.Failed, Channel, null, Installed ?? new LocalCatalogState(), [], [], ex.Message).For(_audience);
+                LastCheck = FailedCheck(Channel, Installed, ex.Message);
                 Phase = CatalogUpdatePhase.Checked;
             }
         }
@@ -280,7 +290,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // embedded seed in a channel folder records the embedded manifest's channel). Before
             // the phase flips: a reader that waits for Applying to end must find it recorded.
             if (succeeded) _confirmations.Confirm(check.Channel, installed);
-            var fresh = check.IsSwitchPreview ? await CheckAfterSwitchAsync().ConfigureAwait(false) : null;
+            // A switch that landed everything needs no further check: the SDK applied a fresh check of
+            // that very folder, and the preview names the landed version for the outcome line.
+            var fresh = check.IsSwitchPreview && !(succeeded && landedSomething) ? await CheckAfterSwitchAsync().ConfigureAwait(false) : null;
 
             lock (_gate)
             {
@@ -364,9 +376,13 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             CatalogChannel channel;
             LocalCatalogState? installed;
             lock (_gate) (channel, installed) = (Channel, Installed);
-            return new CatalogUpdateCheck(CatalogUpdateOutcome.Failed, channel, null, installed ?? new LocalCatalogState(), [], [], ex.Message).For(_audience);
+            return FailedCheck(channel, installed, ex.Message);
         }
     }
+
+    /// <summary>A check that never ran, filtered like every other so <see cref="LastCheck"/> always carries the audience.</summary>
+    private CatalogUpdateCheck FailedCheck(CatalogChannel channel, LocalCatalogState? installed, string error) =>
+        new CatalogUpdateCheck(CatalogUpdateOutcome.Failed, channel, null, installed ?? new LocalCatalogState(), [], [], error).For(_audience);
 
     /// <summary>
     /// The state of the catalog the app reads now. Through <see cref="ICatalog"/> on purpose: with
@@ -376,16 +392,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     /// </summary>
     private async Task<LocalCatalogState> StateOfReadCatalogAsync()
     {
-        try
-        {
-            // State blocks while a load runs; off the caller's thread like CatalogProvenance.
-            var state = await Task.Run(() => _catalog.State).ConfigureAwait(false);
-            if (state is not null) return state;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "The catalog could not be read for its installed state; reading the state file instead");
-        }
+        var state = await CatalogStateReads.TryStateAsync(_catalog).ConfigureAwait(false);
+        if (state is not null) return state;
+        _logger.LogWarning("The catalog could not be read for its installed state; reading the state file instead");
         return LocalCatalogState.Load(_options.InstalledCatalogPath);
     }
 
@@ -616,7 +625,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // The SDK's check never throws; this keeps a broken one from ending the switch without
             // the preference being saved -- a failed preview falls through like any other.
             _logger.LogError(ex, "Catalog channel preview failed unexpectedly");
-            return new CatalogUpdateCheck(CatalogUpdateOutcome.Failed, target, null, LocalCatalogState.Load(_options.InstalledCatalogPath), [], [], ex.Message).For(_audience);
+            return FailedCheck(target, LocalCatalogState.Load(_options.InstalledCatalogPath), ex.Message);
         }
     }
 
@@ -644,14 +653,16 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         // Saved before the download starts: a stalled or failed apply must not lose the choice
         // (rule 1), and the next check then offers the same diff with Apply.
         var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
+        // The target channel's folder (#53): with shared folders it is the one the app reads from
+        // here on. Outside the lock: the read enumerates the format folders.
+        var installedAtTarget = LocalCatalogState.Load(_options.ReadFolderFor(target));
         var applying = false;
         lock (_gate)
         {
             var left = Channel;
             ApplyResolution(_readEnvironment(), saved);
             _channelResolved = true;
-            // After the resolution: with shared folders the path now names the target channel's folder (#53).
-            Installed = LocalCatalogState.Load(_options.InstalledCatalogPath);
+            Installed = installedAtTarget;
             _overrideActive = overrideActive;
             LastApply = null;
             _applyAutomatic = false;
@@ -666,9 +677,6 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             else
             {
                 LastCheck = preview;
-                // With one folder per channel the app reads another catalog from now on, downloaded
-                // or not: a screen built from the old one is stale (#32, #53 review).
-                if (_options.UsesSharedFolders && left != target) Interlocked.Increment(ref _contentGeneration);
                 _notLanded = preview.Outcome == CatalogUpdateOutcome.OverrideActive ? null
                     // The content is still from where the first switch that did not land left it;
                     // switching back there is complete, whatever this preview answered.
@@ -822,6 +830,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         var (channel, source) = CatalogChannelResolver.Resolve(environmentValue, savedValue);
         Channel = channel;
         ChannelSource = source;
+        // With one folder per channel the app reads another catalog from here on, downloaded or
+        // not -- after a switch, and after a resolution that lands on a channel other than the
+        // default a screen was built under. A screen built from the old one is stale (#32).
+        if (_options.UsesSharedFolders && _options.Channel != channel) Interlocked.Increment(ref _contentGeneration);
         _options.Channel = channel;
         _logger.LogInformation("Following the {Channel} catalog channel ({Source})", channel, source);
     }

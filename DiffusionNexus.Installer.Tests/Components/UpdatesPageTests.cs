@@ -152,6 +152,25 @@ public class UpdatesPageTests : BunitContext
         page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Retry", "Apply is the retry");
     }
 
+    // #53 round 1: the startup apply of a release with nothing for the installer must not say "no
+    // changes for the installer" over its own "Downloading…" line.
+    [Fact]
+    public void A_silent_apply_of_a_release_with_no_installer_changes_says_available_while_it_downloads()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Available(7, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore)
+            .For(CatalogAudience.Installer(includeDrafts: false));
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.LastApplyAutomatic = true;
+        _catalog.Progress = new CatalogDownloadProgress(40, 100);
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog v7 is available on Stable.");
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Downloading… 40%");
+    }
+
     // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";
     // the download and its failure must be visible even when nothing is offered to apply.
     [Fact]

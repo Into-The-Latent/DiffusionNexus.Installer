@@ -605,7 +605,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         appliesAtSave.Should().Be(0, "the preference is saved before the download starts, so a failed download cannot lose the choice");
         _service.AppliedCheck.Should().BeSameAs(preview, "the apply downloads from and stamps the channel the preview read");
         _service.AppliedSections.Should().Be(CatalogSections.All);
-        _service.CheckCalls.Should().Be(1, "the preview is what the user agreed to and is applied as is; afterwards the page shows what the SDK found in the target folder (#53 review)");
+        _service.CheckCalls.Should().Be(0, "no second check: the preview is what the user agreed to, and the SDK checked the target folder itself before landing it");
         coordinator.Channel.Should().Be(CatalogChannel.Stable);
         _options.Channel.Should().Be(CatalogChannel.Stable);
         coordinator.PendingSwitch.Should().BeNull();
@@ -1275,12 +1275,12 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         saveGate.SetResult();
         await switching;
-        // The switch applies the previewed channel (the SDK fills its folder) and checks it afterwards (#53).
+        // The switch applies the previewed channel (the SDK fills its folder); a check cannot start until that ends (#53).
         Settle(coordinator);
 
         await coordinator.CheckAsync();
 
-        _service.CheckCalls.Should().Be(2, "the check after the switch's apply, and this one");
+        _service.CheckCalls.Should().Be(1);
         _options.Channel.Should().Be(CatalogChannel.Preview);
     }
 
@@ -1854,6 +1854,45 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.Installed!.HighestCatalogVersion.Should().Be(5, "the seed is what the app reads now");
         coordinator.SwitchIncompleteReason.Should().Be("The installed catalog is still from Stable (v5).");
+    }
+
+    // Round 1: the channel is resolved in more places than the switch (startup, a re-read after a locked
+    // settings file). Under shared folders each of them moves FileCatalog to another folder.
+    [Fact]
+    public async Task Resolving_a_saved_channel_under_shared_folders_counts_as_changed_content()
+    {
+        var options = new CatalogOptions { SharedRoot = Path.Combine(_dir, "shared"), Channel = CatalogChannel.Stable };
+        _saved.CatalogChannel = "Preview";
+        using var coordinator = new CatalogUpdateCoordinator(_service, _catalog.Object, options, _settings.Object, _session.Object, () => _environment,
+            CatalogAudience.Installer(false), confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
+
+        await coordinator.CheckAsync();
+
+        options.Channel.Should().Be(CatalogChannel.Preview);
+        coordinator.ContentGeneration.Should().Be(1, "a screen built before the resolution read the Stable folder");
+
+        await coordinator.CheckAsync();
+        coordinator.ContentGeneration.Should().Be(1, "resolving the same channel again changes nothing");
+    }
+
+    // Round 1: a switch whose apply landed everything needs no further check -- the SDK applied a fresh
+    // check of that folder -- and a failed one would have read "Catalog updated to v." (no Remote).
+    [Fact]
+    public async Task A_switch_apply_that_landed_everything_keeps_the_preview_and_runs_no_further_check()
+    {
+        _saved.CatalogChannel = "Stable";
+        WriteInstalledState(5, CatalogChannel.Stable);
+        _service.NextPreview = channel => CatalogChecks.Available(6, channel, [CatalogChecks.WorkloadAdded("Ernie", "V1.0")]);
+        _service.NextCheck = () => throw new InvalidOperationException("no check expected");
+        _service.OnApply = () => WriteInstalledState(6, CatalogChannel.Preview);
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        _service.CheckCalls.Should().Be(0);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Applied);
+        coordinator.LastCheck!.Remote!.CatalogVersion.Should().Be(6, "the outcome line names the landed version");
     }
 
     // M3: the catch paths build Failed checks by hand; they are filtered like every other.
