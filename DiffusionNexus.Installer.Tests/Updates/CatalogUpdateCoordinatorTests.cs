@@ -1289,10 +1289,12 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         saveGate.SetResult();
         await switching;
-        // The switch applies the previewed channel (the SDK fills its folder); a check cannot start until that ends (#53).
-        Settle(coordinator);
-
-        await coordinator.CheckAsync();
+        // The preview found the same content in the one folder, so the switch applies nothing: it returns
+        // under Checked with the read of the catalog now followed still running in the background, and a
+        // check that arrives meanwhile joins that read instead of starting (#53). Awaiting the joined task
+        // waits the read out, so the loop ends at the first check that runs; a refusal never runs one.
+        // A single check here failed whenever the read was slower than the test (always, run on its own).
+        for (var i = 0; i < 100 && _service.CheckCalls == 0; i++) await coordinator.CheckAsync();
 
         _service.CheckCalls.Should().Be(1);
         _options.Channel.Should().Be(CatalogChannel.Preview);
