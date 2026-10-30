@@ -12,11 +12,13 @@
   <PropertyGroup>
     <!--
       ElectronNET.Core 0.5.2 DEFAULTS to Electron 30.4.0, which is end-of-life and ships an
-      unpatched Chromium. Electron supports only the newest three majors (41/42/43 as of
-      2026-08). 42.4.1 is the highest version 0.5.2's curated list offers and is inside that
-      window; verified building and running here. Re-check when bumping ElectronNET.Core.
+      unpatched Chromium. Electron supports only the newest three majors (43/44/45 since
+      45.0.0 shipped on 2026-10-21, which ended 42). 0.5.2's curated list stops at 42.4.1, but
+      that list is only the Visual Studio property-page dropdown: the build targets take any
+      version and treat every major from 42 up the same way (issue #57). Re-check when Electron
+      47 ships (44 leaves the window) and when bumping ElectronNET.Core.
     -->
-    <ElectronVersion>42.4.1</ElectronVersion>
+    <ElectronVersion>44.10.0</ElectronVersion>
   </PropertyGroup>
 
   <PropertyGroup>

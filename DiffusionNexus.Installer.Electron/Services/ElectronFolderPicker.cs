@@ -38,10 +38,27 @@ public sealed class ElectronFolderPicker : IFolderPicker
 #pragma warning restore CA1416
         };
 
-        if (!string.IsNullOrWhiteSpace(startIn) && Directory.Exists(startIn))
-            options.DefaultPath = startIn;
+        if (StartingFolder(startIn) is { } folder)
+            options.DefaultPath = folder;
 
         var paths = await ElectronApi.Dialog.ShowOpenDialogAsync(window, options);
         return paths is { Length: > 0 } ? paths[0] : null;
+    }
+
+    /// <summary>
+    /// The folder the dialog opens in: <paramref name="startIn"/>, or its nearest existing parent
+    /// when it does not exist yet (a new install folder usually doesn't). Since Electron 43 a dialog
+    /// without a defaultPath opens in Downloads instead of where Windows last left it (issue #57),
+    /// so walking up beats leaving it unset. Null when there is no absolute path to go by.
+    /// </summary>
+    public static string? StartingFolder(string? startIn)
+    {
+        if (string.IsNullOrWhiteSpace(startIn) || !Path.IsPathFullyQualified(startIn)) return null;
+
+        for (var folder = startIn; folder is not null; folder = Path.GetDirectoryName(folder))
+        {
+            if (Directory.Exists(folder)) return folder;
+        }
+        return null;
     }
 }
