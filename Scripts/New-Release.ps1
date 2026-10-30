@@ -98,10 +98,6 @@ $project  = Join-Path $repoRoot 'DiffusionNexus.Installer.Electron'
 $publish  = Join-Path $project  'bin\Release\net10.0\win-x64\publish'
 $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
 
-# Keep this in step with ElectronVersion in the .csproj; electron-builder is invoked
-# directly below and does not read that property.
-$electronVersion = '42.4.1'
-
 # ---------------------------------------------------------------------------------------- Step 0
 # Everything here runs BEFORE this script changes anything on disk. A refusal leaves the working
 # tree exactly as it was: no version write, no cleared publish folder.
@@ -263,6 +259,12 @@ Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)
 # --config) and silently replaces the config path, so the build dies looking for a file called
 # `.directories.app=app`. A generated config has no such ambiguity and behaves the same in
 # every shell.
+#
+# electron-builder does not read the csproj's ElectronVersion either, so it is taken from there. A
+# copy kept in this script once lagged the csproj: the Electron 44 bump (#57) would have shipped
+# 42.4.1, end-of-life, while every dev build ran 44.
+$electronVersion = @($csproj.Project.PropertyGroup.ElectronVersion | Where-Object { $_ }) | Select-Object -First 1
+if (-not $electronVersion) { throw "No ElectronVersion in the Electron csproj." }
 $builderConfig = Get-Content -LiteralPath (Join-Path $project 'Properties\electron-builder.json') -Raw |
     ConvertFrom-Json -AsHashtable
 $builderConfig.electronVersion = $electronVersion
