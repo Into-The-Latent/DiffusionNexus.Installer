@@ -224,7 +224,8 @@ public sealed class InstallFolderModule(
         }
         catch (Exception ex)
         {
-            // Nobody awaits this but the page's next render, which a thrown answer would take down.
+            // A path the OS refuses to even look at is still a bad answer. Nobody awaits this but the
+            // page's next render, which a thrown answer would take down.
             return new FolderAnswer($"That folder cannot be used: {ex.Message}");
         }
     }
@@ -237,31 +238,22 @@ public sealed class InstallFolderModule(
 
     private string? CheckTargetFolder(string folder)
     {
-        try
-        {
-            // The validator appends the repository name itself, so it gets the folder that name is
-            // appended to by the pipeline too: "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and
-            // checking E:\AI\ComfyUI\ComfyUI instead let Next through onto a live installation.
-            var result = preInstallation.ValidateTargetFolder(
-                _selection!.Workload,
-                RepositoryPaths.NormalizedTarget(_selection.Workload, folder),
-                InstallationType.FullInstall);
+        // The validator appends the repository name itself, so it gets the folder that name is
+        // appended to by the pipeline too: "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and
+        // checking E:\AI\ComfyUI\ComfyUI instead let Next through onto a live installation.
+        var result = preInstallation.ValidateTargetFolder(
+            _selection!.Workload,
+            RepositoryPaths.NormalizedTarget(_selection.Workload, folder),
+            InstallationType.FullInstall);
 
-            if (result.CanProceed) return null;
+        if (result.CanProceed) return null;
 
-            // ShouldSuggestModelsNodesOnly is the SDK's "there is already an install here, offer to
-            // only add models/nodes to it" path. Slice 1 has no models-only mode to offer, so the
-            // honest answer is to name the folder and let the user pick another one rather than
-            // silently installing on top of a working installation.
-            var where = result.FullTargetPath ?? folder;
-            return result.ErrorMessage
-                ?? $"'{where}' already exists and is not empty. Choose an empty or new folder.";
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
-        {
-            // A path the OS refuses to even look at is still a bad answer, but the message should
-            // say so rather than take the wizard down.
-            return $"That folder cannot be used: {ex.Message}";
-        }
+        // ShouldSuggestModelsNodesOnly is the SDK's "there is already an install here, offer to
+        // only add models/nodes to it" path. Slice 1 has no models-only mode to offer, so the
+        // honest answer is to name the folder and let the user pick another one rather than
+        // silently installing on top of a working installation.
+        var where = result.FullTargetPath ?? folder;
+        return result.ErrorMessage
+            ?? $"'{where}' already exists and is not empty. Choose an empty or new folder.";
     }
 }

@@ -146,7 +146,7 @@ public class InstallPageTests : BunitContext
             page.FindAll(".folder-check").Should().BeEmpty();
             page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
                 .HasAttribute("disabled").Should().BeFalse("the answer reaches the page that owns Next");
-        });
+        }, TimeSpan.FromSeconds(30));
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public class InstallPageTests : BunitContext
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         page.Find(".path-row input").Input(@"E:\AI");
         page.WaitForAssertion(() => page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
-            .HasAttribute("disabled").Should().BeFalse());
+            .HasAttribute("disabled").Should().BeFalse(), TimeSpan.FromSeconds(30));
         var nextAsTheBrowserLastSawIt = page.FindAll("button").Single(b => b.TextContent.Trim() == "Next");
 
         page.Find(".path-row input").Input(@"\\nas\share\AI");

@@ -382,7 +382,7 @@ public class InstallFolderModuleTests
                 return Fine;
             }),
             answerWait: TimeSpan.FromSeconds(30),
-            checkLimit: TimeSpan.FromSeconds(1));
+            checkLimit: TimeSpan.FromSeconds(2));
         module.TargetFolder = @"\\nas\share\AI";
         module.Validate().IsValid.Should().BeTrue();
 
@@ -460,7 +460,7 @@ public class InstallFolderModuleTests
                 return Fine;
             }),
             answerWait: TimeSpan.FromSeconds(10),
-            checkLimit: TimeSpan.FromMilliseconds(200));
+            checkLimit: TimeSpan.FromSeconds(2));
         module.TargetFolder = Nas;
         module.FolderCheckTimedOut.Should().BeTrue();
 

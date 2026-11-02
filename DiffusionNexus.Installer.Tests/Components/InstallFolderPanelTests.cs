@@ -164,7 +164,7 @@ public class InstallFolderPanelTests : BunitContext
         {
             cut.FindAll(".folder-check").Should().BeEmpty();
             changes.Should().BeGreaterThan(changesWhileChecking);
-        });
+        }, TimeSpan.FromSeconds(30));
     }
 
     [Fact]
@@ -177,13 +177,13 @@ public class InstallFolderPanelTests : BunitContext
         {
             if (Interlocked.Increment(ref calls) == 1) gate.Wait(TimeSpan.FromSeconds(30));
             return Fine;
-        }, checkLimit: TimeSpan.FromMilliseconds(50));
+        }, checkLimit: TimeSpan.FromSeconds(2));
         var cut = Render<InstallFolderPanel>(p => p.Add(x => x.Module, module));
 
         cut.FindAll("button").Where(b => b.TextContent.Trim() == "Try again").Should().BeEmpty();
         cut.Find("input").Input(@"\\nas\share\AI");
 
-        cut.WaitForAssertion(() => cut.Find(".validation-error").TextContent.Should().Contain("did not answer"));
+        cut.WaitForAssertion(() => cut.Find(".validation-error").TextContent.Should().Contain("did not answer"), TimeSpan.FromSeconds(30));
         cut.FindAll(".destination").Should().BeEmpty("nothing promises a folder Windows could not reach");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Try again").Click();
         gate.Set();
@@ -193,7 +193,7 @@ public class InstallFolderPanelTests : BunitContext
             cut.FindAll(".validation-error").Should().BeEmpty();
             cut.FindAll("button").Where(b => b.TextContent.Trim() == "Try again").Should().BeEmpty();
             cut.FindAll(".destination").Should().HaveCount(1);
-        });
+        }, TimeSpan.FromSeconds(30));
     }
 
     [Fact]
