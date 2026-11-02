@@ -392,7 +392,8 @@ follow Preview, as in section 7). A Release build, no catalog override.
 
 1. Open `/updates`. **Expect:** under the channel radios, **Apply catalog updates automatically**,
    off, with "A catalog update the installer finds is shown here, and you apply it." Turn it on.
-   **Expect:** the hint names the channel and says it applies at start, never during an install;
+   **Expect:** the hint names the channel and says it applies when the installer starts or you switch
+   channel, never during an install;
    nothing is downloaded; `%LocalAppData%\DiffusionNexus\user_settings.json` has
    `"applyCatalogUpdatesAutomatically": true`.
 2. Quit and launch. **Expect:** without a click, the log shows "Applying the catalog update

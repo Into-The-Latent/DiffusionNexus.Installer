@@ -642,6 +642,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     {
         CatalogChannelSwitch pending;
         CatalogUpdatePhase phaseBefore;
+        bool downloadAnswered;
         lock (_gate)
         {
             if (PendingSwitch is null || _switching)
@@ -653,12 +654,14 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             PendingSwitch = null;
             _switching = true;
             phaseBefore = Phase;
+            // Read at the answer: during an install the question said the download comes afterwards.
+            downloadAnswered = pending.Downloads && !InstallRunning;
         }
 
         _logger.LogInformation("Catalog channel switch to {Channel} confirmed", pending.Target);
         try
         {
-            await CommitSwitchAsync(pending.Preview, phaseBefore, pending.Downloads, ct).ConfigureAwait(false);
+            await CommitSwitchAsync(pending.Preview, phaseBefore, downloadAnswered, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -784,7 +787,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     /// caller holds <see cref="_switching"/>. Only a failed save throws, and then nothing was changed.
     /// </summary>
     /// <param name="downloadAnswered">
-    /// The user said Switch to a question that named the download. With shared folders nothing downloads
+    /// The user said Switch to a question that said Switch downloads. With shared folders nothing downloads
     /// without it, whatever has changed since the switch began: an install that ended during the save, or
     /// a folder that went while a warning waited (whose preview compared folders and has nothing to apply).
     /// The check below then offers the release.

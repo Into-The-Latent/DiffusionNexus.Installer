@@ -2733,6 +2733,32 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.CanApply.Should().BeTrue("the release waits for a click");
     }
 
+    // Review round 4: the question said the download comes after the install, and Switch was answered
+    // while that was still true. The install ending during the save must not bring the download forward.
+    [Fact]
+    public async Task An_install_ending_during_the_save_keeps_the_download_the_question_put_off()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) =>
+                 {
+                     _session.SetupGet(x => x.Phase).Returns(InstallPhase.Idle);
+                     return s;
+                 });
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue("the release waits for a click");
+    }
+
     // Review round 3: the warning compared two folders, so its preview has nothing to download, and the
     // target's state went while it waited. Applying it failed with "Nothing to apply", again on each retry.
     [Fact]
