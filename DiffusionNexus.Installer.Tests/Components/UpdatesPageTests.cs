@@ -783,6 +783,42 @@ public class UpdatesPageTests : BunitContext
         warning.TextContent.Should().Contain("Krea-2-Turbo – Upscale").And.Contain("V2 → V1");
     }
 
+    // #56: a channel with no catalog on this PC says what Switch downloads, before anything does.
+    private static CatalogChannelSwitch DownloadSwitch(WorkloadChange workload)
+    {
+        var preview = CatalogChecks.Available(7, CatalogChannel.Preview, [workload]);
+        return new CatalogChannelSwitch(preview, ChannelSwitchWarning.For(preview), Downloads: true);
+    }
+
+    [Fact]
+    public void A_switch_that_has_to_download_asks_first_and_names_the_version()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0"));
+
+        var page = Render<UpdatesPage>();
+
+        var question = page.Find(".channel-switch-warning");
+        Normalized(question.QuerySelector("p")!).Should().Be(
+            "Preview has no catalog on this PC yet. Switching downloads catalog v7. Software you have already installed is not affected.");
+        question.QuerySelectorAll("button").Select(b => b.TextContent.Trim()).Should().Equal("Switch to Preview", "Keep Stable");
+        question.TextContent.Should().Contain("Wan-2.3");
+    }
+
+    [Fact]
+    public void A_download_that_also_takes_something_away_says_both_once()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadRemoved("Qwen-Image-2.1", "V1"));
+
+        var page = Render<UpdatesPage>();
+
+        var lines = page.FindAll(".channel-switch-warning p").Select(p => Normalized(p)).ToList();
+        lines.Should().Equal(
+            "Preview has no catalog on this PC yet. Switching downloads catalog v7.",
+            "Preview is at v7. Switching removes Qwen-Image-2.1. Software you have already installed is not affected.");
+    }
+
     [Fact]
     public void While_a_switch_waits_the_radios_show_the_choice_and_cannot_be_changed()
     {

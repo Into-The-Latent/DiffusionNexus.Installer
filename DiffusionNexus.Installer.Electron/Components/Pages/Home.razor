@@ -53,11 +53,19 @@
         }
 
         @* Spec 7.1: content warnings come before the action. What the target channel takes away
-           from the list of things you can install is shown, and nothing is saved until Switch. *@
+           from the list of things you can install is shown, and nothing is saved until Switch.
+           #56: likewise a download, for a channel with no catalog on this PC yet. *@
         @if (Catalog.PendingSwitch is { } pending)
         {
             <div class="channel-switch-warning">
-                <p>@foreach (var (text, bold) in WarningSegments(pending.Warning)) { if (bold) { <strong>@text</strong> } else { @text } }</p>
+                @if (pending.Downloads)
+                {
+                    <p>@DownloadText(pending)</p>
+                }
+                @if (pending.Warning is { } warning)
+                {
+                    <p>@foreach (var (text, bold) in WarningSegments(warning)) { if (bold) { <strong>@text</strong> } else { @text } }</p>
+                }
                 @ChangeList(pending.Preview)
                 <div class="actions">
                     <button class="primary" @onclick="ConfirmSwitchAsync">Switch to @pending.Target</button>
@@ -403,6 +411,17 @@
         }
         if (warning.ChangesText is not null) yield return (warning.ChangesText, false);
         yield return (". Software you have already installed is not affected.", false);
+    }
+
+    /// <summary>
+    /// "Preview has no catalog on this PC yet. Switching downloads catalog v7." The sentence about
+    /// installed software is mandatory too, and closes the warning below when there is one.
+    /// </summary>
+    private static string DownloadText(CatalogChannelSwitch pending)
+    {
+        var release = pending.Preview.Remote is { } remote ? $"catalog v{remote.CatalogVersion}" : "its catalog";
+        var text = $"{pending.Target} has no catalog on this PC yet. Switching downloads {release}.";
+        return pending.Warning is null ? $"{text} Software you have already installed is not affected." : text;
     }
 
     /// <summary>The Added / Updated / Removed list, for an update and for a switch's warning alike.</summary>

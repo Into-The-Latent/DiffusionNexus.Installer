@@ -45,6 +45,9 @@ public sealed class UpdaterLog
     /// <summary>Raised after every mutation. Handlers must marshal to their own sync context.</summary>
     public event Action? Changed;
 
+    /// <summary>Raised by <see cref="MarkFailed"/>. It says the same as <see cref="Status"/>, except when a download on disk keeps that on Ready.</summary>
+    public event Action? Failed;
+
     public AppUpdateStatus Status { get; private set; }
 
     /// <summary>The version found or downloaded. Null until an update is found.</summary>
@@ -151,6 +154,7 @@ public sealed class UpdaterLog
         if (Status != AppUpdateStatus.Ready) Status = AppUpdateStatus.Failed;
         Changed?.Invoke();
         Append($"Updater error: {error}");
+        Failed?.Invoke();
     }
 
     private void Set(AppUpdateStatus status)

@@ -104,6 +104,74 @@ public class AppUpdateCheckerTests : IDisposable
         _log.Lines.Should().ContainSingle(l => l.Contains("net::ERR_INTERNET_DISCONNECTED"));
     }
 
+    // ----- a check that never answers must not hold the next one (#56 testing) -----
+
+    // ElectronNET 0.5.2 never completes its task when a check fails (see AppUpdateChecker). Only the
+    // updater's error event arrives. The next check used to wait behind it for good, and with it the
+    // page's radios and its "Check for updates".
+    [Fact]
+    public async Task A_failure_reported_only_by_the_updaters_event_ends_the_check()
+    {
+        _shell.CheckGate = new TaskCompletionSource();   // never completed, like ElectronNET's task
+        var checker = Create();
+
+        var first = checker.CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        first.IsCompleted.Should().BeFalse("nothing has answered yet");
+
+        _log.MarkFailed("HttpError: 404");
+
+        (await Task.WhenAny(first, Task.Delay(5000))).Should().BeSameAs(first);
+
+        _shell.CheckGate = null;
+        var second = checker.CheckAsync();
+        (await Task.WhenAny(second, Task.Delay(5000))).Should().BeSameAs(second, "the failed check gave its turn back");
+        _shell.Calls.Count(c => c == "check").Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_check_that_never_answers_gives_its_turn_back_and_says_so()
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = new AppUpdateChecker(_catalog, _shell, _log, _feed, PinnedPath, answerLimit: TimeSpan.FromMilliseconds(50));
+
+        var check = checker.CheckAsync();
+
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+        _log.Status.Should().Be(AppUpdateStatus.Failed);
+        _log.Error.Should().Contain("did not answer");
+    }
+
+    [Fact]
+    public async Task A_failure_from_before_the_check_does_not_end_it()
+    {
+        _log.MarkFailed("an earlier download failed");
+        _shell.CheckGate = new TaskCompletionSource();
+
+        var check = Create().CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+
+        (await Task.WhenAny(check, Task.Delay(200))).Should().NotBeSameAs(check, "this check has not been answered");
+
+        _shell.CheckGate.SetResult();
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+    }
+
+    [Fact]
+    public async Task A_slow_check_that_answers_in_time_is_waited_for()
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+
+        var check = Create().CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+
+        (await Task.WhenAny(check, Task.Delay(200))).Should().NotBeSameAs(check);
+
+        _shell.CheckGate.SetResult();
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+        _log.Status.Should().NotBe(AppUpdateStatus.Failed);
+    }
+
     // ----- Preview means the highest version, not the newest-created release (PR #21 review) -----
 
     // electron-updater's Preview path takes the first feed entry. A Stable hotfix cut after a

@@ -121,7 +121,8 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// A switch waiting for Switch or Keep: the target channel's content removes or changes
-    /// something. While it is set, checks, applies and other switches are refused, and
+    /// something, or the channel has no catalog on this PC yet and Switch would download it. While
+    /// it is set, checks, applies and other switches are refused, and
     /// <see cref="UpdateAvailable"/> is false (the last check describes the channel being left).
     /// </summary>
     CatalogChannelSwitch? PendingSwitch { get; }
@@ -142,12 +143,12 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// Previews <paramref name="target"/> without saving anything (spec 7.1). A diff that removes
-    /// or changes something waits in <see cref="PendingSwitch"/>; otherwise the switch goes ahead
-    /// at once, as <see cref="ConfirmSwitchAsync"/> would. A channel with a folder (SDK 2.3.0 keeps
-    /// one per channel) is read and checked, never applied to: a switch does not move its version,
-    /// and a newer release is announced as at startup (#56). A channel without one downloads its
-    /// release, and the progress line names the version. Refused (no-op) while checking, applying or
-    /// switching. Settings I/O errors propagate, and then nothing was changed. Completes once the
+    /// or changes something waits in <see cref="PendingSwitch"/>, and so does a download; otherwise
+    /// the switch goes ahead at once, as <see cref="ConfirmSwitchAsync"/> would. A channel with a
+    /// folder (SDK 2.3.0 keeps one per channel) is read and checked, never applied to: a switch does
+    /// not move its version, and a newer release is announced as at startup (#56). A channel without
+    /// one downloads its release once the user has said Switch. Refused (no-op) while checking, applying
+    /// or switching. Settings I/O errors propagate, and then nothing was changed. Completes once the
     /// choice is saved (or waits for an answer); what it starts runs on and reports through
     /// <see cref="Changed"/>, like <see cref="ApplyAsync"/>.
     /// </summary>

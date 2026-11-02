@@ -612,11 +612,13 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             var preview = await PreviewAsync(current, target, ct).ConfigureAwait(false);
             lock (_gate) Phase = phaseBefore;
 
-            if (ChannelSwitchWarning.For(preview) is { } warning)
+            var warning = ChannelSwitchWarning.For(preview);
+            var downloads = WouldDownload(preview);
+            if (warning is not null || downloads)
             {
-                lock (_gate) PendingSwitch = new CatalogChannelSwitch(preview, warning);
-                _logger.LogInformation("Catalog channel switch to {Channel} waits for an answer: v{Version} removes {Removed} and {Changes}",
-                    target, warning.Version, warning.Removed.Count, warning.ChangesText ?? "changes nothing");
+                lock (_gate) PendingSwitch = new CatalogChannelSwitch(preview, warning, downloads);
+                _logger.LogInformation("Catalog channel switch to {Channel} waits for an answer: v{Version}, downloads {Downloads}, removes {Removed} and {Changes}",
+                    target, preview.Remote?.CatalogVersion, downloads, warning?.Removed.Count ?? 0, warning?.ChangesText ?? "changes nothing");
                 return;
             }
 
@@ -673,6 +675,19 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         }
         Raise();
     }
+
+    /// <summary>
+    /// Going ahead would start a download nobody has been told about: the target channel has no catalog
+    /// on this PC and its release can be fetched (#56). Asked whatever the "automatic" setting says,
+    /// which is about updates to a catalog the user already has. Offline, or while an install holds the
+    /// apply, nothing downloads and there is nothing to ask. <see cref="CommitSwitchAsync"/> decides again
+    /// on the answer: another app may have filled the folder, or an install started, in the meantime.
+    /// </summary>
+    private bool WouldDownload(CatalogUpdateCheck preview) =>
+        _options.UsesSharedFolders
+        && preview.Outcome is CatalogUpdateOutcome.UpdatesAvailable or CatalogUpdateOutcome.UpToDate
+        && !InstallRunning
+        && !LocalCatalogState.Load(_options.ReadFolderFor(preview.Channel)).RecordsAnything();
 
     /// <summary>
     /// The switch from <paramref name="from"/> to <paramref name="target"/>, filtered for the installer:

@@ -678,6 +678,8 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue("#56: nothing downloads until the user has said so");
+        await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
 
         coordinator.PendingSwitch.Should().BeNull();
@@ -1906,6 +1908,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
 
         coordinator.LastApplyFailed.Should().BeTrue();
@@ -2155,6 +2158,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         await coordinator.CheckAsync();
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        await coordinator.ConfirmSwitchAsync();
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
         coordinator.Installed!.HighestCatalogVersion.Should().Be(4, "the Stable state the app read a moment ago, not an empty Preview folder");
@@ -2226,6 +2230,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
 
         coordinator.LastApply!.Applied.Should().Be(CatalogSections.None, "the seed is the SDK's, not this apply's");
@@ -2497,5 +2502,138 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         coordinator.PendingSwitch.Should().BeNull();
         coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    // ----- #56: a channel with no catalog on this PC asks before it downloads -----
+
+    /// <summary>The installer follows Stable, whose folder is at v6. Preview has no folder and its release is v7.</summary>
+    private CatalogOptions NoFolderForPreview()
+    {
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        State(6, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel, Remote = CatalogChecks.Remote(7, channel) };
+        return options;
+    }
+
+    [Fact]
+    public async Task A_channel_with_no_folder_asks_before_it_downloads()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch.Should().NotBeNull();
+        coordinator.PendingSwitch!.Target.Should().Be(CatalogChannel.Preview);
+        coordinator.PendingSwitch.Downloads.Should().BeTrue();
+        coordinator.PendingSwitch.Warning.Should().BeNull("it takes nothing away");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        _service.ApplyCalls.Should().Be(0);
+        VerifyNothingSaved();
+        coordinator.ContentGeneration.Should().Be(0, "the app still reads the same folder");
+    }
+
+    [Fact]
+    public async Task Switch_downloads_the_release_the_question_named()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        VerifySaved("Preview");
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        _service.ApplyCalls.Should().Be(1);
+        _service.AppliedCheck!.IsSwitchPreview.Should().BeTrue();
+        _service.AppliedCheck.Remote!.CatalogVersion.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task Keep_downloads_nothing_and_stays_on_the_channel()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.KeepChannel();
+
+        coordinator.PendingSwitch.Should().BeNull();
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        _service.ApplyCalls.Should().Be(0);
+        VerifyNothingSaved();
+    }
+
+    [Fact]
+    public async Task A_release_that_only_adds_still_asks_when_the_channel_has_no_folder()
+    {
+        var options = NoFolderForPreview();
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+        coordinator.PendingSwitch.Warning.Should().BeNull();
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_release_that_removes_something_says_both()
+    {
+        var options = NoFolderForPreview();
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+        coordinator.PendingSwitch.Warning!.Removed.Should().Equal("Wan-2.3");
+    }
+
+    [Fact]
+    public async Task Automatic_updates_do_not_answer_the_question()
+    {
+        // The setting is about updates the startup check finds, not a catalog the user never had.
+        var options = NoFolderForPreview();
+        _saved.ApplyCatalogUpdatesAutomatically = true;
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Offline_there_is_nothing_to_download_so_nothing_is_asked()
+    {
+        var options = NoFolderForPreview();
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "No such host is known.") with { Channel = channel };
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Preview");
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task During_an_install_nothing_downloads_so_nothing_is_asked()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = CatalogChannel.Preview };
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Preview");
+        _service.ApplyCalls.Should().Be(0);
     }
 }
