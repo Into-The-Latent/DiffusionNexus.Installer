@@ -80,6 +80,58 @@ public class UpdaterLogTests
         _log.Lines.Should().Equal("Updater error: net::ERR_INTERNET_DISCONNECTED");
     }
 
+    // What electron-updater's createHttpError builds for a 404, line breaks included. Electron's net
+    // module reports no status message, hence the space and nothing else on the first line.
+    private const string Http404 =
+        "404 \n\"method: GET url: https://github.com/Into-The-Latent/DiffusionNexus.Installer/releases.atom\\n\\n" +
+        "Please double check that your authentication token is correct. Due to security reasons, actual status maybe not reported, but 404.\\n\"\n" +
+        "Headers: { \"cache-control\": \"no-cache\", \"set-cookie\": [ \"_gh_sess=abc; path=/\" ] }";
+
+    [Fact]
+    public void An_http_failure_shows_the_status_and_the_address_and_logs_everything()
+    {
+        _log.MarkFailed(Http404);
+
+        _log.Error.Should().Be("404 from https://github.com/Into-The-Latent/DiffusionNexus.Installer/releases.atom");
+        _log.Lines.Should().Equal($"Updater error: {Http404}");
+    }
+
+    [Fact]
+    public void A_status_message_stays_with_the_status()
+    {
+        _log.MarkFailed("500 Internal Server Error\n\"method: GET url: https://example.com/feed\\n\\n  Data:\\n  oops\"\nHeaders: {}");
+
+        _log.Error.Should().Be("500 Internal Server Error from https://example.com/feed");
+    }
+
+    [Fact]
+    public void Any_other_failure_shows_its_first_line()
+    {
+        _log.MarkFailed("ENOENT: no such file or directory, open 'app-update.yml'\n    at open (node:fs:1)");
+
+        _log.Error.Should().Be("ENOENT: no such file or directory, open 'app-update.yml'");
+        _log.Lines.Single().Should().Contain("at open (node:fs:1)");
+    }
+
+    [Fact]
+    public void A_single_endless_line_is_cut()
+    {
+        _log.MarkFailed(new string('x', 500));
+
+        _log.Error.Should().Be(new string('x', 200) + "…");
+        _log.Lines.Single().Should().HaveLength("Updater error: ".Length + 500);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  \n  ")]
+    public void A_failure_with_no_words_still_has_a_message(string error)
+    {
+        _log.MarkFailed(error);
+
+        _log.Error.Should().Be("No details were given.");
+    }
+
     // A re-check fires "checking" again. Once a download is on disk that must not hide it: the
     // restart button would vanish for an update that is still waiting to be installed.
     [Fact]

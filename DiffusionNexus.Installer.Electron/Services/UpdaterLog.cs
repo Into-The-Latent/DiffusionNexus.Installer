@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace DiffusionNexus.Installer.Electron.Services;
 
 /// <summary>Where the app self-update stands, in the order a check normally moves through it.</summary>
@@ -56,7 +58,7 @@ public sealed class UpdaterLog
     /// <summary>Whole percent of the running download. Null until progress is reported.</summary>
     public int? DownloadPercent { get; private set; }
 
-    /// <summary>The updater's message for <see cref="AppUpdateStatus.Failed"/>.</summary>
+    /// <summary>The updater's message for <see cref="AppUpdateStatus.Failed"/>, cut down for the page. <see cref="Lines"/> has all of it.</summary>
     public string? Error { get; private set; }
 
     /// <summary>True from the moment an update is found, through its download, until it is installed.</summary>
@@ -145,7 +147,7 @@ public sealed class UpdaterLog
 
     public void MarkFailed(string error)
     {
-        Error = error;
+        Error = Shortened(error);
 
         // An error is the only way a download ends other than Ready, and the event does not say
         // whether the download or an overlapping check failed -- so it must get through, or a
@@ -155,6 +157,26 @@ public sealed class UpdaterLog
         Changed?.Invoke();
         Append($"Updater error: {error}");
         Failed?.Invoke();
+    }
+
+    // electron-updater's HTTP failures: the status, then a quoted description naming the address, then
+    // every response header. A 404's description also blames an authentication token nobody here has.
+    private static readonly Regex HttpFailure = new(@"^(?<status>.*?)\s*""method: \w+ url: (?<url>[^\s\\""]+)", RegexOptions.Singleline);
+
+    private const int ShownErrorLength = 200;
+
+    /// <summary>What the page shows of a failure: the status and address of an HTTP failure, else the first line.</summary>
+    private static string Shortened(string error)
+    {
+        var text = error.Trim();
+        if (text.Length == 0) return "No details were given.";
+
+        var http = HttpFailure.Match(text);
+        var shown = http.Success
+            ? $"{http.Groups["status"].Value.ReplaceLineEndings(" ")} from {http.Groups["url"].Value}"
+            : text.ReplaceLineEndings("\n").Split('\n')[0];
+
+        return shown.Length <= ShownErrorLength ? shown : shown[..ShownErrorLength] + "…";
     }
 
     private void Set(AppUpdateStatus status)
