@@ -280,6 +280,25 @@ public class UpdatesPageTests : BunitContext
         page.Find(".catalog-progress").TextContent.Trim().Should().Be(expected);
     }
 
+    // Review round 1: a same-content preview, right after the user said yes to the download.
+    [Fact]
+    public void The_row_does_not_call_the_catalog_up_to_date_during_a_download()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with
+        {
+            Channel = CatalogChannel.Preview,
+            Remote = CatalogChecks.Remote(7, CatalogChannel.Preview),
+            IsSwitchPreview = true,
+        };
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Should().NotContain("up to date");
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Downloading catalog v7…");
+    }
+
     // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";
     // the download and its failure must be visible even when nothing is offered to apply.
     [Fact]

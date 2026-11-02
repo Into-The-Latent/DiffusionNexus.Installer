@@ -129,6 +129,57 @@ public class AppUpdateCheckerTests : IDisposable
         _shell.Calls.Count(c => c == "check").Should().Be(2);
     }
 
+    // Review round 1: ElectronNET's completion message goes through the same unwatched Task.Run as the
+    // failure, so an answer in the updater's events ends the check whatever becomes of that message.
+    [Theory]
+    [InlineData("up to date")]
+    [InlineData("found")]
+    public async Task Any_answer_in_the_updaters_events_ends_the_check_and_stays_on_the_page(string answer)
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = new AppUpdateChecker(_catalog, _shell, _log, _feed, PinnedPath, answerLimit: TimeSpan.FromSeconds(1));
+
+        var check = checker.CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        if (answer == "found") _log.MarkAvailable("3.0.12"); else _log.MarkUpToDate();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await check.WaitAsync(TimeSpan.FromSeconds(5));
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(800), "the event answered it, not the limit");
+
+        await Task.Delay(1200);
+        _log.Status.Should().Be(answer == "found" ? AppUpdateStatus.Downloading : AppUpdateStatus.UpToDate);
+    }
+
+    // Review round 1: the limit knows what it is about, unlike an error event: a check, never a download.
+    [Fact]
+    public async Task A_check_that_never_answers_leaves_a_running_download_on_offer()
+    {
+        _log.MarkAvailable("3.0.12");
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = new AppUpdateChecker(_catalog, _shell, _log, _feed, PinnedPath, answerLimit: TimeSpan.FromMilliseconds(50));
+
+        await checker.CheckAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        _log.Status.Should().Be(AppUpdateStatus.Downloading);
+        _log.Lines.Should().Contain(l => l.Contains("did not answer"));
+    }
+
+    // Review round 1: a page on a dead circuit is the realistic thrower; the coordinator's Raise guards
+    // against it for its own subscribers.
+    [Fact]
+    public async Task A_throwing_page_does_not_keep_the_check_waiting()
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+        var check = Create().CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        _log.Changed += () => throw new InvalidOperationException("dead circuit");
+
+        _log.Invoking(l => l.MarkFailed("offline")).Should().Throw<InvalidOperationException>();
+
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+    }
+
     [Fact]
     public async Task A_check_that_never_answers_gives_its_turn_back_and_says_so()
     {

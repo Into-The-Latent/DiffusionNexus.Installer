@@ -47,8 +47,12 @@ public sealed class UpdaterLog
     /// <summary>Raised after every mutation. Handlers must marshal to their own sync context.</summary>
     public event Action? Changed;
 
-    /// <summary>Raised by <see cref="MarkFailed"/>. It says the same as <see cref="Status"/>, except when a download on disk keeps that on Ready.</summary>
-    public event Action? Failed;
+    /// <summary>
+    /// The updater answered a check: up to date, found, or failed. Not read from <see cref="Status"/>, which
+    /// holds on to a download whatever a later check says. Raised before <see cref="Changed"/>: a check's
+    /// turn hangs on it, and a throwing subscriber to that must not lose it.
+    /// </summary>
+    public event Action? CheckAnswered;
 
     public AppUpdateStatus Status { get; private set; }
 
@@ -110,6 +114,7 @@ public sealed class UpdaterLog
 
     public void MarkUpToDate()
     {
+        CheckAnswered?.Invoke();
         Set(AppUpdateStatus.UpToDate);
         Append("No update available - this is the latest version.");
     }
@@ -122,6 +127,7 @@ public sealed class UpdaterLog
         // Set directly, not through Set: a newer release found after one already downloaded
         // replaces it, so Ready does not hold here.
         Status = AppUpdateStatus.Downloading;
+        CheckAnswered?.Invoke();
         Append($"Update available: {version}. Downloading...");
     }
 
@@ -154,9 +160,20 @@ public sealed class UpdaterLog
         // dead download would read "Downloading" for ever. MarkProgress undoes a false alarm.
         // A download already on disk is beyond any later error.
         if (Status != AppUpdateStatus.Ready) Status = AppUpdateStatus.Failed;
+        CheckAnswered?.Invoke();
         Changed?.Invoke();
         Append($"Updater error: {error}");
-        Failed?.Invoke();
+    }
+
+    /// <summary>
+    /// A check nothing answered. Unlike an error event this knows it is about the check, so a download
+    /// on disk or still running stays on offer (see <see cref="Set"/>).
+    /// </summary>
+    public void MarkNoAnswer(string message)
+    {
+        Error = message;
+        Set(AppUpdateStatus.Failed);
+        Append($"Updater error: {message}");
     }
 
     // electron-updater's HTTP failures: the status, then a quoted description naming the address, then

@@ -687,7 +687,24 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         _options.UsesSharedFolders
         && preview.Outcome is CatalogUpdateOutcome.UpdatesAvailable or CatalogUpdateOutcome.UpToDate
         && !InstallRunning
-        && !LocalCatalogState.Load(_options.ReadFolderFor(preview.Channel)).RecordsAnything();
+        && !HoldsCatalog(preview.Channel);
+
+    /// <summary>
+    /// Whether the channel's folder holds a catalog. A state file that cannot be read right now (the other
+    /// app has it, or a scan) counts as yes: read as empty, the switch would apply to that folder (#56).
+    /// </summary>
+    private bool HoldsCatalog(CatalogChannel channel)
+    {
+        try
+        {
+            return LocalCatalogState.Read(_options.ReadFolderFor(channel)).RecordsAnything();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogInformation("The {Channel} catalog's state could not be read just now; treating that channel as having a catalog: {Message}", channel, ex.Message);
+            return true;
+        }
+    }
 
     /// <summary>
     /// The switch from <paramref name="from"/> to <paramref name="target"/>, filtered for the installer:
@@ -749,8 +766,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 FollowedChannel = from,
             }.For(_audience);
         }
-        catch (Exception ex) when (ex is CatalogFormatException or IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
+            // Everything, not just I/O: content the comparison cannot digest (two items with one id) must
+            // not end the switch. PreviewAsync's contract is never to throw, and this runs outside its try.
             _logger.LogInformation("Catalog channel folders could not be compared, asking the release instead: {Message}", ex.Message);
             return null;
         }
@@ -787,7 +806,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         var known = LocalCatalogState.Load(_options.ReadFolderFor(target));
         // A folder that exists is what that channel holds, and the switch only changes which one the
         // app reads. Applying here moved its version with nobody told, whoever the changes were for (#56).
-        var followsFolder = _options.UsesSharedFolders && known.RecordsAnything() && preview.Outcome != CatalogUpdateOutcome.OverrideActive;
+        var followsFolder = _options.UsesSharedFolders && HoldsCatalog(target) && preview.Outcome != CatalogUpdateOutcome.OverrideActive;
         // What a switch applies otherwise: the target's release when the preview found changes, and, with
         // shared folders, a same-content preview too -- the SDK's apply fills the missing folder. With one
         // folder the preview compared against that very folder: same content means nothing to fill.
@@ -857,8 +876,10 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 var followed = Channel;
                 read = _inFlight = Task.Run(() => AfterSwitchNotAppliedAsync(target, followed, checkFolder, confirm: sameContentOneFolder && !confirmed), CancellationToken.None);
             }
-            // After the read, not inside it: StartApply refuses while a task is in flight.
-            if (checkFolder) _ = read.ContinueWith(_ => ApplyAutomaticallyIfOn(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            // After the read, not inside it: StartApply refuses while a task is in flight. Only for a folder
+            // followed: a channel an install held has no catalog of the user's to update, and its first
+            // download waits for a click.
+            if (checkFolder && followsFolder) _ = read.ContinueWith(_ => ApplyAutomaticallyIfOn(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         }
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
             applying ? "downloading v" + preview.Remote?.CatalogVersion

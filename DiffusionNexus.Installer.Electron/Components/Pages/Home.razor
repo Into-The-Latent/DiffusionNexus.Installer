@@ -523,7 +523,8 @@
                 null => "Not checked yet.",
                 // A same-content switch whose fill failed: the SDK found the folder needs the release, and Apply is the retry.
                 { IsSwitchPreview: true } c when Catalog.UpdateAvailable => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
-                { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
+                // Not during a download: a same-content switch into a channel with no folder is one, and the progress line says so.
+                { Outcome: CatalogUpdateOutcome.UpToDate } when Catalog.Phase != CatalogUpdatePhase.Applying => "The catalog is up to date.",
                 // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
                 // A release the coordinator does not offer (nothing in it for the installer, no failed apply
                 // to retry, no switch to complete) -- not while it is being applied anyway (the startup apply
