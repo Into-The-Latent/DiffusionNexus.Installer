@@ -16,6 +16,7 @@ using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Hardware;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.SDK.Shared;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
@@ -41,6 +42,7 @@ public class InstallPageTests : BunitContext
     private static readonly Guid WorkloadId = Guid.NewGuid();
 
     private readonly FakeCatalogProvenance _provenance = new(() => "Catalog v6 (Preview, 2df647e)");
+    private IPreInstallationService _preInstallation = new PreInstallationService();
 
     private static InstallationConfiguration Workload(string name = "Fooocus")
     {
@@ -103,12 +105,45 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton<ICatalogProvenance>(_provenance);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
-            new InstallFolderModule(settings.Object, new PreInstallationService()),
+            new InstallFolderModule(settings.Object, _preInstallation) { AnswerWait = TimeSpan.FromMilliseconds(10) },
             new ShortcutsModule(),
             new DisclaimerModule(),
         ]));
 
         return session;
+    }
+
+    [Fact]
+    public void Next_waits_for_a_folder_being_checked_while_the_page_stays_usable()
+    {
+        // #60. With the check back on the render, Input would wait the gate out and come back
+        // with Next already enabled, so the first assertion fails rather than the test hanging.
+        using var gate = new ManualResetEventSlim();
+        var check = new Mock<IPreInstallationService>();
+        check.Setup(c => c.ValidateTargetFolder(It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationType>()))
+            .Returns(() =>
+            {
+                gate.Wait(TimeSpan.FromSeconds(5));
+                return PreInstallationValidationResult.Success(@"\\nas\share\AI\Fooocus", false, false);
+            });
+        _preInstallation = check.Object;
+        Register(Workload());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.Find(".path-row input").Input(@"\\nas\share\AI");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+            .HasAttribute("disabled").Should().BeTrue("the folder has no answer yet");
+        page.Find(".folder-check").TextContent.Should().Contain("Checking this folder");
+
+        gate.Set();
+
+        page.WaitForAssertion(() =>
+        {
+            page.FindAll(".folder-check").Should().BeEmpty();
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+                .HasAttribute("disabled").Should().BeFalse("the answer reaches the page that owns Next");
+        });
     }
 
     [Fact]

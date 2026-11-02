@@ -1007,6 +1007,10 @@ progress {
     color: var(--text);
 }
 
+.folder-retry {
+    margin-bottom: .5rem;
+}
+
 /* Licences page: the generated notices, verbatim. */
 .notices {
     margin: 1rem 0 0;

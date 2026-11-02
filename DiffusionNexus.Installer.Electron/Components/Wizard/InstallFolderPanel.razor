@@ -1,14 +1,23 @@
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Modules
+@implements IDisposable
 @inject IFolderPicker FolderPicker
 
 <section class="panel">
     <h2>Install location</h2>
     <p class="panel-hint">Where the software gets installed.</p>
-    @if (Module.Validate() is { IsValid: false, ErrorMessage: { } problem })
+    @if (Module.IsCheckingFolder)
+    {
+        <p class="panel-hint folder-check">Checking this folder...</p>
+    }
+    else if (Module.Validate() is { IsValid: false, ErrorMessage: { } problem })
     {
         @* Shown here, next to the box it is about; the page skips this module in its own list. *@
         <p class="validation-error">@problem</p>
+        @if (Module.FolderCheckTimedOut)
+        {
+            <button class="btn-secondary folder-retry" @onclick="TryAgain">Try again</button>
+        }
     }
     <div class="path-row">
         <input type="text" value="@Module.TargetFolder" @oninput="OnFolderTyped" />
@@ -29,6 +38,23 @@
     /// user can never leave the stage.
     /// </summary>
     [Parameter] public EventCallback Changed { get; set; }
+
+    protected override void OnInitialized() => Module.FolderCheckAnswered += OnFolderCheckAnswered;
+
+    // The page too: it owns Next, and Blazor re-renders only the component that owns a handler.
+    private void OnFolderCheckAnswered() => _ = InvokeAsync(async () =>
+    {
+        await Changed.InvokeAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Module.FolderCheckAnswered -= OnFolderCheckAnswered;
+
+    private async Task TryAgain()
+    {
+        Module.CheckFolderAgain();
+        await Changed.InvokeAsync();
+    }
 
     private async Task OnFolderTyped(ChangeEventArgs e)
     {
