@@ -200,16 +200,17 @@
         await Changed.InvokeAsync();
     }
 
-    private string LibraryFolderOrDefault => OrElse(Module.ModelBaseFolder, Module.DefaultModelsFolder);
+    private string LibraryOrInstallFolder => OrInstallFolder(Module.ModelBaseFolder);
 
-    // Where Browse starts with an empty box: the folder the box stands in for. With no starting
-    // folder the dialog opens in Downloads since Electron 43 (issue #57).
-    private static string OrElse(string typed, string fallback) =>
-        string.IsNullOrWhiteSpace(typed) ? fallback : typed;
+    // Where Browse starts with an empty box. With no starting folder the dialog opens in Downloads
+    // since Electron 43 (issue #57). Not the default folder the box stands in for: that is inside
+    // the ComfyUI folder, which these boxes refuse, so one click on Select Folder would pick it.
+    private string OrInstallFolder(string typed) =>
+        string.IsNullOrWhiteSpace(typed) ? Module.InstallFolder : typed;
 
     private async Task BrowseModels()
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", LibraryFolderOrDefault);
+        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", LibraryOrInstallFolder);
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.ModelBaseFolder = chosen;
@@ -218,7 +219,7 @@
 
     private async Task BrowseOutput()
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", OrElse(Module.OutputFolder, Module.DefaultOutputFolder));
+        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", OrInstallFolder(Module.OutputFolder));
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.OutputFolder = chosen;
@@ -227,7 +228,7 @@
 
     private async Task BrowseAdditional(AdditionalFolderRow row)
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", OrElse(row.MapsTo, LibraryFolderOrDefault));
+        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", string.IsNullOrWhiteSpace(row.MapsTo) ? LibraryOrInstallFolder : row.MapsTo);
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         row.MapsTo = chosen;

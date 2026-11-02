@@ -376,9 +376,10 @@ public class ComfyFoldersPanelTests : BunitContext
     }
 
     // Since Electron 43 a dialog with no starting folder opens in Downloads (issue #57). An empty box
-    // still has a natural place to start: the folder that box stands in for.
+    // starts at the install folder: never inside the ComfyUI folder it creates, which the boxes
+    // refuse ("would be deleted with it"), so one click on Select Folder cannot pick that.
     [Fact]
-    public async Task Browse_with_an_empty_output_box_starts_at_the_default_output_folder()
+    public async Task Browse_with_an_empty_output_box_starts_at_the_install_folder()
     {
         var browsedFrom = BrowsedFrom();
         var module = await Module();
@@ -387,19 +388,18 @@ public class ComfyFoldersPanelTests : BunitContext
 
         await cut.Find("[data-role='output-panel'] .path-row button").ClickAsync(new());
 
-        browsedFrom().Should().Be(module.DefaultOutputFolder).And.NotBeNullOrEmpty();
+        browsedFrom().Should().Be(@"E:\Installer\9");
     }
 
     [Fact]
-    public async Task Browse_with_an_empty_library_box_starts_at_the_default_models_folder()
+    public async Task Browse_with_an_empty_library_box_starts_at_the_install_folder()
     {
         var browsedFrom = BrowsedFrom();
-        var module = await Module(on: true);
-        var cut = RenderPanel(module);
+        var cut = RenderPanel(await Module(on: true));
 
         await cut.Find("[data-role='model-panel'] .path-row button").ClickAsync(new());
 
-        browsedFrom().Should().Be(module.DefaultModelsFolder).And.NotBeNullOrEmpty();
+        browsedFrom().Should().Be(@"E:\Installer\9");
     }
 
     [Fact]

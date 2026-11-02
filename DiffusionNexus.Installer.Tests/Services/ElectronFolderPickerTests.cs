@@ -55,6 +55,14 @@ public sealed class ElectronFolderPickerTests : IDisposable
         ElectronFolderPicker.StartingFolder(string.Format(pasted, target)).Should().Be(_root);
     }
 
+    // Windows' shell refuses a path with forward slashes (E_INVALIDARG, checked), and the dialog then
+    // ignores it. The wizard accepts one, and only the walk up used to normalize it.
+    [Fact]
+    public void An_existing_folder_typed_with_forward_slashes_reaches_the_dialog_with_backslashes()
+    {
+        ElectronFolderPicker.StartingFolder(_root.Replace('\\', '/')).Should().Be(_root);
+    }
+
     [Fact]
     public async Task A_disk_that_does_not_answer_leaves_the_choice_to_the_dialog()
     {

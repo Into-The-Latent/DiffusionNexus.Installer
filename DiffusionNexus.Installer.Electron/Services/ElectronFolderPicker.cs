@@ -71,14 +71,15 @@ public sealed class ElectronFolderPicker : IFolderPicker
     /// when it does not exist yet (a new install folder usually doesn't). Since Electron 43 a dialog
     /// without a defaultPath opens in Downloads instead of where Windows last left it (issue #57),
     /// so walking up beats leaving it unset. The boxes hand over the raw text, so it is read the way
-    /// the wizard reads it (a pasted, quoted path). Null when there is no full path to go by.
+    /// the wizard reads it (a pasted, quoted path), and given back with backslashes: the dialog
+    /// ignores a folder with forward slashes. Null when there is no full path to go by.
     /// </summary>
     public static string? StartingFolder(string? startIn, Func<string, bool>? folderExists = null)
     {
         if (FolderInput.Clean(startIn) is not { } path || !FolderInput.IsFullPath(path)) return null;
 
         folderExists ??= Directory.Exists;
-        for (var folder = path; folder is not null; folder = Path.GetDirectoryName(folder))
+        for (var folder = path.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar); folder is not null; folder = Path.GetDirectoryName(folder))
         {
             if (folderExists(folder)) return folder;
         }

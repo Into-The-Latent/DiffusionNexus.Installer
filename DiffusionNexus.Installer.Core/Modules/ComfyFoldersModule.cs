@@ -170,6 +170,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>ComfyUI's own output folder, the fallback with the output switch off.</summary>
     public string DefaultOutputFolder => InstallSubfolder("output");
 
+    /// <summary>The install folder as chosen, the parent of the folder the install creates. Empty until there is one.</summary>
+    public string InstallFolder => _selection?.TargetFolder ?? string.Empty;
+
     private string InstallSubfolder(string name) =>
         InstallRoot is { } root ? Path.Combine(root, name) : string.Empty;
 
