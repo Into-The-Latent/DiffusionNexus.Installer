@@ -1339,7 +1339,9 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
         firstReadStarted.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
-        SpinWait.SpinUntil(() => ReferenceEquals(coordinator.Installed, stableState), 10_000).Should().BeTrue();
+        // A check runs after the second read, so both have raised Changed: the next raise is the first read's.
+        await coordinator.CheckAsync();
+        coordinator.Installed.Should().BeSameAs(stableState);
 
         using var firstReadEnded = new ManualResetEventSlim();
         coordinator.Changed += firstReadEnded.Set;

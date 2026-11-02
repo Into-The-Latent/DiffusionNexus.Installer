@@ -1,5 +1,7 @@
 # global.json pins the .NET SDK with no roll-forward, so nothing else moves the runtime the app ships.
-# This asks for the bump when a patch ships. CI's notices check fails on that PR until they are regenerated.
+# This asks for the bump when a patch ships. Treat the PR as the reminder: its own CI run stops at the
+# packages token check, because Dependabot's runs get no Actions secrets. Push the regenerated notices
+# to its branch (see README): that run has the token and is the real result.
 version: 2
 updates:
   - package-ecosystem: dotnet-sdk

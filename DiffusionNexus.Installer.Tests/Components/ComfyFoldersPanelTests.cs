@@ -415,6 +415,22 @@ public class ComfyFoldersPanelTests : BunitContext
         browsedFrom().Should().Be(@"D:\Models");
     }
 
+    [Theory]
+    [InlineData("Renders")]
+    [InlineData("\"\"")]
+    public async Task Browse_with_nothing_usable_in_the_box_starts_at_the_install_folder(string typed)
+    {
+        var browsedFrom = BrowsedFrom();
+        var module = await Module();
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = typed;
+        var cut = RenderPanel(module);
+
+        await cut.Find("[data-role='output-panel'] .path-row button").ClickAsync(new());
+
+        browsedFrom().Should().Be(@"E:\Installer\9");
+    }
+
     [Fact]
     public async Task Browse_starts_at_what_the_box_holds_when_it_holds_something()
     {
