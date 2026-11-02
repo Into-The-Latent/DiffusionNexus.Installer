@@ -200,9 +200,16 @@
         await Changed.InvokeAsync();
     }
 
+    private string LibraryFolderOrDefault => OrElse(Module.ModelBaseFolder, Module.DefaultModelsFolder);
+
+    // Where Browse starts with an empty box: the folder the box stands in for. With no starting
+    // folder the dialog opens in Downloads since Electron 43 (issue #57).
+    private static string OrElse(string typed, string fallback) =>
+        string.IsNullOrWhiteSpace(typed) ? fallback : typed;
+
     private async Task BrowseModels()
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", Module.ModelBaseFolder);
+        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", LibraryFolderOrDefault);
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.ModelBaseFolder = chosen;
@@ -211,7 +218,7 @@
 
     private async Task BrowseOutput()
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", Module.OutputFolder);
+        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", OrElse(Module.OutputFolder, Module.DefaultOutputFolder));
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.OutputFolder = chosen;
@@ -220,7 +227,7 @@
 
     private async Task BrowseAdditional(AdditionalFolderRow row)
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", row.MapsTo);
+        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", OrElse(row.MapsTo, LibraryFolderOrDefault));
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         row.MapsTo = chosen;

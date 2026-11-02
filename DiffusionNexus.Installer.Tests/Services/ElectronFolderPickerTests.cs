@@ -36,8 +36,44 @@ public sealed class ElectronFolderPickerTests : IDisposable
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("relative\\folder")]
+    [InlineData(@"\\.\C:\Windows")]
     public void No_usable_path_leaves_the_choice_to_the_dialog(string? startIn)
     {
         ElectronFolderPicker.StartingFolder(startIn).Should().BeNull();
+    }
+
+    // The boxes hold the raw text and the wizard cleans it wherever it acts on it, so what it shows as
+    // "Will be created" must also be where Browse starts. Explorer's "Copy as path" adds the quotes.
+    [Theory]
+    [InlineData("\"{0}\"")]
+    [InlineData("  {0}  ")]
+    [InlineData("{0}\\")]
+    public void A_pasted_path_is_read_the_way_the_wizard_reads_it(string pasted)
+    {
+        var target = Path.Combine(_root, "new-install");
+
+        ElectronFolderPicker.StartingFolder(string.Format(pasted, target)).Should().Be(_root);
+    }
+
+    [Fact]
+    public async Task A_disk_that_does_not_answer_leaves_the_choice_to_the_dialog()
+    {
+        using var unreachable = new ManualResetEventSlim();
+
+        var folder = await ElectronFolderPicker.StartingFolderWithinAsync(TimeSpan.FromMilliseconds(50), @"\\nas\share\AI",
+            _ => { unreachable.Wait(); return true; });
+        unreachable.Set();
+
+        folder.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_disk_that_answers_in_time_gives_the_starting_folder()
+    {
+        var target = Path.Combine(_root, "new-install");
+
+        var folder = await ElectronFolderPicker.StartingFolderWithinAsync(TimeSpan.FromSeconds(30), target);
+
+        folder.Should().Be(_root);
     }
 }
