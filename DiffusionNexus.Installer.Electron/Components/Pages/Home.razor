@@ -520,14 +520,21 @@
         }
     }
 
-    // No bytes yet: a switch first has the SDK check the target folder, and most switches download
-    // nothing at all; the percent appears once a download starts.
-    private string ProgressText => Catalog.Progress switch
+    // A switch only downloads for a channel with no folder yet, and says which version (#56). Otherwise,
+    // no bytes yet: the SDK checks the folder first, and the percent appears once a download starts.
+    private string ProgressText
     {
-        null => "Applying the catalog…",
-        { TotalBytes: > 0 } p => $"Downloading… {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
-        var p => $"Downloading… {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
-    };
+        get
+        {
+            var switchDownload = Catalog.LastCheck is { IsSwitchPreview: true, Remote: { } release } ? $"Downloading catalog v{release.CatalogVersion}…" : null;
+            return Catalog.Progress switch
+            {
+                null => switchDownload ?? "Applying the catalog…",
+                { TotalBytes: > 0 } p => $"{switchDownload ?? "Downloading…"} {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
+                var p => $"{switchDownload ?? "Downloading…"} {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
+            };
+        }
+    }
 
     // Uncertain: the apply threw and the state could not be read back, so "nothing was changed"
     // would be a guess (PR #44 review).

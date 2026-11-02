@@ -246,8 +246,6 @@ public class UpdatesPageTests : BunitContext
         Render<UpdatesPage>().Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v7.");
     }
 
-    // #53 round 2: every switch passes through Applying while the SDK checks the target folder; most
-    // of them download nothing, so "Downloading…" with no bytes is wrong half the time.
     [Fact]
     public void Progress_without_bytes_says_the_catalog_is_being_applied()
     {
@@ -259,6 +257,27 @@ public class UpdatesPageTests : BunitContext
         var page = Render<UpdatesPage>();
 
         page.Find(".catalog-progress").TextContent.Trim().Should().Be("Applying the catalog…");
+    }
+
+    // #56: a switch only downloads when that channel has no folder yet, and it says which version.
+    [Theory]
+    [InlineData(null, "Downloading catalog v7…")]
+    [InlineData(40L, "Downloading catalog v7… 40%")]
+    public void A_switch_that_has_to_download_names_the_version(long? received, string expected)
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with
+        {
+            Channel = CatalogChannel.Preview,
+            Remote = CatalogChecks.Remote(7, CatalogChannel.Preview),
+            IsSwitchPreview = true,
+        };
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.Progress = received is { } bytes ? new CatalogDownloadProgress(bytes, 100) : null;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be(expected);
     }
 
     // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";

@@ -224,7 +224,12 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public async Task CheckAtStartupAsync(CancellationToken ct = default)
     {
         await CheckAsync(ct).ConfigureAwait(false);
+        ApplyAutomaticallyIfOn();
+    }
 
+    /// <summary>After a check, with "Apply catalog updates automatically" on: the release it found.</summary>
+    private void ApplyAutomaticallyIfOn()
+    {
         bool wanted;
         lock (_gate) wanted = AutoApply && ReleaseAvailable;
         if (!wanted) return;
@@ -382,13 +387,13 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
     /// <summary>
     /// After a switch that started no apply (see CommitSwitchAsync), in the background: the state of
-    /// the catalog the app reads now; with one folder and the same content, the confirmation; held by a
-    /// running install, the check of the folder now followed -- the preview compared against the folder
-    /// being left and says nothing about this one -- so the Apply after the install lands what the folder
-    /// needs, or the page says it is current. Never throws.
+    /// the catalog the app reads now; with one folder and the same content, the confirmation; with
+    /// <paramref name="checkFolder"/>, the check of the folder now followed -- the preview compared
+    /// against the folder being left and says nothing about this one -- so the page offers what the
+    /// folder needs, as at startup, or says it is current. Never throws.
     /// </summary>
     /// <param name="followed">The channel followed when the read began. Switched away since, the state describes a folder the app no longer reads.</param>
-    private async Task AfterSwitchNotAppliedAsync(CatalogChannel target, CatalogChannel followed, bool heldByInstall, bool confirm)
+    private async Task AfterSwitchNotAppliedAsync(CatalogChannel target, CatalogChannel followed, bool checkFolder, bool confirm)
     {
         var state = await StateOfReadCatalogAsync().ConfigureAwait(false);
         lock (_gate)
@@ -399,7 +404,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         }
         if (confirm) _confirmations.Confirm(target, state, otherFoldersUntouched: false);
 
-        if (heldByInstall)
+        if (checkFolder)
         {
             var fresh = await CheckAfterSwitchAsync().ConfigureAwait(false);
             var current = fresh.Outcome == CatalogUpdateOutcome.UpToDate;
@@ -669,10 +674,24 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         Raise();
     }
 
-    /// <summary>The switch from <paramref name="from"/> to <paramref name="target"/>, as the SDK diffs it, filtered for the installer. Leaves <see cref="CatalogOptions.Channel"/> alone. Never throws.</summary>
+    /// <summary>
+    /// The switch from <paramref name="from"/> to <paramref name="target"/>, filtered for the installer:
+    /// what the target's folder holds when there is one (what the switch lands on), else the target's
+    /// release as the SDK diffs it. Leaves <see cref="CatalogOptions.Channel"/> alone. Never throws.
+    /// </summary>
     private async Task<CatalogUpdateCheck> PreviewAsync(CatalogChannel from, CatalogChannel target, CancellationToken ct)
     {
         _logger.LogInformation("Catalog channel switch: previewing {Channel}", target);
+        // Off the caller's thread: it hashes every item of both folders.
+        if (_options.UsesSharedFolders
+            && !InstalledCatalogDescription.OverrideActive(_options)
+            && await Task.Run(() => PreviewOfFolder(from, target), CancellationToken.None).ConfigureAwait(false) is { } ofFolder)
+        {
+            _logger.LogInformation("Catalog channel preview of its folder: {Outcome} (v{Version}, {Workloads} workload / {Workflows} workflow changes for the installer)",
+                ofFolder.Outcome, ofFolder.Remote?.CatalogVersion, ofFolder.Workloads.Count, ofFolder.Workflows.Count);
+            return ofFolder;
+        }
+
         try
         {
             var check = (await _updates.PreviewSwitchAsync(from, target, ct).ConfigureAwait(false)).For(_audience);
@@ -691,10 +710,43 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     }
 
     /// <summary>
-    /// Saves the preference, then starts the apply of <paramref name="preview"/> when it has
-    /// something to apply and no install runs, and returns: the choice is made once it is saved,
-    /// and the download reports through <see cref="Changed"/> like a manual apply. The caller holds
-    /// <see cref="_switching"/>. Only a failed save throws, and then nothing was changed.
+    /// The two channel folders compared, or null when there is nothing to compare: no folder for
+    /// the target yet, or a folder that cannot be read.
+    /// </summary>
+    private CatalogUpdateCheck? PreviewOfFolder(CatalogChannel from, CatalogChannel target)
+    {
+        try
+        {
+            var targetFolder = _options.ReadFolderFor(target);
+            var held = LocalCatalogState.Read(targetFolder);
+            if (!held.RecordsAnything()) return null;
+
+            var fromFolder = _options.ReadFolderFor(from);
+            var left = LocalCatalogState.Read(fromFolder);
+            var leaving = CatalogManifestBuilder.Build(fromFolder, left.HighestCatalogVersion, left.Channel, null, DateTimeOffset.UnixEpoch, null);
+            var arriving = CatalogManifestBuilder.Build(targetFolder, held.HighestCatalogVersion, held.Channel, null, DateTimeOffset.UnixEpoch, null);
+            var (workloads, workflows) = CatalogDiff.Compute(leaving, arriving);
+            var outcome = workloads.Count + workflows.Count > 0 ? CatalogUpdateOutcome.UpdatesAvailable : CatalogUpdateOutcome.UpToDate;
+            return new CatalogUpdateCheck(outcome, target, arriving, left, workloads, workflows, null)
+            {
+                Index = CatalogDiff.Index(leaving, arriving),
+                IsSwitchPreview = true,
+                FollowedChannel = from,
+            }.For(_audience);
+        }
+        catch (Exception ex) when (ex is CatalogFormatException or IOException or UnauthorizedAccessException)
+        {
+            _logger.LogInformation("Catalog channel folders could not be compared, asking the release instead: {Message}", ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves the preference, then, for a channel with a folder, reads and checks that folder (#56: a
+    /// switch never moves its version; a newer release is announced as at startup). For a channel
+    /// without one, starts the apply of <paramref name="preview"/> unless an install runs. Returns once
+    /// the choice is saved; the rest reports through <see cref="Changed"/> like a manual apply. The
+    /// caller holds <see cref="_switching"/>. Only a failed save throws, and then nothing was changed.
     /// </summary>
     private async Task CommitSwitchAsync(CatalogUpdateCheck preview, CatalogUpdatePhase phaseBefore, CancellationToken ct)
     {
@@ -714,19 +766,22 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         // Saved before the download starts: a stalled or failed apply must not lose the choice
         // (rule 1), and the next check then offers the same diff with Apply.
         var overrideActive = InstalledCatalogDescription.OverrideActive(_options);
-        // What a switch applies: the target's release when the preview found changes, and, with shared
-        // folders, a same-content preview too -- the SDK's apply checks the target channel's own
-        // folder, fills it when it is missing or behind, and applies nothing when it is current. With
-        // one folder the preview compared against that very folder: same content means nothing to fill.
-        var appliable = preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable
-            || (preview.Outcome == CatalogUpdateOutcome.UpToDate && _options.UsesSharedFolders);
-        var sameContentOneFolder = preview.Outcome == CatalogUpdateOutcome.UpToDate && !_options.UsesSharedFolders;
         // The target folder's state file, outside the lock (the shared-folder read enumerates the
         // format folders). Empty for a channel folder that does not exist yet: then the background
         // read below describes the seed, and Installed stays what it was until it does.
         var known = LocalCatalogState.Load(_options.ReadFolderFor(target));
+        // A folder that exists is what that channel holds, and the switch only changes which one the
+        // app reads. Applying here moved its version with nobody told, whoever the changes were for (#56).
+        var followsFolder = _options.UsesSharedFolders && known.RecordsAnything() && preview.Outcome != CatalogUpdateOutcome.OverrideActive;
+        // What a switch applies otherwise: the target's release when the preview found changes, and, with
+        // shared folders, a same-content preview too -- the SDK's apply fills the missing folder. With one
+        // folder the preview compared against that very folder: same content means nothing to fill.
+        var appliable = !followsFolder
+            && (preview.Outcome == CatalogUpdateOutcome.UpdatesAvailable
+                || (preview.Outcome == CatalogUpdateOutcome.UpToDate && _options.UsesSharedFolders));
+        var sameContentOneFolder = preview.Outcome == CatalogUpdateOutcome.UpToDate && !_options.UsesSharedFolders;
         var applying = false;
-        var heldByInstall = false;
+        var checkFolder = false;
         lock (_gate)
         {
             var left = Channel;
@@ -746,8 +801,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             }
             else
             {
-                LastCheck = preview;
-                _notLanded = preview.Outcome == CatalogUpdateOutcome.OverrideActive || sameContentOneFolder ? null
+                // Nothing to show of a folder until it is checked: the preview compared two folders.
+                LastCheck = followsFolder ? null : preview;
+                _notLanded = followsFolder || preview.Outcome == CatalogUpdateOutcome.OverrideActive || sameContentOneFolder ? null
                     // The content is still from where the first switch that did not land left it;
                     // switching back there is complete, whatever this preview answered.
                     : _notLanded is { From: var from } ? (from == target ? null : (from, target))
@@ -764,11 +820,11 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 {
                     // Failed, needs newer software, override: the installed content stays and the
                     // page says so. During an install the apply (or the retry) waits for it.
-                    heldByInstall = appliable;
-                    // Held by a running install: the folder now followed is checked below, in the
-                    // background and under Checking, so the page offers nothing until it knows what
-                    // that folder needs.
-                    Phase = heldByInstall ? CatalogUpdatePhase.Checking : CatalogUpdatePhase.Checked;
+                    // Followed, or held by a running install: the folder now followed is checked
+                    // below, in the background and under Checking, so the page offers nothing until
+                    // it knows what that folder needs.
+                    checkFolder = followsFolder || appliable;
+                    Phase = checkFolder ? CatalogUpdatePhase.Checking : CatalogUpdatePhase.Checked;
                 }
             }
         }
@@ -780,14 +836,18 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // Nothing will reload the state after an apply: the catalog the app reads now is read in the
             // background (reading it seeds a channel folder that does not exist yet, an extraction), so
             // this call returns once the choice is saved, as the contract says (#53 review rounds 3-5).
+            Task read;
             lock (_gate)
             {
                 var followed = Channel;
-                _inFlight = Task.Run(() => AfterSwitchNotAppliedAsync(target, followed, heldByInstall, confirm: sameContentOneFolder && !confirmed), CancellationToken.None);
+                read = _inFlight = Task.Run(() => AfterSwitchNotAppliedAsync(target, followed, checkFolder, confirm: sameContentOneFolder && !confirmed), CancellationToken.None);
             }
+            // After the read, not inside it: StartApply refuses while a task is in flight.
+            if (checkFolder) _ = read.ContinueWith(_ => ApplyAutomaticallyIfOn(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         }
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
-            applying ? (preview.Outcome == CatalogUpdateOutcome.UpToDate ? "checking its folder" : "applying v" + preview.Remote?.CatalogVersion)
+            applying ? "downloading v" + preview.Remote?.CatalogVersion
+            : followsFolder ? "reading and checking its folder"
             : appliable ? "the apply waits for the running install"
             : preview.Outcome.ToString());
     }
