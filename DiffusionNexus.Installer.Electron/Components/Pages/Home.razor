@@ -489,7 +489,7 @@
         // Only this page shows the question, and while it waits checks and applies are refused and the
         // update notice is hidden across the app. Leaving is not saying Switch, so nothing is saved.
         _left = true;
-        if (Catalog.PendingSwitch is not null) Catalog.KeepChannel();
+        Catalog.KeepChannel();
     }
 
     // Worded like the catalog row beside it, so the two read as one list.

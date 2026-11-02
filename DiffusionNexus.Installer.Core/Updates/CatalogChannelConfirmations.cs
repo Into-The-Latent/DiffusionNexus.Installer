@@ -93,8 +93,9 @@ public sealed class CatalogChannelConfirmations
             File.WriteAllText(temp, JsonSerializer.Serialize(confirmed, CatalogSchema.Json));
             File.Move(temp, _path, overwrite: true);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
+            // Everything, as the class promises: the coordinator ends a check after this returns.
             _logger.LogWarning(ex, "{File} could not be written; the confirmation holds for this run only", _path);
         }
     }

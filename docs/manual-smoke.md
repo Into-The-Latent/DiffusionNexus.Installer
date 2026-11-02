@@ -362,8 +362,8 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    date.", and the choice saved.
    `catalog_channel_confirmations.json` next to `user_settings.json` names the new channel.
    Disconnect the network and relaunch. **Expect:** the startup check fails, and there is no
-   "still from" line: the content was found current on this channel, whatever
-   `catalog-state.json` still records.
+   "still from" line. The case the confirmation is for, an embedded seed stamped with another channel,
+   is covered by `A_folder_holding_the_embedded_seed_is_confirmed_by_the_check_after_the_switch`.
 7. Quit, delete `catalog-preview\`, launch on Stable. Start an install, open `/updates` while it runs
    and pick Preview, whose release changes an installer workload (answer Switch if asked). **Expect:**
    the choice saved, no download, "It can be applied once <workload> has finished." and the "still
@@ -388,10 +388,10 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
 11. With **Apply catalog updates automatically** on and a folder behind its release, switch to that
     channel. **Expect:** after the check, the folder catches up without asking and the page lists what
     changed.
-12. Pick a channel so that a question opens, then leave `/updates` by **Back** or the top bar.
-    **Expect:** an update notice for the channel you follow is back, and **Check for Updates** works.
-    Return to `/updates`. **Expect:** no question, the radios on the channel you follow, and the
-    settings file unchanged.
+12. With an update offered on the channel you follow, pick the other channel so that a question opens,
+    then leave `/updates` by **Back**. **Expect:** the top bar reads **Update Available**. Return to
+    `/updates`. **Expect:** no question, the radios on the channel you follow, the update offered, and
+    the settings file unchanged. Press **Check for updates**. **Expect:** a check runs.
 
 ## 7b. Apply catalog updates automatically (#36)
 

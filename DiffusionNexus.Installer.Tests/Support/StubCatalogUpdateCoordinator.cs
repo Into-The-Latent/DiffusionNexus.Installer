@@ -80,7 +80,12 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
         return Task.CompletedTask;
     }
 
-    public void KeepChannel() { Keeps++; PendingSwitch = null; }
+    public void KeepChannel()
+    {
+        if (PendingSwitch is null) return;
+        Keeps++;
+        PendingSwitch = null;
+    }
 
     public bool AutoApply { get; set; }
     public bool LastApplyAutomatic { get; set; }

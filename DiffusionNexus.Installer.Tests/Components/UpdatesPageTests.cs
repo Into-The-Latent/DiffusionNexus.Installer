@@ -924,17 +924,6 @@ public class UpdatesPageTests : BunitContext
     }
 
     [Fact]
-    public async Task Leaving_the_page_with_no_question_open_answers_nothing()
-    {
-        Register(InstallPhase.Idle);
-        Render<UpdatesPage>();
-
-        await DisposeComponentsAsync();
-
-        _catalog.Keeps.Should().Be(0);
-    }
-
-    [Fact]
     public async Task A_question_that_opens_after_the_page_was_left_is_kept_too()
     {
         Register(InstallPhase.Idle);

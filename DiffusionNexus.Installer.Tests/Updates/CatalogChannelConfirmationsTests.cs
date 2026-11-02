@@ -39,4 +39,16 @@ public sealed class CatalogChannelConfirmationsTests
 
         confirmations.Current.Keys.Should().BeEquivalentTo([CatalogChannel.Preview, CatalogChannel.Stable]);
     }
+
+    // Review round 6: a check's end waits on this, so a throw here would leave the page on "Checking".
+    [Fact]
+    public void A_write_that_fails_in_any_way_holds_for_this_run_only()
+    {
+        var confirmations = new CatalogChannelConfirmations("not\0a-path.json");
+
+        confirmations.Invoking(c => c.Confirm(CatalogChannel.Stable, State(4, CatalogChannel.Stable), otherFoldersUntouched: true))
+            .Should().NotThrow();
+
+        confirmations.Current.Keys.Should().Equal(CatalogChannel.Stable);
+    }
 }
