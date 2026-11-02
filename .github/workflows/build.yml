@@ -12,9 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The SDK decides which .NET runtime the app ships and the notices name it, so CI and a release
+      # machine must use the same one. To move it: bump global.json, restore, regenerate the notices.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       # The release scripts' own tests (Scripts/Tests). They build throwaway git repos and fake gh,
       # so they need neither the private SDK repo nor the packages token. They do need dotnet on

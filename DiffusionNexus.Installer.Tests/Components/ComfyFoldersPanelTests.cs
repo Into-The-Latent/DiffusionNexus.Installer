@@ -362,4 +362,86 @@ public class ComfyFoldersPanelTests : BunitContext
         cut.Find($"#{hintId}").ClassList.Should().Contain("switch-hint");
         cut.FindAll($"#{hintId}").Should().ContainSingle("the id must be unique on the page");
     }
+
+    /// <summary>Where Browse asked the dialog to start. Dismissed, so the fields stay as they were.</summary>
+    private Func<string?> BrowsedFrom()
+    {
+        string? startIn = null;
+        var picker = new Mock<IFolderPicker>();
+        picker.Setup(p => p.PickFolderAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string? folder, CancellationToken _) => startIn = folder)
+            .ReturnsAsync((string?)null);
+        Services.AddSingleton(picker.Object);
+        return () => startIn;
+    }
+
+    // Since Electron 43 a dialog with no starting folder opens in Downloads (issue #57). An empty box
+    // starts at the install folder: never inside the ComfyUI folder it creates, which the boxes
+    // refuse ("would be deleted with it"), so one click on Select Folder cannot pick that.
+    [Fact]
+    public async Task Browse_with_an_empty_output_box_starts_at_the_install_folder()
+    {
+        var browsedFrom = BrowsedFrom();
+        var module = await Module();
+        module.UseOwnOutputFolder = true;
+        var cut = RenderPanel(module);
+
+        await cut.Find("[data-role='output-panel'] .path-row button").ClickAsync(new());
+
+        browsedFrom().Should().Be(@"E:\Installer\9");
+    }
+
+    [Fact]
+    public async Task Browse_with_an_empty_library_box_starts_at_the_install_folder()
+    {
+        var browsedFrom = BrowsedFrom();
+        var cut = RenderPanel(await Module(on: true));
+
+        await cut.Find("[data-role='model-panel'] .path-row button").ClickAsync(new());
+
+        browsedFrom().Should().Be(@"E:\Installer\9");
+    }
+
+    [Fact]
+    public async Task Browse_on_a_new_additional_folder_starts_at_the_library_folder()
+    {
+        var browsedFrom = BrowsedFrom();
+        var cut = RenderPanel(await Module(new UserSettings { DefaultModelBaseFolder = @"D:\Models" }));
+        cut.Find(".advanced-toggle").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "+ Add folder").Click();
+
+        await cut.Find(".additional-folder button").ClickAsync(new());
+
+        browsedFrom().Should().Be(@"D:\Models");
+    }
+
+    [Theory]
+    [InlineData("Renders")]
+    [InlineData("\"\"")]
+    public async Task Browse_with_nothing_usable_in_the_box_starts_at_the_install_folder(string typed)
+    {
+        var browsedFrom = BrowsedFrom();
+        var module = await Module();
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = typed;
+        var cut = RenderPanel(module);
+
+        await cut.Find("[data-role='output-panel'] .path-row button").ClickAsync(new());
+
+        browsedFrom().Should().Be(@"E:\Installer\9");
+    }
+
+    [Fact]
+    public async Task Browse_starts_at_what_the_box_holds_when_it_holds_something()
+    {
+        var browsedFrom = BrowsedFrom();
+        var module = await Module();
+        module.UseOwnOutputFolder = true;
+        module.OutputFolder = @"D:\Renders";
+        var cut = RenderPanel(module);
+
+        await cut.Find("[data-role='output-panel'] .path-row button").ClickAsync(new());
+
+        browsedFrom().Should().Be(@"D:\Renders");
+    }
 }

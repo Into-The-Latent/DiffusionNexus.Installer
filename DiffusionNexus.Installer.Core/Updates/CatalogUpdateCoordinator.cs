@@ -138,6 +138,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public Task CheckAsync(CancellationToken ct = default)
     {
         Task inFlight;
+        Task? readFirst = null;
         lock (_gate)
         {
             if (_switching || PendingSwitch is not null)
@@ -150,9 +151,16 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 // A running check is joined. A running apply is not: handing its task back would
                 // hold the caller ("Check for updates" sitting on "Checking...") for the length
                 // of the whole download -- the same trap ApplyAsync's refusals avoid below.
-                if (Phase != CatalogUpdatePhase.Applying) return _inFlight;
-                _logger.LogInformation("Catalog check refused: an apply is in progress");
-                return Task.CompletedTask;
+                if (Phase == CatalogUpdatePhase.Checking) return _inFlight;
+                if (Phase == CatalogUpdatePhase.Applying)
+                {
+                    _logger.LogInformation("Catalog check refused: an apply is in progress");
+                    return Task.CompletedTask;
+                }
+                // Neither: the read after a switch that applied nothing, which checks nothing. Joined,
+                // a "Retry" would end with no check run and the failed preview still on the page.
+                // (Or the last instant of a finished task: this is then the check a moment later.)
+                readFirst = _inFlight;
             }
             Phase = CatalogUpdatePhase.Checking;
             Progress = null;
@@ -162,16 +170,17 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // nobody has attempted since.
             LastApply = null;
             _applyAutomatic = false;
-            inFlight = _inFlight = Task.Run(() => CheckCoreAsync(ct), CancellationToken.None);
+            inFlight = _inFlight = Task.Run(() => CheckCoreAsync(readFirst, ct), CancellationToken.None);
         }
         Raise();
         return inFlight;
     }
 
-    private async Task CheckCoreAsync(CancellationToken ct)
+    private async Task CheckCoreAsync(Task? readFirst, CancellationToken ct)
     {
         try
         {
+            if (readFirst is not null) await readFirst.ConfigureAwait(false);
             await EnsureChannelAsync(ct).ConfigureAwait(false);
             _logger.LogInformation("Catalog update check started on {Channel}", Channel);
 
@@ -378,14 +387,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     /// being left and says nothing about this one -- so the Apply after the install lands what the folder
     /// needs, or the page says it is current. Never throws.
     /// </summary>
-    private async Task AfterSwitchNotAppliedAsync(CatalogChannel target, bool heldByInstall, bool confirm)
+    /// <param name="followed">The channel followed when the read began. Switched away since, the state describes a folder the app no longer reads.</param>
+    private async Task AfterSwitchNotAppliedAsync(CatalogChannel target, CatalogChannel followed, bool heldByInstall, bool confirm)
     {
         var state = await StateOfReadCatalogAsync().ConfigureAwait(false);
         lock (_gate)
         {
             // An empty state (the catalog could not be read and the folder is not seeded yet)
             // describes nothing the app will read; the last known state stays (#53 review round 3).
-            if (state.RecordsAnything() || Installed is null) Installed = state;
+            if (Channel == followed && (state.RecordsAnything() || Installed is null)) Installed = state;
         }
         if (confirm) _confirmations.Confirm(target, state, otherFoldersUntouched: false);
 
@@ -770,7 +780,11 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // Nothing will reload the state after an apply: the catalog the app reads now is read in the
             // background (reading it seeds a channel folder that does not exist yet, an extraction), so
             // this call returns once the choice is saved, as the contract says (#53 review rounds 3-5).
-            lock (_gate) _inFlight = Task.Run(() => AfterSwitchNotAppliedAsync(target, heldByInstall, confirm: sameContentOneFolder && !confirmed), CancellationToken.None);
+            lock (_gate)
+            {
+                var followed = Channel;
+                _inFlight = Task.Run(() => AfterSwitchNotAppliedAsync(target, followed, heldByInstall, confirm: sameContentOneFolder && !confirmed), CancellationToken.None);
+            }
         }
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
             applying ? (preview.Outcome == CatalogUpdateOutcome.UpToDate ? "checking its folder" : "applying v" + preview.Remote?.CatalogVersion)

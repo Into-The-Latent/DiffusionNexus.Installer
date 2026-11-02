@@ -64,6 +64,15 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
     }
 }
 
+Test-Case 'a .NET SDK in global.json that is not installed refuses before the version write' {
+    $f = New-ReleaseFixture
+    Set-Content -LiteralPath (Join-Path $f.Installer 'global.json') -Value '{ "sdk": { "version": "1.0.0", "rollForward": "disable" } }'
+    $r = Invoke-NewRelease $f
+    if ($r.ExitCode -eq 0) { throw "expected a refusal, got exit 0. Output:`n$($r.Text)" }
+    Assert-Like $r.Text '*The .NET SDK in global.json is not installed*Nothing was built or changed*' 'output'
+    Assert-Equal $r.VersionWritten $false 'version written'
+}
+
 Test-Case 'a pin behind SDK develop refuses before the version write and names -AllowOlderSdk' {
     $f = New-ReleaseFixture
     Add-SdkCommit $f 'DiffusionNexus.Installer.SDK.Services/Service.cs' 'fix: unreleased change'

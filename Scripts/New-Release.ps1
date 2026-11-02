@@ -98,10 +98,6 @@ $project  = Join-Path $repoRoot 'DiffusionNexus.Installer.Electron'
 $publish  = Join-Path $project  'bin\Release\net10.0\win-x64\publish'
 $ghRepo   = 'Into-The-Latent/DiffusionNexus.Installer'
 
-# Keep this in step with ElectronVersion in the .csproj; electron-builder is invoked
-# directly below and does not read that property.
-$electronVersion = '42.4.1'
-
 # ---------------------------------------------------------------------------------------- Step 0
 # Everything here runs BEFORE this script changes anything on disk. A refusal leaves the working
 # tree exactly as it was: no version write, no cleared publish folder.
@@ -168,6 +164,17 @@ switch ($LASTEXITCODE) {
 # What Step 0d judged, for Step 1c: the packaged app must report exactly this seed.
 $seed = Read-CatalogManifest (Get-Content -LiteralPath (Join-Path $repoRoot $CatalogSeedFolder 'manifest.json') -Raw) 'the embedded seed manifest'
 
+# Step 0e. global.json pins the .NET SDK, which decides the runtime the app ships. Without that SDK
+# every gate above passes and the run dies at the publish, after the version write. dotnet finds
+# global.json from the current folder, so it is asked from the checkout, and so is the publish below.
+Write-Host "Step 0e: the .NET SDK in global.json is installed" -ForegroundColor Cyan
+Push-Location -LiteralPath $repoRoot
+try {
+    $dotnetAnswer = dotnet --version 2>&1
+    $dotnetExit = $LASTEXITCODE
+} finally { Pop-Location }
+if ($dotnetExit -ne 0) { throw "The .NET SDK in global.json is not installed:`n$($dotnetAnswer -join "`n")`nInstall it, or move the pin in a commit (see README). Nothing was built or changed." }
+
 Write-Host "Setting version to $Version" -ForegroundColor Cyan
 $propsPath = Join-Path $repoRoot 'Directory.Build.props'
 $props = Get-Content -LiteralPath $propsPath -Raw
@@ -183,8 +190,11 @@ if (Test-Path -LiteralPath $publish) {
 }
 
 Write-Host "Step 1/3: dotnet publish (SDK from NuGet, not the local checkout)" -ForegroundColor Cyan
-dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -c Release --nologo -p:UseLocalSDK=false
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+Push-Location -LiteralPath $repoRoot
+try {
+    dotnet publish (Join-Path $project 'DiffusionNexus.Installer.Electron.csproj') -c Release --nologo -p:UseLocalSDK=false
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+} finally { Pop-Location }
 
 # Check the packaged SDK DLLs directly, because a clean publish is not proof of what was packaged.
 # Each one must be byte-identical to the DLL inside the NuGet package the csproj pins, which the
@@ -263,6 +273,12 @@ Write-Host "Step 2/3: repackaging with the publish config (emits app-update.yml)
 # --config) and silently replaces the config path, so the build dies looking for a file called
 # `.directories.app=app`. A generated config has no such ambiguity and behaves the same in
 # every shell.
+#
+# electron-builder does not read the csproj's ElectronVersion either, so it is taken from there. A
+# copy kept in this script once lagged the csproj: the Electron 44 bump (#57) would have shipped
+# 42.4.1, end-of-life, while every dev build ran 44.
+$electronVersion = @($csproj.Project.PropertyGroup.ElectronVersion | Where-Object { $_ }) | Select-Object -First 1
+if (-not $electronVersion) { throw "No ElectronVersion in the Electron csproj." }
 $builderConfig = Get-Content -LiteralPath (Join-Path $project 'Properties\electron-builder.json') -Raw |
     ConvertFrom-Json -AsHashtable
 $builderConfig.electronVersion = $electronVersion

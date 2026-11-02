@@ -200,9 +200,17 @@
         await Changed.InvokeAsync();
     }
 
+    // Where Browse starts: the first box holding a full path, else the install folder. With no
+    // starting folder the dialog opens in Downloads since Electron 43 (issue #57). Not the default
+    // folder a box stands in for: that is inside the ComfyUI folder, which these boxes refuse, so
+    // one click on Select Folder would pick it.
+    private string BrowseStart(params string[] boxes) =>
+        boxes.Select(FolderInput.Clean).FirstOrDefault(folder => folder is not null && FolderInput.IsFullPath(folder))
+        ?? Module.InstallFolder;
+
     private async Task BrowseModels()
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", Module.ModelBaseFolder);
+        var chosen = await FolderPicker.PickFolderAsync("Select your model library folder", BrowseStart(Module.ModelBaseFolder));
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.ModelBaseFolder = chosen;
@@ -211,7 +219,7 @@
 
     private async Task BrowseOutput()
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", Module.OutputFolder);
+        var chosen = await FolderPicker.PickFolderAsync("Select the output folder", BrowseStart(Module.OutputFolder));
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         Module.OutputFolder = chosen;
@@ -220,7 +228,7 @@
 
     private async Task BrowseAdditional(AdditionalFolderRow row)
     {
-        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", row.MapsTo);
+        var chosen = await FolderPicker.PickFolderAsync("Select the folder to add", BrowseStart(row.MapsTo, Module.ModelBaseFolder));
         if (chosen is null) return;          // dismissed -- leave the field untouched
 
         row.MapsTo = chosen;

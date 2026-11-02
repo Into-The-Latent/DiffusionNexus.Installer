@@ -1289,13 +1289,66 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         saveGate.SetResult();
         await switching;
-        // The switch applies the previewed channel (the SDK fills its folder); a check cannot start until that ends (#53).
-        Settle(coordinator);
-
         await coordinator.CheckAsync();
 
         _service.CheckCalls.Should().Be(1);
         _options.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task A_check_during_the_read_after_a_switch_that_applied_nothing_still_runs()
+    {
+        // The preview failed, so the switch applies nothing and reads the catalog now followed in the
+        // background (an extraction, when it seeds a channel folder). "Retry" clicked meanwhile has to
+        // check: the read runs none, and the page would go on showing the failed preview.
+        using var readGate = new ManualResetEventSlim();
+        _catalog.SetupGet(c => c.State).Returns(() => { readGate.Wait(); return new LocalCatalogState(); });
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = Create();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        var retry = coordinator.CheckAsync();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checking, "the page shows the retry as running");
+        readGate.Set();
+        await retry;
+
+        _service.CheckCalls.Should().Be(1);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpToDate);
+    }
+
+    [Fact]
+    public async Task A_read_left_over_from_an_earlier_switch_does_not_describe_the_channel_followed_now()
+    {
+        // Switched to Preview offline, and back to Stable while Preview's folder was still being seeded.
+        using var firstReadStarted = new ManualResetEventSlim();
+        using var firstReadGate = new ManualResetEventSlim();
+        var reads = 0;
+        var previewState = State(7, CatalogChannel.Preview);
+        var stableState = State(3, CatalogChannel.Stable);
+        _catalog.SetupGet(c => c.State).Returns(() =>
+        {
+            if (Interlocked.Increment(ref reads) > 1) return stableState;
+            firstReadStarted.Set();
+            firstReadGate.Wait();
+            return previewState;
+        });
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        firstReadStarted.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        // A check runs after the second read, so both have raised Changed: the next raise is the first read's.
+        await coordinator.CheckAsync();
+        coordinator.Installed.Should().BeSameAs(stableState);
+
+        using var firstReadEnded = new ManualResetEventSlim();
+        coordinator.Changed += firstReadEnded.Set;
+        firstReadGate.Set();
+        firstReadEnded.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+
+        coordinator.Installed.Should().BeSameAs(stableState);
     }
 
     [Fact]

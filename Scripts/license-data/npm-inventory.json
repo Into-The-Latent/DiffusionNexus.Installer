@@ -89,7 +89,7 @@
   },
   {
     "name": "electron-updater",
-    "version": "6.8.9",
+    "version": "6.8.11",
     "license": "MIT",
     "author": "Vladimir Krivosheev",
     "repository": "git+https://github.com/electron-userland/electron-builder.git",
