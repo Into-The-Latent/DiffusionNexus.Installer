@@ -32,10 +32,17 @@ public sealed class AppUpdateChecker(
     IAppUpdaterShell shell,
     UpdaterLog log,
     IAppReleaseFeed feed,
-    string? pinnedConfigPath = null)
+    string? pinnedConfigPath = null,
+    TimeSpan? answerLimit = null)
 {
     private readonly string _pinnedConfigPath = pinnedConfigPath
         ?? Path.Combine(Path.GetTempPath(), "EasyWorkloadInstaller-ITL-app-update.yml");
+
+    // How long a check may hold its turn with no answer of any kind. Longer than electron-updater's own
+    // 60 s request timeout: a slow or stalled GitHub then answers with an error first. Let go sooner, the
+    // check runs on in Electron's main process, and the next one, perhaps on another channel, would
+    // overlap it (see _oneAtATime).
+    private readonly TimeSpan _answerLimit = answerLimit ?? TimeSpan.FromSeconds(90);
 
     // Whether the updater in Electron's main process is reading our pinned config. It keeps what
     // it was last told, so every check that does not pin has to put the shipped config back.
@@ -86,15 +93,45 @@ public sealed class AppUpdateChecker(
             var pinTo = channel == CatalogChannel.Preview ? await ReleaseHiddenByANewerOneAsync().ConfigureAwait(false) : null;
             await ApplyPinAsync(pinTo).ConfigureAwait(false);
 
-            await shell.CheckForUpdatesAsync().ConfigureAwait(false);
+            await CheckUntilAnsweredAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            log.Append($"Update check failed: {ex.Message}");
+            log.MarkCheckFailed(ex.Message);
         }
         finally
         {
             _oneAtATime.Release();
+        }
+    }
+
+    /// <summary>
+    /// The check, until something answers it. ElectronNET 0.5.2 never completes its task for a check
+    /// that fails: its bridge sends the failure as an Error object to a listener typed string, which
+    /// throws on a pool thread nobody watches. The updater's events carry plain values and do arrive,
+    /// so any answer in them ends the check too. The limit is for a check nothing answers at all. Without
+    /// these the turn was never given back: every later check waited behind it, and with them the
+    /// page's channel radios and its "Check for updates", until a restart.
+    /// </summary>
+    private async Task CheckUntilAnsweredAsync()
+    {
+        var answered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnAnswered() => answered.TrySetResult();
+
+        // Before the check goes out, so that its answer cannot be missed. An answer logged before
+        // this line belongs to an earlier check or download and says nothing about this one.
+        log.CheckAnswered += OnAnswered;
+        try
+        {
+            var check = shell.CheckForUpdatesAsync();
+            var first = await Task.WhenAny(check, answered.Task, Task.Delay(_answerLimit)).ConfigureAwait(false);
+
+            if (first == check) await check.ConfigureAwait(false);
+            else if (first != answered.Task) log.MarkCheckFailed($"The update check did not answer within {_answerLimit.TotalSeconds:0} seconds.");
+        }
+        finally
+        {
+            log.CheckAnswered -= OnAnswered;
         }
     }
 

@@ -190,6 +190,12 @@ html, body {
     white-space: nowrap;
 }
 
+/* A status can carry a long address. It wraps in its column rather than widening the page. */
+.update-row-status {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .shell .catalog > button.primary {
     margin-top: .25rem;
 }

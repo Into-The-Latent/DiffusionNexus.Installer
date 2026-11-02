@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace DiffusionNexus.Installer.Electron.Services;
 
 /// <summary>Where the app self-update stands, in the order a check normally moves through it.</summary>
@@ -45,6 +47,13 @@ public sealed class UpdaterLog
     /// <summary>Raised after every mutation. Handlers must marshal to their own sync context.</summary>
     public event Action? Changed;
 
+    /// <summary>
+    /// The updater answered a check: up to date, found, or failed. Not read from <see cref="Status"/>, which
+    /// holds on to a download whatever a later check says. Raised before <see cref="Changed"/>: a check's
+    /// turn hangs on it, and a throwing subscriber to that must not lose it.
+    /// </summary>
+    public event Action? CheckAnswered;
+
     public AppUpdateStatus Status { get; private set; }
 
     /// <summary>The version found or downloaded. Null until an update is found.</summary>
@@ -53,7 +62,7 @@ public sealed class UpdaterLog
     /// <summary>Whole percent of the running download. Null until progress is reported.</summary>
     public int? DownloadPercent { get; private set; }
 
-    /// <summary>The updater's message for <see cref="AppUpdateStatus.Failed"/>.</summary>
+    /// <summary>The updater's message for <see cref="AppUpdateStatus.Failed"/>, cut down for the page. <see cref="Lines"/> has all of it.</summary>
     public string? Error { get; private set; }
 
     /// <summary>True from the moment an update is found, through its download, until it is installed.</summary>
@@ -105,6 +114,7 @@ public sealed class UpdaterLog
 
     public void MarkUpToDate()
     {
+        CheckAnswered?.Invoke();
         Set(AppUpdateStatus.UpToDate);
         Append("No update available - this is the latest version.");
     }
@@ -117,6 +127,7 @@ public sealed class UpdaterLog
         // Set directly, not through Set: a newer release found after one already downloaded
         // replaces it, so Ready does not hold here.
         Status = AppUpdateStatus.Downloading;
+        CheckAnswered?.Invoke();
         Append($"Update available: {version}. Downloading...");
     }
 
@@ -140,17 +151,49 @@ public sealed class UpdaterLog
         Append($"Update {Version} downloaded and ready to install.");
     }
 
-    public void MarkFailed(string error)
+    public void MarkFailed(string? error)
     {
-        Error = error;
+        Error = Shortened(error);
 
         // An error is the only way a download ends other than Ready, and the event does not say
         // whether the download or an overlapping check failed -- so it must get through, or a
         // dead download would read "Downloading" for ever. MarkProgress undoes a false alarm.
         // A download already on disk is beyond any later error.
         if (Status != AppUpdateStatus.Ready) Status = AppUpdateStatus.Failed;
+        CheckAnswered?.Invoke();
         Changed?.Invoke();
         Append($"Updater error: {error}");
+    }
+
+    /// <summary>
+    /// A check that threw, or that nothing answered. Unlike an error event this knows it is about the
+    /// check, so a download on disk or still running stays on offer (see <see cref="Set"/>).
+    /// </summary>
+    public void MarkCheckFailed(string message)
+    {
+        Error = Shortened(message);
+        Set(AppUpdateStatus.Failed);
+        Append($"Updater error: {message}");
+    }
+
+    // electron-updater's HTTP failures: the status, then a quoted description naming the address, then
+    // every response header. A 404's description also blames an authentication token nobody here has.
+    private static readonly Regex HttpFailure = new(@"^(?<status>.*?)\s*""method: \w+ url: (?<url>[^\s\\""]+)", RegexOptions.Singleline);
+
+    private const int ShownErrorLength = 200;
+
+    /// <summary>What the page shows of a failure: the status and address of an HTTP failure, else the first line.</summary>
+    private static string Shortened(string? error)
+    {
+        var text = error?.Trim();
+        if (string.IsNullOrEmpty(text)) return "No details were given.";
+
+        var http = HttpFailure.Match(text);
+        var shown = http.Success
+            ? $"{http.Groups["status"].Value.ReplaceLineEndings(" ")} from {http.Groups["url"].Value}"
+            : text.ReplaceLineEndings("\n").Split('\n')[0];
+
+        return shown.Length <= ShownErrorLength ? shown : shown[..ShownErrorLength] + "…";
     }
 
     private void Set(AppUpdateStatus status)

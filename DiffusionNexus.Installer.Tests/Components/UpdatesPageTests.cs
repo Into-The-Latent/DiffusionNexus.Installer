@@ -246,8 +246,6 @@ public class UpdatesPageTests : BunitContext
         Render<UpdatesPage>().Find(".catalog-outcome").TextContent.Trim().Should().Be("Catalog updated to v7.");
     }
 
-    // #53 round 2: every switch passes through Applying while the SDK checks the target folder; most
-    // of them download nothing, so "Downloading…" with no bytes is wrong half the time.
     [Fact]
     public void Progress_without_bytes_says_the_catalog_is_being_applied()
     {
@@ -259,6 +257,46 @@ public class UpdatesPageTests : BunitContext
         var page = Render<UpdatesPage>();
 
         page.Find(".catalog-progress").TextContent.Trim().Should().Be("Applying the catalog…");
+    }
+
+    // #56: a switch only downloads when that channel has no folder yet, and it says which version.
+    [Theory]
+    [InlineData(null, "Downloading catalog v7…")]
+    [InlineData(40L, "Downloading catalog v7… 40%")]
+    public void A_switch_that_has_to_download_names_the_version(long? received, string expected)
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with
+        {
+            Channel = CatalogChannel.Preview,
+            Remote = CatalogChecks.Remote(7, CatalogChannel.Preview),
+            IsSwitchPreview = true,
+        };
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+        _catalog.Progress = received is { } bytes ? new CatalogDownloadProgress(bytes, 100) : null;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be(expected);
+    }
+
+    // Review round 1: a same-content preview, right after the user said yes to the download.
+    [Fact]
+    public void The_row_does_not_call_the_catalog_up_to_date_during_a_download()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.LastCheck = CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with
+        {
+            Channel = CatalogChannel.Preview,
+            Remote = CatalogChecks.Remote(7, CatalogChannel.Preview),
+            IsSwitchPreview = true,
+        };
+        _catalog.Phase = CatalogUpdatePhase.Applying;
+
+        var page = Render<UpdatesPage>();
+
+        page.Find(".catalog-outcome").TextContent.Should().NotContain("up to date");
+        page.Find(".catalog-progress").TextContent.Trim().Should().Be("Downloading catalog v7…");
     }
 
     // #53 review C1: a switch into a missing folder downloads although the preview said "up to date";
@@ -764,6 +802,55 @@ public class UpdatesPageTests : BunitContext
         warning.TextContent.Should().Contain("Krea-2-Turbo – Upscale").And.Contain("V2 → V1");
     }
 
+    // #56: a channel with no catalog on this PC says what Switch downloads, before anything does.
+    private static CatalogChannelSwitch DownloadSwitch(WorkloadChange workload)
+    {
+        var preview = CatalogChecks.Available(7, CatalogChannel.Preview, [workload]);
+        return new CatalogChannelSwitch(preview, ChannelSwitchWarning.For(preview), Downloads: true);
+    }
+
+    [Fact]
+    public void A_switch_that_has_to_download_asks_first_and_names_the_version()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0"));
+
+        var page = Render<UpdatesPage>();
+
+        var question = page.Find(".channel-switch-warning");
+        Normalized(question.QuerySelector("p")!).Should().Be(
+            "Preview has no catalog on this PC yet. Switching downloads catalog v7. Software you have already installed is not affected.");
+        question.QuerySelectorAll("button").Select(b => b.TextContent.Trim()).Should().Equal("Switch to Preview", "Keep Stable");
+        question.TextContent.Should().Contain("Wan-2.3");
+    }
+
+    [Fact]
+    public void A_download_that_also_takes_something_away_says_both_once()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadRemoved("Qwen-Image-2.1", "V1"));
+
+        var page = Render<UpdatesPage>();
+
+        var lines = page.FindAll(".channel-switch-warning p").Select(p => Normalized(p)).ToList();
+        lines.Should().Equal(
+            "Preview has no catalog on this PC yet. Switching downloads catalog v7.",
+            "Preview is at v7. Switching removes Qwen-Image-2.1. Software you have already installed is not affected.");
+    }
+
+    // Review round 3: Switch holds the download during an install, so the question must not promise it.
+    [Fact]
+    public void During_an_install_the_question_does_not_promise_a_download_now()
+    {
+        Register(InstallPhase.Running);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadRemoved("Qwen-Image-2.1", "V1"));
+
+        var page = Render<UpdatesPage>();
+
+        Normalized(page.Find(".channel-switch-warning p")).Should().Be(
+            "Preview has no catalog on this PC yet. You can download catalog v7 after switching, once the current install has finished.");
+    }
+
     [Fact]
     public void While_a_switch_waits_the_radios_show_the_choice_and_cannot_be_changed()
     {
@@ -789,6 +876,83 @@ public class UpdatesPageTests : BunitContext
 
         page.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == Apply);
         page.FindAll(".catalog-changes").Should().OnlyContain(c => c.Closest(".channel-switch-warning") != null);
+    }
+
+    // Review round 5: what the channel being left last did is not part of the question.
+    [Fact]
+    public void While_a_switch_waits_the_old_channels_automatic_apply_list_is_not_shown()
+    {
+        Register(InstallPhase.Idle);
+        Available(CatalogChecks.WorkloadAdded("Flux-Krea", "V1.0"));
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _catalog.LastApplyAutomatic = true;
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.FindAll(".catalog-changes").Should().OnlyContain(c => c.Closest(".channel-switch-warning") != null);
+    }
+
+    [Fact]
+    public void While_a_switch_waits_the_old_channels_failed_apply_is_not_shown()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "disk full");
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.FindAll(".catalog-error").Should().BeEmpty();
+    }
+
+    // Review round 5: a question nobody can see refused every check and hid the update notice across
+    // the app. Leaving the page is not saying Switch.
+    [Fact]
+    public async Task Leaving_the_page_with_a_question_open_keeps_the_channel()
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch();
+        Render<UpdatesPage>();
+
+        await DisposeComponentsAsync();
+
+        _catalog.Keeps.Should().Be(1);
+        _catalog.PendingSwitch.Should().BeNull();
+        _catalog.Confirms.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_question_that_opens_after_the_page_was_left_is_kept_too()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.ChannelSource = CatalogChannelSource.Setting;
+        _catalog.PendingOnSwitch = DownloadSwitch(CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0"));
+        _catalog.SwitchGate = new TaskCompletionSource();
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+        await DisposeComponentsAsync();
+        _catalog.SwitchGate.SetResult();
+
+        SpinWait.SpinUntil(() => _catalog.Keeps == 1, 5000).Should().BeTrue();
+        _catalog.PendingSwitch.Should().BeNull();
+    }
+
+    // Review round 5: the question is about what Switch does now, so it follows the install.
+    [Fact]
+    public void An_install_ending_while_the_question_is_open_updates_what_it_says()
+    {
+        var session = Register(InstallPhase.Running);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0"));
+        var page = Render<UpdatesPage>();
+        Normalized(page.Find(".channel-switch-warning p")).Should().Contain("after switching");
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
+        session.Raise(s => s.Changed += null);
+
+        page.WaitForAssertion(() => Normalized(page.Find(".channel-switch-warning p")).Should().Contain("Switching downloads catalog v7."));
     }
 
     [Theory]
@@ -1077,7 +1241,7 @@ public class UpdatesPageTests : BunitContext
 
         _catalog.AutoApplySet.Should().Equal(true);
         page.Find(AutoApply).HasAttribute("checked").Should().BeTrue();
-        page.Find("#auto-apply-hint").TextContent.Should().Contain("finds a catalog update on Preview, it applies it without asking");
+        page.Find("#auto-apply-hint").TextContent.Should().Contain("starts or you switch channel").And.Contain("finds a catalog update on Preview, it applies it without asking");
         page.FindAll(".auto-apply-error").Should().BeEmpty();
         _catalog.Applies.Should().Be(0, "turning it on applies nothing by itself");
     }

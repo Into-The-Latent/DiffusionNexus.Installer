@@ -316,14 +316,18 @@ can lag a minute after the release appears). Stable is what users follow.
 10. Run with `DIFFUSIONNEXUS_CATALOG_PATH` pointing at a catalog checkout. **Expect:** "Update
     check skipped: a local catalog override is active at <path>." and no Apply button.
 
-## 7a. Switching channels applies that channel's catalog (#39)
+## 7a. Switching channels (#39, #56)
+
+A switch never moves a catalog's version by itself. A channel with a folder is read and checked, and a
+newer release is offered as at startup. A channel with no catalog on this PC asks before it downloads.
 
 Needs content on both sides: Preview ahead of Stable with at least one workload or workflow that
 Stable does not have or has in another version (publish one with the editor's **Preview** and
 do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no catalog override.
 
 1. Follow Preview and apply its update, so the Catalog row on `/updates` reads "vP (Preview)".
-2. Pick **Stable**. **Expect:** "Checking the catalog…" with the radios greyed, then under the
+2. Pick **Stable**. **Expect:** "Checking the catalog…" with the radios greyed (it compares two local
+   folders, so it may flash by), then under the
    radios: "Stable is at vS. Switching removes **<name>** and changes N workflows. Software you
    have already installed is not affected." (only the parts that apply), the change list below
    it, and **Switch to Stable** / **Keep Preview**. The Stable dot is set, both radios and Check
@@ -331,18 +335,22 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    above." `%LocalAppData%\DiffusionNexus\user_settings.json` still says Preview.
 3. Press **Keep Preview**. **Expect:** the warning goes, the Preview dot comes back, the radios
    work again, and the settings file and Catalog row are unchanged.
-4. Pick Stable again and press **Switch to Stable**. **Expect:** the settings file says Stable
-   before the download ends, "Downloading… NN%" (only if `catalog-stable\` did not hold vS yet),
-   then "Catalog updated to vS." (or "The catalog is up to date." when nothing had to land). The
-   Catalog row reads "vS (Stable)" and `%LocalAppData%\ITL-Shared\format-1\catalog-stable\catalog-state.json`
-   has `"channel": "Stable"` at the top and in the workloads section; `catalog-preview\` beside it
-   still holds vP. A workload the warning named as removed is gone from the gallery; a copy of it
-   you installed earlier is untouched on disk.
-5. Disconnect the network and pick Preview. **Expect:** no warning (the preview failed), "The
-   catalog check failed: …", and the Catalog row reads "vP (Preview)": the Preview folder from
-   step 1 is read again, nothing is downloaded, and there is no "still from" line.
-   Now the folder that does not exist yet: still offline, quit, delete `catalog-preview\`, launch,
-   pick Stable, then Preview. **Expect:** "The catalog check failed: …" and "You follow Preview.
+   The version and the list describe what `catalog-stable\` holds, not Stable's release.
+4. Pick Stable again and press **Switch to Stable**. **Expect:** the settings file says Stable, no
+   download, and `%LocalAppData%\ITL-Shared\format-1\catalog-stable\` unchanged. The Catalog row reads
+   "vS (Stable)", then "The catalog is up to date.", or "Catalog vR is available on Stable." with
+   **Apply catalog update** when Stable's release is newer and changes an installer workload.
+   `catalog-preview\` beside it still holds vP. A workload the warning named as removed is gone from
+   the gallery; a copy of it you installed earlier is untouched on disk.
+5. Disconnect the network and pick Preview. **Expect:** a warning if the switch removes or changes
+   something (it needs no network; additions alone ask nothing); answer **Switch to Preview**. Then
+   "The catalog check failed: …", and the Catalog row
+   reads "vP (Preview)": the Preview folder from step 1 is read again, nothing is downloaded, and there
+   is no "still from" line. The radios and **Check for updates** stay usable although the app check
+   failed too.
+   Now the folder that does not exist yet: still offline, pick Stable (answer **Switch to Stable** if
+   asked), quit, delete `catalog-preview\`, launch on Stable and pick Preview. **Expect:** no question,
+   since offline there is nothing to download; "The catalog check failed: …" and "You follow Preview.
    The installed catalog is still from Stable (vE)." with **Retry**, vE being the embedded
    catalog's version — the SDK seeded the new folder from it. Relaunch (still offline). **Expect:**
    Preview is still checked (the choice was saved) and, once the startup check has failed, the same
@@ -351,24 +359,43 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    catalog update** (the Retry button gives way to it) and the rows for installer workloads — the
    list may be empty when only the app's workloads differ from the seed; Apply is offered anyway,
    because it completes the switch. Apply, and the "still from" line goes.
-6. Right after an editor **Release** (both channels serve the same content), switch channels.
-   **Expect:** no warning, "The catalog is up to date.", and the choice saved; a download only if
-   the target folder did not exist yet ("Downloading… NN%" first).
+6. Right after an editor **Release** (both channels serve the same content), apply it on each channel
+   so that both folders hold it, then switch channels. **Expect:** no warning, "The catalog is up to
+   date.", and the choice saved.
    `catalog_channel_confirmations.json` next to `user_settings.json` names the new channel.
    Disconnect the network and relaunch. **Expect:** the startup check fails, and there is no
-   "still from" line: the content was found current on this channel, whatever
-   `catalog-state.json` still records.
-7. Start an install, open `/updates` while it runs and switch to a channel whose release changes
-   an installer workload (answer Switch if asked). **Expect:** the choice saved, no download,
-   "It can be applied once <workload> has finished." and the "still from" line. Let the install
-   finish. **Expect:** Apply appears without leaving the page.
+   "still from" line. The case the confirmation is for, an embedded seed stamped with another channel,
+   is covered by `A_folder_holding_the_embedded_seed_is_confirmed_by_the_check_after_the_switch`.
+7. Quit, delete `catalog-preview\`, launch on Stable. Start an install, open `/updates` while it runs
+   and pick Preview, whose release changes an installer workload (answer Switch if asked). **Expect:**
+   the choice saved, no download, "It can be applied once <workload> has finished." and the "still
+   from" line. Let the install finish. **Expect:** Apply appears without leaving the page, and nothing
+   downloads until it is pressed, even with **Apply catalog updates automatically** on.
 8. Start any install. **Expect:** the first log line and the first row of the result table read
    "Catalog vS (Stable, <first 7 of the commit in catalog-state.json>)", and the log file the
    install writes into its folder carries the same line. On a state written before this build
    (no channel per section) it reads "Catalog vN (channel not recorded, …)".
-9. Open a workload's wizard, use the top bar to go to `/updates`, switch channels so content is
-   applied, go back and install. **Expect:** the report names the catalog the wizard was opened
-   on, not the one applied meanwhile: the plan installs what the wizard read.
+9. Open a workload's wizard, use the top bar to go to `/updates` and switch channels. **Expect:**
+   Back leads to the welcome screen, because the wizard was built from the catalog left behind. Open
+   the wizard again and install. **Expect:** the report names the channel now followed. Start another
+   install, open `/updates` while it runs, and switch back. **Expect:** Back returns to the running
+   install, and its report names the catalog it was started on.
+10. A channel with no catalog on this PC, online: quit, delete `catalog-preview\`, launch on Stable and
+    pick Preview. **Expect:** "Preview has no catalog on this PC yet. Switching downloads catalog vP.
+    Software you have already installed is not affected." with the change list, **Switch to Preview**
+    and **Keep Stable**. If the release also removes or changes something, a second paragraph says so
+    and carries that last sentence. The folder is still missing and the settings file still says Stable, also
+    with **Apply catalog updates automatically** on. **Keep Stable** leaves it all that way. Pick
+    Preview again and press **Switch to Preview**. **Expect:** "Downloading catalog vP… NN%", then
+    "Catalog updated to vP.", and `catalog-preview\` holds vP.
+11. With **Apply catalog updates automatically** on and a folder behind its release, switch to that
+    channel (answer **Switch** if the switch asks: the setting does not answer that question).
+    **Expect:** after the check, the folder catches up without asking again and the page lists what
+    changed.
+12. With an update offered on the channel you follow, pick the other channel so that a question opens,
+    then leave `/updates` by **Back**. **Expect:** the top bar reads **Update Available**. Return to
+    `/updates`. **Expect:** no question, the radios on the channel you follow, the update offered, and
+    the settings file unchanged. Press **Check for updates**. **Expect:** a check runs.
 
 ## 7b. Apply catalog updates automatically (#36)
 
@@ -377,7 +404,8 @@ follow Preview, as in section 7). A Release build, no catalog override.
 
 1. Open `/updates`. **Expect:** under the channel radios, **Apply catalog updates automatically**,
    off, with "A catalog update the installer finds is shown here, and you apply it." Turn it on.
-   **Expect:** the hint names the channel and says it applies at start, never during an install;
+   **Expect:** the hint names the channel and says it applies when the installer starts or you switch
+   channel, never during an install;
    nothing is downloaded; `%LocalAppData%\DiffusionNexus\user_settings.json` has
    `"applyCatalogUpdatesAutomatically": true`.
 2. Quit and launch. **Expect:** without a click, the log shows "Applying the catalog update
@@ -411,12 +439,15 @@ app announces only changes to its own workloads (`workloadTarget` in the manifes
    the app's workloads (Preview v6 adds the DiffusionNexus editor workloads). Press **Check for
    updates**. **Expect:** the row reads "Catalog v6 has no changes for the installer.", no change
    list, no Apply button. Switch "Apply catalog updates automatically" on and relaunch.
-   **Expect:** the startup check applies it anyway ("Catalog updated to v6 automatically.", an
-   empty list): the folder is shared, so it stays current for the other app.
-3. **The switch warning counts installer workloads only.** From Stable, pick Preview when Preview
-   differs from Stable only in the app's workloads. **Expect:** no warning; the switch goes ahead,
-   `catalog-preview\` appears, the Catalog row reads "v6 (Preview)". Pick Stable. **Expect:** the
-   Stable folder is read again, no download.
+   **Expect:** the startup check applies it anyway ("Catalog v6 applied automatically; no changes for
+   the installer.", no list): the folder is shared, so it stays current for the other app.
+3. **The switch warning counts installer workloads only.** Turn the setting from step 2 off, since a
+   switch with it on brings a folder up to its release. From Stable, pick Preview when Preview
+   differs from Stable only in the app's workloads. If `catalog-preview\` exists, **Expect:** no
+   question; the Catalog row reads "v6 (Preview)". If it does not, **Expect:** "Preview has no catalog
+   on this PC yet. Switching downloads catalog v6." with no warning about removals; press **Switch to
+   Preview**, and `catalog-preview\` appears with the same row. Pick Stable. **Expect:** the Stable
+   folder is read again, no download.
 4. The log (`/updates` → Updater log) shows "Catalog update check: … N workload / M workflow
    changes for the installer, K in the release" and "Following the Stable catalog channel".
 

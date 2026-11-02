@@ -68,9 +68,9 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         Workflows = new SectionState(version, "abc", DateTimeOffset.UtcNow) { Channel = channel },
     };
 
-    /// <summary>A switch returns once the choice is saved; the download runs on like ApplyAsync.</summary>
+    /// <summary>A switch returns once the choice is saved; the download or the check of the folder runs on like ApplyAsync.</summary>
     private static void Settle(CatalogUpdateCoordinator coordinator) =>
-        SpinWait.SpinUntil(() => coordinator.Phase != CatalogUpdatePhase.Applying, 10_000).Should().BeTrue();
+        SpinWait.SpinUntil(() => coordinator.Phase is not (CatalogUpdatePhase.Applying or CatalogUpdatePhase.Checking), 10_000).Should().BeTrue();
 
     // ----- channel -----
 
@@ -678,6 +678,8 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue("#56: nothing downloads until the user has said so");
+        await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
 
         coordinator.PendingSwitch.Should().BeNull();
@@ -1823,7 +1825,6 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         State(4, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
         State(6, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
-        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.None, null);
         using var coordinator = new CatalogUpdateCoordinator(_service, _catalog.Object, options, _settings.Object, _session.Object, () => _environment,
             CatalogAudience.Installer(false), confirmations: new CatalogChannelConfirmations(ConfirmationsPath));
         await coordinator.CheckAsync();
@@ -1907,6 +1908,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
 
         coordinator.LastApplyFailed.Should().BeTrue();
@@ -1985,7 +1987,6 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         var confirmations = new CatalogChannelConfirmations(ConfirmationsPath);
         _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate);
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
-        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.None, null);
         using var coordinator = new CatalogUpdateCoordinator(_service, _catalog.Object, options, _settings.Object, _session.Object, () => _environment,
             CatalogAudience.Installer(false), confirmations: confirmations);
         await coordinator.CheckAsync();   // confirms Stable
@@ -2157,6 +2158,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         await coordinator.CheckAsync();
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        await coordinator.ConfirmSwitchAsync();
 
         coordinator.Phase.Should().Be(CatalogUpdatePhase.Applying);
         coordinator.Installed!.HighestCatalogVersion.Should().Be(4, "the Stable state the app read a moment ago, not an empty Preview folder");
@@ -2228,6 +2230,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        await coordinator.ConfirmSwitchAsync();
         Settle(coordinator);
 
         coordinator.LastApply!.Applied.Should().Be(CatalogSections.None, "the seed is the SDK's, not this apply's");
@@ -2312,24 +2315,557 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         SpinWait.SpinUntil(() => !coordinator.SwitchIncomplete, 10_000).Should().BeTrue("found current on Preview, whatever the state records (confirmed in the background, round 5)");
     }
 
-    // Round 4: with shared folders the SDK's apply of a same-content preview may still have to fill the
-    // target folder, and a failed fill leaves the preview as the retry.
     [Fact]
-    public async Task A_switch_whose_apply_landed_nothing_confirms_the_content_current_on_the_target()
+    public async Task A_folder_holding_the_embedded_seed_is_confirmed_by_the_check_after_the_switch()
     {
-        // The Preview folder holds the embedded seed, stamped Stable. The SDK's re-check found it current on Preview.
+        // The Preview folder holds the embedded seed, stamped Stable. The check found it current on Preview.
         _saved.CatalogChannel = "Stable";
         var options = Shared();
         State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
         State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
         _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
-        _service.NextApply = () => new CatalogApplyResult(CatalogSections.None, CatalogSections.None, null);
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = CatalogChannel.Preview };
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
         Settle(coordinator);
 
+        _service.ApplyCalls.Should().Be(0);
         coordinator.Channel.Should().Be(CatalogChannel.Preview);
         coordinator.SwitchIncomplete.Should().BeFalse("found current on Preview, whatever the state records");
+    }
+
+    // ----- #56: a switch never moves a folder's version by itself -----
+
+    /// <summary>Both channel folders hold a catalog; the installer follows Preview, and Stable's folder is at v5.</summary>
+    private CatalogOptions BothFoldersOnPreview()
+    {
+        _saved.CatalogChannel = "Preview";
+        var options = Shared(CatalogChannel.Preview);
+        State(5, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
+        State(6, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        return options;
+    }
+
+    /// <summary>A real catalog on disk, as much of one as the manifest reads: the workloads by name.</summary>
+    private static void WriteCatalog(string folder, int version, CatalogChannel channel, params string[] workloads)
+    {
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, CatalogSchema.RootFileName), """{ "schemaVersion": 1 }""");
+        foreach (var name in workloads)
+        {
+            var item = Path.Combine(folder, CatalogSchema.WorkloadsDirectory, name);
+            Directory.CreateDirectory(item);
+            var id = new Guid(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(name)));
+            File.WriteAllText(Path.Combine(item, CatalogSchema.WorkloadFileName), $$"""{ "id": "{{id}}", "name": "{{name}}", "version": 1, "isReleaseConfig": true }""");
+        }
+        State(version, channel).Save(folder);
+    }
+
+    [Fact]
+    public async Task Switching_back_to_a_folder_behind_its_release_applies_nothing_and_offers_the_release()
+    {
+        // The issue: Stable's folder at v5, Stable released v6. The switch used to land v6 in passing.
+        var options = BothFoldersOnPreview();
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+
+        _service.ApplyCalls.Should().Be(0);
+        VerifySaved("Stable");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(5, "the row shows what that channel's folder holds");
+        LocalCatalogState.Load(options.ReadFolderFor(CatalogChannel.Stable)).HighestCatalogVersion.Should().Be(5);
+        coordinator.LastCheck!.IsSwitchPreview.Should().BeFalse("announced as a check of the folder followed would announce it");
+        coordinator.UpdateAvailable.Should().BeTrue();
+        coordinator.CanApply.Should().BeTrue();
+        coordinator.SwitchIncomplete.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_release_with_nothing_for_the_installer_stays_unannounced_across_a_switch()
+    {
+        // The issue's exact case: v6 changed only the DiffusionNexus app's workloads.
+        var options = BothFoldersOnPreview();
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Qwen-Image-2512", "V1.0")])
+            .Targeting(WorkloadTargetType.DiffusionNexusCore);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(5);
+        coordinator.UpdateAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task With_automatic_updates_on_the_folder_catches_up_as_it_would_at_startup()
+    {
+        var options = BothFoldersOnPreview();
+        _saved.ApplyCatalogUpdatesAutomatically = true;
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => _service.ApplyCalls == 1 && coordinator.Phase == CatalogUpdatePhase.Applied, 10_000).Should().BeTrue();
+
+        _service.AppliedCheck!.IsSwitchPreview.Should().BeFalse();
+        coordinator.LastApplyAutomatic.Should().BeTrue("the page then shows what landed");
+    }
+
+    [Fact]
+    public async Task Offline_a_switch_to_an_existing_folder_still_shows_what_it_holds()
+    {
+        var options = BothFoldersOnPreview();
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "No such host is known.");
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(5);
+        coordinator.SwitchIncomplete.Should().BeFalse("that folder's content is Stable's");
+    }
+
+    [Fact]
+    public async Task The_page_offers_nothing_until_the_folder_followed_has_been_checked()
+    {
+        var options = BothFoldersOnPreview();
+        var hold = new TaskCompletionSource();
+        _service.NextPreview = channel =>
+        {
+            _service.HoldCheck = hold;   // the preview itself is not held; the check after it is
+            return CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        };
+        _service.NextCheck = () => CatalogChecks.Available(6, CatalogChannel.Stable, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        var switching = coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+
+        switching.Wait(5000).Should().BeTrue("a slow manifest fetch must not hold the radios");
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checking);
+        coordinator.UpdateAvailable.Should().BeFalse();
+        coordinator.CanApply.Should().BeFalse();
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(5);
+
+        hold.SetResult();
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+        coordinator.CanApply.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_warning_compares_the_two_folders_not_the_release()
+    {
+        // The switch lands on what the target folder holds, so that is what it can take away. No fetch either.
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Stable, 1), 7, CatalogChannel.Stable, "Krea", "Wan");
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Preview, 1), 6, CatalogChannel.Preview, "Krea");
+        _service.NextPreview = _ => throw new InvalidOperationException("no fetch expected");
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch.Should().NotBeNull();
+        coordinator.PendingSwitch!.Warning.Removed.Should().Equal("Wan");
+        coordinator.PendingSwitch.Warning.Version.Should().Be(6, "the version the switch lands on");
+        _service.PreviewedChannels.Should().BeEmpty();
+        _service.ApplyCalls.Should().Be(0);
+        VerifyNothingSaved();
+
+        await coordinator.ConfirmSwitchAsync();
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+
+        _service.ApplyCalls.Should().Be(0);
+        VerifySaved("Preview");
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(6);
+    }
+
+    [Fact]
+    public async Task A_release_that_would_remove_something_does_not_warn_about_a_folder_that_keeps_it()
+    {
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Stable, 1), 6, CatalogChannel.Stable, "Krea", "Wan");
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Preview, 1), 6, CatalogChannel.Preview, "Krea", "Wan");
+        _service.NextPreview = _ => StableRemoves("Wan");
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+
+        coordinator.PendingSwitch.Should().BeNull();
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    // ----- #56: a channel with no catalog on this PC asks before it downloads -----
+
+    /// <summary>The installer follows Stable, whose folder is at v6. Preview has no folder and its release is v7.</summary>
+    private CatalogOptions NoFolderForPreview()
+    {
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        State(6, CatalogChannel.Stable).Save(options.WriteFolderFor(CatalogChannel.Stable, 1));
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel, Remote = CatalogChecks.Remote(7, channel) };
+        return options;
+    }
+
+    [Fact]
+    public async Task A_channel_with_no_folder_asks_before_it_downloads()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch.Should().NotBeNull();
+        coordinator.PendingSwitch!.Target.Should().Be(CatalogChannel.Preview);
+        coordinator.PendingSwitch.Downloads.Should().BeTrue();
+        coordinator.PendingSwitch.Warning.Should().BeNull("it takes nothing away");
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        _service.ApplyCalls.Should().Be(0);
+        VerifyNothingSaved();
+        coordinator.ContentGeneration.Should().Be(0, "the app still reads the same folder");
+    }
+
+    [Fact]
+    public async Task Switch_downloads_the_release_the_question_named()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        VerifySaved("Preview");
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+        _service.ApplyCalls.Should().Be(1);
+        _service.AppliedCheck!.IsSwitchPreview.Should().BeTrue();
+        _service.AppliedCheck.Remote!.CatalogVersion.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task Keep_downloads_nothing_and_stays_on_the_channel()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.KeepChannel();
+
+        coordinator.PendingSwitch.Should().BeNull();
+        coordinator.Channel.Should().Be(CatalogChannel.Stable);
+        _service.ApplyCalls.Should().Be(0);
+        VerifyNothingSaved();
+    }
+
+    [Fact]
+    public async Task A_release_that_only_adds_still_asks_when_the_channel_has_no_folder()
+    {
+        var options = NoFolderForPreview();
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+        coordinator.PendingSwitch.Warning.Should().BeNull();
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_release_that_removes_something_says_both()
+    {
+        var options = NoFolderForPreview();
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+        coordinator.PendingSwitch.Warning!.Removed.Should().Equal("Wan-2.3");
+    }
+
+    [Fact]
+    public async Task Automatic_updates_do_not_answer_the_question()
+    {
+        // The setting is about updates the startup check finds, not a catalog the user never had.
+        var options = NoFolderForPreview();
+        _saved.ApplyCatalogUpdatesAutomatically = true;
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Offline_there_is_nothing_to_download_so_nothing_is_asked()
+    {
+        var options = NoFolderForPreview();
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "No such host is known.") with { Channel = channel };
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Preview");
+        _service.ApplyCalls.Should().Be(0);
+    }
+
+    // Review round 1: both folders exist and Preview's state file is locked for a moment, by the other
+    // app or a scan. Read as "no folder", the switch asked to download and then moved its version.
+    [Fact]
+    public async Task A_locked_state_file_is_not_a_channel_with_no_folder()
+    {
+        var options = BothFoldersOnPreview();
+        options.Channel = CatalogChannel.Stable;
+        _saved.CatalogChannel = "Stable";
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = CatalogChannel.Preview };
+        using var coordinator = Create(options);
+        var state = Path.Combine(options.ReadFolderFor(CatalogChannel.Preview), CatalogSchema.StateFileName);
+
+        using (File.Open(state, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+            Settle(coordinator);
+        }
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Preview");
+        _service.ApplyCalls.Should().Be(0, "a switch never applies to a channel that has a folder");
+    }
+
+    // Review round 1: data the comparison cannot digest ended the switch with "could not be saved",
+    // for as long as that data was there. The release preview turns the same throw into a failed check.
+    [Fact]
+    public async Task Folders_that_cannot_be_compared_do_not_stop_the_switch()
+    {
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        var stableFolder = options.WriteFolderFor(CatalogChannel.Stable, 1);
+        WriteCatalog(stableFolder, 6, CatalogChannel.Stable, "Krea", "Wan");
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Preview, 1), 7, CatalogChannel.Preview, "Krea");
+        // A second workload with the id of the first, in the folder being left: the comparison indexes that side by id.
+        File.WriteAllText(Path.Combine(stableFolder, CatalogSchema.WorkloadsDirectory, "Wan", CatalogSchema.WorkloadFileName),
+            File.ReadAllText(Path.Combine(stableFolder, CatalogSchema.WorkloadsDirectory, "Krea", CatalogSchema.WorkloadFileName)));
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel };
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        VerifySaved("Preview");
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    // Review round 1: the automatic apply after a switch is for a folder that was followed. Here the
+    // install hid the question, so the setting must not answer it when the install ends mid-check.
+    [Fact]
+    public async Task A_switch_held_by_an_install_never_downloads_by_itself_afterwards()
+    {
+        var options = NoFolderForPreview();
+        _saved.ApplyCatalogUpdatesAutomatically = true;
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        var hold = new TaskCompletionSource();
+        _service.NextPreview = channel =>
+        {
+            _service.HoldCheck = hold;   // the preview itself is not held; the check after it is
+            return CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = channel, Remote = CatalogChecks.Remote(7, channel) };
+        };
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
+        hold.SetResult();
+        SpinWait.SpinUntil(() => coordinator.Phase == CatalogUpdatePhase.Checked, 10_000).Should().BeTrue();
+        await Task.Delay(300);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue("the release waits for a click");
+    }
+
+    // Review round 2: the warning waits, the install ends, and Switch starts a download. The question
+    // the user answered has to have said so.
+    [Fact]
+    public async Task A_warning_raised_during_an_install_still_says_what_Switch_will_download()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Warning.Should().NotBeNull();
+        coordinator.PendingSwitch.Downloads.Should().BeTrue();
+    }
+
+    // Review round 3: nothing was asked because an install ran, and it ended during the save.
+    [Fact]
+    public async Task An_install_ending_during_the_save_does_not_start_a_download_nobody_was_asked_about()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) =>
+                 {
+                     _session.SetupGet(x => x.Phase).Returns(InstallPhase.Idle);
+                     return s;
+                 });
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue("the release waits for a click");
+    }
+
+    // Review round 4: the question said the download comes after the install, and Switch was answered
+    // while that was still true. The install ending during the save must not bring the download forward.
+    [Fact]
+    public async Task An_install_ending_during_the_save_keeps_the_download_the_question_put_off()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) =>
+                 {
+                     _session.SetupGet(x => x.Phase).Returns(InstallPhase.Idle);
+                     return s;
+                 });
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue("the release waits for a click");
+    }
+
+    // Review round 5: the question says what Switch does now, so the answer goes by the install then.
+    [Fact]
+    public async Task An_install_ending_while_the_question_waits_leaves_Switch_to_download()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_install_starting_while_the_question_waits_holds_the_download()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task An_install_starting_during_the_save_holds_the_download()
+    {
+        var options = NoFolderForPreview();
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) =>
+                 {
+                     _session.SetupGet(x => x.Phase).Returns(InstallPhase.Running);
+                     return s;
+                 });
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task Another_app_filling_the_folder_while_the_question_waits_is_followed_not_downloaded()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+
+        State(7, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(7);
+    }
+
+    // Review round 3: the warning compared two folders, so its preview has nothing to download, and the
+    // target's state went while it waited. Applying it failed with "Nothing to apply", again on each retry.
+    [Fact]
+    public async Task A_folder_that_goes_while_a_warning_waits_does_not_apply_the_comparison()
+    {
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Stable, 1), 7, CatalogChannel.Stable, "Krea", "Wan");
+        var previewFolder = options.WriteFolderFor(CatalogChannel.Preview, 1);
+        WriteCatalog(previewFolder, 6, CatalogChannel.Preview, "Krea");
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeFalse();
+
+        File.Delete(Path.Combine(previewFolder, CatalogSchema.StateFileName));
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.LastApplyFailed.Should().BeFalse();
+        coordinator.CanApply.Should().BeTrue("the check of the folder offers the real release");
+    }
+
+    [Fact]
+    public async Task During_an_install_nothing_downloads_so_nothing_is_asked()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextCheck = () => CatalogChecks.Outcome(CatalogUpdateOutcome.UpToDate) with { Channel = CatalogChannel.Preview };
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        VerifySaved("Preview");
+        _service.ApplyCalls.Should().Be(0);
     }
 }

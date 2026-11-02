@@ -53,11 +53,19 @@
         }
 
         @* Spec 7.1: content warnings come before the action. What the target channel takes away
-           from the list of things you can install is shown, and nothing is saved until Switch. *@
+           from the list of things you can install is shown, and nothing is saved until Switch.
+           #56: likewise a download, for a channel with no catalog on this PC yet. *@
         @if (Catalog.PendingSwitch is { } pending)
         {
             <div class="channel-switch-warning">
-                <p>@foreach (var (text, bold) in WarningSegments(pending.Warning)) { if (bold) { <strong>@text</strong> } else { @text } }</p>
+                @if (pending.Downloads)
+                {
+                    <p>@DownloadText(pending)</p>
+                }
+                @if (pending.Warning is { } warning)
+                {
+                    <p>@foreach (var (text, bold) in WarningSegments(warning)) { if (bold) { <strong>@text</strong> } else { @text } }</p>
+                }
                 @ChangeList(pending.Preview)
                 <div class="actions">
                     <button class="primary" @onclick="ConfirmSwitchAsync">Switch to @pending.Target</button>
@@ -86,7 +94,7 @@
         <p class="panel-hint switch-hint" id="auto-apply-hint">
             @if (Catalog.AutoApply)
             {
-                <text>When the installer starts and finds a catalog update on @Catalog.Channel, it applies it without asking. Never while an install is running; then the update waits here.</text>
+                <text>When the installer starts or you switch channel, and it finds a catalog update on @Catalog.Channel, it applies it without asking. Never while an install is running; then the update waits here.</text>
             }
             else
             {
@@ -151,7 +159,7 @@
         }
 
         @* After an automatic apply the user never saw the list before it landed: show what changed. *@
-        @if (Catalog.Phase == CatalogUpdatePhase.Applied && Catalog.LastApplyAutomatic && Catalog.LastCheck is { } applied)
+        @if (!SwitchPending && Catalog.Phase == CatalogUpdatePhase.Applied && Catalog.LastApplyAutomatic && Catalog.LastCheck is { } applied)
         {
             @ChangeList(applied)
         }
@@ -181,7 +189,7 @@
         {
             <p class="catalog-progress">@ProgressText</p>
         }
-        @if (Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApplyFailed && Catalog.LastApply is { } failed)
+        @if (!SwitchPending && Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApplyFailed && Catalog.LastApply is { } failed)
         {
             <p class="catalog-error">@ApplyFailureText(failed, Catalog.LastApplyUncertain)</p>
         }
@@ -216,6 +224,7 @@
     private bool _autoApplyBusy;
     private string? _autoApplyError;
     private int _autoApplyGeneration;
+    private bool _left;
 
     private static bool ElectronActive => ElectronHost.IsActive;
 
@@ -285,7 +294,12 @@
             }
 
             // Waiting for Switch or Keep: the warning under the radios says so.
-            if (Catalog.PendingSwitch?.Target == channel) return;
+            if (Catalog.PendingSwitch?.Target == channel)
+            {
+                // The page went while the preview ran, so nobody would see the question (see Dispose).
+                if (_left) Catalog.KeepChannel();
+                return;
+            }
 
             await AfterSwitchAsync(channel);
         }
@@ -405,6 +419,20 @@
         yield return (". Software you have already installed is not affected.", false);
     }
 
+    /// <summary>
+    /// "Preview has no catalog on this PC yet. Switching downloads catalog v7." The sentence about
+    /// installed software is mandatory too, and closes the warning below when there is one.
+    /// </summary>
+    private string DownloadText(CatalogChannelSwitch pending)
+    {
+        var release = pending.Preview.Remote is { } remote ? $"catalog v{remote.CatalogVersion}" : "its catalog";
+        // During an install Switch only saves the choice; Apply offers the download afterwards.
+        var text = InstallRunning
+            ? $"{pending.Target} has no catalog on this PC yet. You can download {release} after switching, once {RunningWorkload} has finished."
+            : $"{pending.Target} has no catalog on this PC yet. Switching downloads {release}.";
+        return pending.Warning is null ? $"{text} Software you have already installed is not affected." : text;
+    }
+
     /// <summary>The Added / Updated / Removed list, for an update and for a switch's warning alike.</summary>
     private static RenderFragment ChangeList(CatalogUpdateCheck check) => __builder =>
     {
@@ -457,6 +485,11 @@
         // page alive for the life of the app.
         Session.Changed -= OnLogChanged;
         Catalog.Changed -= OnLogChanged;
+
+        // Only this page shows the question, and while it waits checks and applies are refused and the
+        // update notice is hidden across the app. Leaving is not saying Switch, so nothing is saved.
+        _left = true;
+        Catalog.KeepChannel();
     }
 
     // Worded like the catalog row beside it, so the two read as one list.
@@ -504,7 +537,8 @@
                 null => "Not checked yet.",
                 // A same-content switch whose fill failed: the SDK found the folder needs the release, and Apply is the retry.
                 { IsSwitchPreview: true } c when Catalog.UpdateAvailable => $"Catalog v{c.Remote?.CatalogVersion} is available on {c.Channel}.",
-                { Outcome: CatalogUpdateOutcome.UpToDate } => "The catalog is up to date.",
+                // Not during a download: a same-content switch into a channel with no folder is one, and the progress line says so.
+                { Outcome: CatalogUpdateOutcome.UpToDate } when Catalog.Phase != CatalogUpdatePhase.Applying => "The catalog is up to date.",
                 // The release changes only the DiffusionNexus app's workloads (#53): nothing to read or apply here.
                 // A release the coordinator does not offer (nothing in it for the installer, no failed apply
                 // to retry, no switch to complete) -- not while it is being applied anyway (the startup apply
@@ -520,14 +554,21 @@
         }
     }
 
-    // No bytes yet: a switch first has the SDK check the target folder, and most switches download
-    // nothing at all; the percent appears once a download starts.
-    private string ProgressText => Catalog.Progress switch
+    // A switch only downloads for a channel with no folder yet, and says which version (#56). Otherwise,
+    // no bytes yet: the SDK checks the folder first, and the percent appears once a download starts.
+    private string ProgressText
     {
-        null => "Applying the catalog…",
-        { TotalBytes: > 0 } p => $"Downloading… {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
-        var p => $"Downloading… {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
-    };
+        get
+        {
+            var switchDownload = Catalog.LastCheck is { IsSwitchPreview: true, Remote: { } release } ? $"Downloading catalog v{release.CatalogVersion}…" : null;
+            return Catalog.Progress switch
+            {
+                null => switchDownload ?? "Applying the catalog…",
+                { TotalBytes: > 0 } p => $"{switchDownload ?? "Downloading…"} {(100.0 * p.BytesReceived / p.TotalBytes.Value).ToString("F0", CultureInfo.InvariantCulture)}%",
+                var p => $"{switchDownload ?? "Downloading…"} {(p.BytesReceived / 1_048_576.0).ToString("F1", CultureInfo.InvariantCulture)} MB",
+            };
+        }
+    }
 
     // Uncertain: the apply threw and the state could not be read back, so "nothing was changed"
     // would be a guess (PR #44 review).

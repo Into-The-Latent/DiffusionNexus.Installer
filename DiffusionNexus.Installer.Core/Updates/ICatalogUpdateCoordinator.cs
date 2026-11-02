@@ -65,9 +65,9 @@ public interface ICatalogUpdateCoordinator
     /// offered whoever its changes are for -- it is what the user asked for, and Apply is the way out.
     /// Likewise after a failed apply: Apply is the retry, whoever the changes were for.
     /// <see cref="LastCheck"/> is always filtered for the installer (its <c>Audience</c> is set).
-    /// After a switch that landed its release it is the preview the user agreed to (which names that
-    /// release); after one that landed nothing, failed, or was held by an install it describes the
-    /// folder now followed (up to date, or what is still to apply).
+    /// After a switch that downloaded its release it is the preview (which names that release); after
+    /// one to a channel with a folder, or one that landed nothing, failed, or was held by an install,
+    /// it describes the folder now followed (up to date, or what is still to apply).
     /// </summary>
     bool UpdateAvailable { get; }
     bool CanApply { get; }
@@ -99,7 +99,7 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// True when the apply in <see cref="LastApply"/>, or the one running, was started by
-    /// <see cref="CheckAtStartupAsync"/> rather than a click. The page then also shows the change
+    /// <see cref="CheckAtStartupAsync"/> or the check after a switch rather than a click. The page then also shows the change
     /// list after it landed: the user never saw it before the apply.
     /// </summary>
     bool LastApplyAutomatic { get; }
@@ -121,7 +121,8 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// A switch waiting for Switch or Keep: the target channel's content removes or changes
-    /// something. While it is set, checks, applies and other switches are refused, and
+    /// something, or the channel has no catalog on this PC yet and Switch would download it. While
+    /// it is set, checks, applies and other switches are refused, and
     /// <see cref="UpdateAvailable"/> is false (the last check describes the channel being left).
     /// </summary>
     CatalogChannelSwitch? PendingSwitch { get; }
@@ -142,20 +143,21 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// Previews <paramref name="target"/> without saving anything (spec 7.1). A diff that removes
-    /// or changes something waits in <see cref="PendingSwitch"/>; otherwise the switch goes ahead
-    /// at once, as <see cref="ConfirmSwitchAsync"/> would, and the SDK fills the target channel's
-    /// folder (SDK 2.3.0 keeps one per channel) when it is missing or behind. Refused (no-op) while checking,
-    /// applying or switching. Settings I/O errors propagate, and then nothing was changed.
-    /// Completes once the choice is saved (or waits for an answer); a download it starts runs on
-    /// and reports through <see cref="Changed"/>, like <see cref="ApplyAsync"/>.
+    /// or changes something waits in <see cref="PendingSwitch"/>, and so does a download; otherwise
+    /// the switch goes ahead at once, as <see cref="ConfirmSwitchAsync"/> would. A channel with a
+    /// folder (SDK 2.3.0 keeps one per channel) is read and checked, never applied to: a switch does
+    /// not move its version, and a newer release is announced as at startup (#56). A channel without
+    /// one downloads its release once the user has said Switch. Refused (no-op) while checking, applying
+    /// or switching. Settings I/O errors propagate, and then nothing was changed. Completes once the
+    /// choice is saved (or waits for an answer); what it starts runs on and reports through
+    /// <see cref="Changed"/>, like <see cref="ApplyAsync"/>.
     /// </summary>
     Task SwitchChannelAsync(CatalogChannel target, CancellationToken ct = default);
 
     /// <summary>
-    /// "Switch": saves the preference, then starts the apply of the previewed check (the SDK
-    /// re-checks the target channel's own folder and applies nothing when it is current) and completes;
-    /// the download reports through <see cref="Changed"/>. A failed apply keeps the preference and
-    /// the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
+    /// "Switch": saves the preference, then goes on as <see cref="SwitchChannelAsync"/> does, and
+    /// completes; what it starts reports through <see cref="Changed"/>. A failed apply keeps the
+    /// preference and the installed content (<see cref="SwitchIncomplete"/>). A no-op without a
     /// <see cref="PendingSwitch"/>. Settings I/O errors propagate, and then nothing was changed.
     /// </summary>
     Task ConfirmSwitchAsync(CancellationToken ct = default);

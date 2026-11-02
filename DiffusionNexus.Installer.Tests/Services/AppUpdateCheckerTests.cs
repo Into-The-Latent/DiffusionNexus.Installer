@@ -104,6 +104,176 @@ public class AppUpdateCheckerTests : IDisposable
         _log.Lines.Should().ContainSingle(l => l.Contains("net::ERR_INTERNET_DISCONNECTED"));
     }
 
+    // Review round 5: the turn was given back while the App row kept reading "Checking the app…".
+    [Fact]
+    public async Task A_failing_check_shows_on_the_page()
+    {
+        Installed();
+        _log.MarkChecking();
+        _shell.CheckFailure = new InvalidOperationException("the bridge went away");
+
+        await Create().CheckAsync();
+
+        _log.Status.Should().Be(AppUpdateStatus.Failed);
+        _log.Error.Should().Be("the bridge went away");
+    }
+
+    [Fact]
+    public async Task A_failing_check_leaves_a_running_download_on_offer()
+    {
+        _log.MarkAvailable("3.0.12");
+        _shell.CheckFailure = new InvalidOperationException("the bridge went away");
+
+        await Create().CheckAsync();
+
+        _log.Status.Should().Be(AppUpdateStatus.Downloading);
+    }
+
+    // Review round 5: a pinned Preview check ended by an event, not by its task, with a Stable check
+    // queued behind it. The Stable check must still undo the pin before it runs.
+    [Fact]
+    public async Task A_pinned_check_answered_only_by_an_event_hands_over_to_the_next_channel_cleanly()
+    {
+        var shipped = Installed();
+        _catalog.Channel = CatalogChannel.Preview;
+        _feed.Tags = ["v3.0.8", "v3.1.0"];
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = Create();
+
+        var preview = checker.CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        _catalog.Channel = CatalogChannel.Stable;
+        var stable = checker.CheckAsync();
+        _shell.Calls.Count(c => c == "check").Should().Be(1, "the Stable check waits its turn");
+
+        _shell.CheckGate = null;
+        _log.MarkAvailable("3.1.0");
+        await Task.WhenAll(preview, stable).WaitAsync(TimeSpan.FromSeconds(5));
+
+        _shell.Calls.Should().Equal([
+            "allowPrerelease=True", $"configPath={PinnedPath}", "check",
+            "allowPrerelease=False", $"configPath={shipped}", "check"]);
+    }
+
+    // ----- a check that never answers must not hold the next one (#56 testing) -----
+
+    // ElectronNET 0.5.2 never completes its task when a check fails (see AppUpdateChecker). Only the
+    // updater's error event arrives. The next check used to wait behind it for good, and with it the
+    // page's radios and its "Check for updates".
+    [Fact]
+    public async Task A_failure_reported_only_by_the_updaters_event_ends_the_check()
+    {
+        _shell.CheckGate = new TaskCompletionSource();   // never completed, like ElectronNET's task
+        var checker = Create();
+
+        var first = checker.CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        first.IsCompleted.Should().BeFalse("nothing has answered yet");
+
+        _log.MarkFailed("HttpError: 404");
+
+        (await Task.WhenAny(first, Task.Delay(5000))).Should().BeSameAs(first);
+
+        _shell.CheckGate = null;
+        var second = checker.CheckAsync();
+        (await Task.WhenAny(second, Task.Delay(5000))).Should().BeSameAs(second, "the failed check gave its turn back");
+        _shell.Calls.Count(c => c == "check").Should().Be(2);
+    }
+
+    // Review round 1: ElectronNET's completion message goes through the same unwatched Task.Run as the
+    // failure, so an answer in the updater's events ends the check whatever becomes of that message.
+    [Theory]
+    [InlineData("up to date")]
+    [InlineData("found")]
+    public async Task Any_answer_in_the_updaters_events_ends_the_check_and_stays_on_the_page(string answer)
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = new AppUpdateChecker(_catalog, _shell, _log, _feed, PinnedPath, answerLimit: TimeSpan.FromSeconds(1));
+
+        var check = checker.CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        if (answer == "found") _log.MarkAvailable("3.0.12"); else _log.MarkUpToDate();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await check.WaitAsync(TimeSpan.FromSeconds(5));
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(800), "the event answered it, not the limit");
+
+        await Task.Delay(1200);
+        _log.Status.Should().Be(answer == "found" ? AppUpdateStatus.Downloading : AppUpdateStatus.UpToDate);
+    }
+
+    // Review round 1: the limit knows what it is about, unlike an error event: a check, never a download.
+    [Fact]
+    public async Task A_check_that_never_answers_leaves_a_running_download_on_offer()
+    {
+        _log.MarkAvailable("3.0.12");
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = new AppUpdateChecker(_catalog, _shell, _log, _feed, PinnedPath, answerLimit: TimeSpan.FromMilliseconds(50));
+
+        await checker.CheckAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        _log.Status.Should().Be(AppUpdateStatus.Downloading);
+        _log.Lines.Should().Contain(l => l.Contains("did not answer"));
+    }
+
+    // Review round 1: a page on a dead circuit is the realistic thrower; the coordinator's Raise guards
+    // against it for its own subscribers.
+    [Fact]
+    public async Task A_throwing_page_does_not_keep_the_check_waiting()
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+        var check = Create().CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        _log.Changed += () => throw new InvalidOperationException("dead circuit");
+
+        _log.Invoking(l => l.MarkFailed("offline")).Should().Throw<InvalidOperationException>();
+
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+    }
+
+    [Fact]
+    public async Task A_check_that_never_answers_gives_its_turn_back_and_says_so()
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = new AppUpdateChecker(_catalog, _shell, _log, _feed, PinnedPath, answerLimit: TimeSpan.FromMilliseconds(50));
+
+        var check = checker.CheckAsync();
+
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+        _log.Status.Should().Be(AppUpdateStatus.Failed);
+        _log.Error.Should().Contain("did not answer");
+    }
+
+    [Fact]
+    public async Task A_failure_from_before_the_check_does_not_end_it()
+    {
+        _log.MarkFailed("an earlier download failed");
+        _shell.CheckGate = new TaskCompletionSource();
+
+        var check = Create().CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+
+        (await Task.WhenAny(check, Task.Delay(200))).Should().NotBeSameAs(check, "this check has not been answered");
+
+        _shell.CheckGate.SetResult();
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+    }
+
+    [Fact]
+    public async Task A_slow_check_that_answers_in_time_is_waited_for()
+    {
+        _shell.CheckGate = new TaskCompletionSource();
+
+        var check = Create().CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+
+        (await Task.WhenAny(check, Task.Delay(200))).Should().NotBeSameAs(check);
+
+        _shell.CheckGate.SetResult();
+        (await Task.WhenAny(check, Task.Delay(5000))).Should().BeSameAs(check);
+        _log.Status.Should().NotBe(AppUpdateStatus.Failed);
+    }
+
     // ----- Preview means the highest version, not the newest-created release (PR #21 review) -----
 
     // electron-updater's Preview path takes the first feed entry. A Stable hotfix cut after a
