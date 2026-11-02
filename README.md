@@ -21,7 +21,10 @@ update metadata with **no credentials of any kind** — nothing secret ships to 
 
 ## Requirements
 
-- .NET 10 SDK
+- The exact .NET SDK in `global.json`. It decides which .NET runtime the app ships, and
+  `THIRD-PARTY-NOTICES.txt` names that runtime, so it is pinned with no roll-forward: every build,
+  CI and release uses the same one. Moving it is a commit: bump `global.json`, restore with
+  `-p:UseLocalSDK=false`, and regenerate the notices.
 - Node.js 22.x or later (ElectronNET.Core drives `electron-builder` through npm)
 
 ## Build and run
