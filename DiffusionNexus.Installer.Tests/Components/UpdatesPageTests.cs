@@ -1151,7 +1151,7 @@ public class UpdatesPageTests : BunitContext
 
         _catalog.AutoApplySet.Should().Equal(true);
         page.Find(AutoApply).HasAttribute("checked").Should().BeTrue();
-        page.Find("#auto-apply-hint").TextContent.Should().Contain("finds a catalog update on Preview, it applies it without asking");
+        page.Find("#auto-apply-hint").TextContent.Should().Contain("starts or you switch channel").And.Contain("finds a catalog update on Preview, it applies it without asking");
         page.FindAll(".auto-apply-error").Should().BeEmpty();
         _catalog.Applies.Should().Be(0, "turning it on applies nothing by itself");
     }

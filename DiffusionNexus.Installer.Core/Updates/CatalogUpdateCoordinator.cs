@@ -57,7 +57,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     // while the other is inside its awaits.
     private bool _savingAutoApply;
 
-    // Whether the apply in LastApply (or running) was started by the startup check.
+    // Whether the apply in LastApply (or running) was started by the setting: the startup check, or the check after a switch.
     private bool _applyAutomatic;
 
     // Whether the SDK reads an override folder, probed with Installed (each check, apply, switch)
@@ -614,7 +614,9 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
 
             var warning = ChannelSwitchWarning.For(preview);
             var downloads = WouldDownload(preview);
-            if (warning is not null || downloads)
+            // During an install nothing downloads now, so that alone asks nothing. A warning asked anyway can be
+            // answered after the install has ended, and then Switch downloads: it has to say so.
+            if (warning is not null || (downloads && !InstallRunning))
             {
                 lock (_gate) PendingSwitch = new CatalogChannelSwitch(preview, warning, downloads);
                 _logger.LogInformation("Catalog channel switch to {Channel} waits for an answer: v{Version}, downloads {Downloads}, removes {Removed} and {Changes}",
@@ -677,16 +679,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     }
 
     /// <summary>
-    /// Going ahead would start a download nobody has been told about: the target channel has no catalog
-    /// on this PC and its release can be fetched (#56). Asked whatever the "automatic" setting says,
-    /// which is about updates to a catalog the user already has. Offline, or while an install holds the
-    /// apply, nothing downloads and there is nothing to ask. <see cref="CommitSwitchAsync"/> decides again
-    /// on the answer: another app may have filled the folder, or an install started, in the meantime.
+    /// Switch would download the target's release: that channel has no catalog on this PC and the release
+    /// can be fetched (#56). Asked whatever the "automatic" setting says, which is about updates to a
+    /// catalog the user already has. Offline there is nothing to fetch and nothing to ask.
+    /// <see cref="CommitSwitchAsync"/> decides again on the answer: another app may have filled the folder,
+    /// or an install started, in the meantime.
     /// </summary>
     private bool WouldDownload(CatalogUpdateCheck preview) =>
         _options.UsesSharedFolders
         && preview.Outcome is CatalogUpdateOutcome.UpdatesAvailable or CatalogUpdateOutcome.UpToDate
-        && !InstallRunning
         && !HoldsCatalog(preview.Channel);
 
     /// <summary>

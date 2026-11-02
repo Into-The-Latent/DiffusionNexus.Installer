@@ -125,7 +125,8 @@ public class UpdaterLogTests
     [Theory]
     [InlineData("")]
     [InlineData("  \n  ")]
-    public void A_failure_with_no_words_still_has_a_message(string error)
+    [InlineData(null)]   // electron-updater can emit an error that is no Error object; its .message arrives as null
+    public void A_failure_with_no_words_still_has_a_message(string? error)
     {
         _log.MarkFailed(error);
 

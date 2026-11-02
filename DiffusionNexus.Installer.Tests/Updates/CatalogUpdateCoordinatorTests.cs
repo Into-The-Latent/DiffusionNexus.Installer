@@ -2694,6 +2694,22 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.CanApply.Should().BeTrue("the release waits for a click");
     }
 
+    // Review round 2: the warning waits, the install ends, and Switch starts a download. The question
+    // the user answered has to have said so.
+    [Fact]
+    public async Task A_warning_raised_during_an_install_still_says_what_Switch_will_download()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        coordinator.PendingSwitch!.Warning.Should().NotBeNull();
+        coordinator.PendingSwitch.Downloads.Should().BeTrue();
+    }
+
     [Fact]
     public async Task During_an_install_nothing_downloads_so_nothing_is_asked()
     {

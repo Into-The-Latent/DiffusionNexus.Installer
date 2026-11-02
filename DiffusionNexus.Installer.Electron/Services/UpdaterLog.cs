@@ -151,7 +151,7 @@ public sealed class UpdaterLog
         Append($"Update {Version} downloaded and ready to install.");
     }
 
-    public void MarkFailed(string error)
+    public void MarkFailed(string? error)
     {
         Error = Shortened(error);
 
@@ -183,10 +183,10 @@ public sealed class UpdaterLog
     private const int ShownErrorLength = 200;
 
     /// <summary>What the page shows of a failure: the status and address of an HTTP failure, else the first line.</summary>
-    private static string Shortened(string error)
+    private static string Shortened(string? error)
     {
-        var text = error.Trim();
-        if (text.Length == 0) return "No details were given.";
+        var text = error?.Trim();
+        if (string.IsNullOrEmpty(text)) return "No details were given.";
 
         var http = HttpFailure.Match(text);
         var shown = http.Success

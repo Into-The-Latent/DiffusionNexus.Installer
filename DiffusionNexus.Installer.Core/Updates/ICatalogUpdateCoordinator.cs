@@ -99,7 +99,7 @@ public interface ICatalogUpdateCoordinator
 
     /// <summary>
     /// True when the apply in <see cref="LastApply"/>, or the one running, was started by
-    /// <see cref="CheckAtStartupAsync"/> rather than a click. The page then also shows the change
+    /// <see cref="CheckAtStartupAsync"/> or the check after a switch rather than a click. The page then also shows the change
     /// list after it landed: the user never saw it before the apply.
     /// </summary>
     bool LastApplyAutomatic { get; }

@@ -94,7 +94,7 @@
         <p class="panel-hint switch-hint" id="auto-apply-hint">
             @if (Catalog.AutoApply)
             {
-                <text>When the installer starts and finds a catalog update on @Catalog.Channel, it applies it without asking. Never while an install is running; then the update waits here.</text>
+                <text>When the installer starts or you switch channel, and it finds a catalog update on @Catalog.Channel, it applies it without asking. Never while an install is running; then the update waits here.</text>
             }
             else
             {
