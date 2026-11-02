@@ -1318,6 +1318,38 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
     }
 
     [Fact]
+    public async Task A_read_left_over_from_an_earlier_switch_does_not_describe_the_channel_followed_now()
+    {
+        // Switched to Preview offline, and back to Stable while Preview's folder was still being seeded.
+        using var firstReadStarted = new ManualResetEventSlim();
+        using var firstReadGate = new ManualResetEventSlim();
+        var reads = 0;
+        var previewState = State(7, CatalogChannel.Preview);
+        var stableState = State(3, CatalogChannel.Stable);
+        _catalog.SetupGet(c => c.State).Returns(() =>
+        {
+            if (Interlocked.Increment(ref reads) > 1) return stableState;
+            firstReadStarted.Set();
+            firstReadGate.Wait();
+            return previewState;
+        });
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = Create();
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        firstReadStarted.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Stable);
+        SpinWait.SpinUntil(() => ReferenceEquals(coordinator.Installed, stableState), 10_000).Should().BeTrue();
+
+        using var firstReadEnded = new ManualResetEventSlim();
+        coordinator.Changed += firstReadEnded.Set;
+        firstReadGate.Set();
+        firstReadEnded.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
+
+        coordinator.Installed.Should().BeSameAs(stableState);
+    }
+
+    [Fact]
     public async Task A_transient_settings_read_failure_does_not_permanently_pin_the_channel_to_stable()
     {
         _settings.SetupSequence(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
