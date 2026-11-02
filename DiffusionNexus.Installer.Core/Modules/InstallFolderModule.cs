@@ -92,6 +92,9 @@ public sealed class InstallFolderModule(
     /// <summary>The folder in the box did not answer within <see cref="CheckLimit"/>; <see cref="CheckFolderAgain"/> asks again.</summary>
     public bool FolderCheckTimedOut => _check is { IsCompletedSuccessfully: true, Result.TimedOut: true };
 
+    /// <summary>The folder in the box has its answer, whatever it says.</summary>
+    public bool HasFolderAnswer => _check is { IsCompleted: true };
+
     /// <summary>
     /// The folder in the box got the answer it did not have when it changed. Raised off the page's
     /// thread; never for an answer that was there in time for the next render.
@@ -105,6 +108,17 @@ public sealed class InstallFolderModule(
         StartCheckIfNew();
     }
 
+    /// <summary>
+    /// The folder may have been emptied or filled during the trip, and the box has not changed. A
+    /// check that gets no answer says nothing new, so an earlier real answer stands.
+    /// </summary>
+    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
+    {
+        _checkedPath = null;
+        StartCheckIfNew(_check is { IsCompletedSuccessfully: true, Result.TimedOut: false } earlier ? earlier.Result : null);
+        return Task.CompletedTask;
+    }
+
     public bool AppliesTo(WizardSelection selection) => true;
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
@@ -115,13 +129,6 @@ public sealed class InstallFolderModule(
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         TargetFolder = user.DefaultTargetInstallFolder;
-    }
-
-    /// <summary>The folder may have been emptied or filled during the trip, and the box has not changed.</summary>
-    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
-    {
-        CheckFolderAgain();
-        return Task.CompletedTask;
     }
 
     public void Contribute(InstallationOptionsDraft draft)
@@ -178,7 +185,7 @@ public sealed class InstallFolderModule(
         return $"This folder is never created: the software installs one level up, into {install}. Choose {Path.GetDirectoryName(install)} instead.";
     }
 
-    private void StartCheckIfNew()
+    private void StartCheckIfNew(FolderAnswer? ifNoAnswer = null)
     {
         var folder = Folder;
         if (string.Equals(_checkedPath, folder, StringComparison.Ordinal)) return;
@@ -193,11 +200,11 @@ public sealed class InstallFolderModule(
         // Not again while the last folder has no answer: typing under a server that does not answer is
         // one new path per key, and waiting on each holds up every event behind it.
         var slowAlready = _check is { IsCompleted: false };
-        var check = _check = AnswerWithinLimitAsync(folder);
+        var check = _check = AnswerWithinLimitAsync(folder, ifNoAnswer);
         if (slowAlready || !check.Wait(AnswerWait)) _ = AnnounceAsync(check);
     }
 
-    private async Task<FolderAnswer> AnswerWithinLimitAsync(string folder)
+    private async Task<FolderAnswer> AnswerWithinLimitAsync(string folder, FolderAnswer? ifNoAnswer)
     {
         try
         {
@@ -211,7 +218,7 @@ public sealed class InstallFolderModule(
         {
             // Not waited out and not adopted later: when Windows gives up on a computer that is off, it
             // answers "no such folder", the same as for a folder still to be created.
-            return new FolderAnswer(
+            return ifNoAnswer ?? new FolderAnswer(
                 $"Windows did not answer about this folder within {CheckLimit.TotalSeconds:0} seconds. If it is on a network drive, make sure the drive is on and try again, or choose another folder.",
                 TimedOut: true);
         }

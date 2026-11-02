@@ -197,6 +197,26 @@ public class InstallFolderPanelTests : BunitContext
     }
 
     [Fact]
+    public async Task An_answer_that_arrived_before_the_panel_listened_still_reaches_the_parent()
+    {
+        // The page reads Next while the check runs, then mounts this panel: an answer in between is
+        // announced to nobody, and Next would stay greyed on a good folder with nothing to say why.
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        using var gate = new ManualResetEventSlim();
+        var module = await ModuleChecking(() => { gate.Wait(TimeSpan.FromSeconds(30)); return Fine; });
+        module.TargetFolder = @"\\nas\share\AI";
+        gate.Set();
+        SpinWait.SpinUntil(() => !module.IsCheckingFolder, TimeSpan.FromSeconds(30)).Should().BeTrue();
+        var changes = 0;
+
+        Render<InstallFolderPanel>(parameters => parameters
+            .Add(p => p.Module, module)
+            .Add(p => p.Changed, EventCallback.Factory.Create(this, () => changes++)));
+
+        changes.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task A_panel_that_went_away_no_longer_listens_for_the_answer()
     {
         // A wizard kept for a side trip (#45) outlives its panel; the check it started runs on.

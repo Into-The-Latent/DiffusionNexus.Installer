@@ -167,8 +167,9 @@ public class InstallPageTests : BunitContext
         Register(Workload());
         var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
         page.Find(".path-row input").Input(@"E:\AI");
+        page.WaitForAssertion(() => page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+            .HasAttribute("disabled").Should().BeFalse());
         var nextAsTheBrowserLastSawIt = page.FindAll("button").Single(b => b.TextContent.Trim() == "Next");
-        nextAsTheBrowserLastSawIt.HasAttribute("disabled").Should().BeFalse();
 
         page.Find(".path-row input").Input(@"\\nas\share\AI");
         await nextAsTheBrowserLastSawIt.ClickAsync(new MouseEventArgs());

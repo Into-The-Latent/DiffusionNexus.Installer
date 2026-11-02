@@ -49,6 +49,12 @@
         StateHasChanged();
     });
 
+    // The page reads Next before this panel exists: an answer in between was announced to nobody.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Module.HasFolderAnswer) await Changed.InvokeAsync();
+    }
+
     public void Dispose() => Module.FolderCheckAnswered -= OnFolderCheckAnswered;
 
     private async Task TryAgain()

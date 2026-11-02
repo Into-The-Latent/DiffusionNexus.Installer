@@ -369,6 +369,33 @@ public class InstallFolderModuleTests
     }
 
     [Fact]
+    public async Task A_side_trip_check_that_gets_no_answer_keeps_the_earlier_one()
+    {
+        // The folder passed, on a NAS that sleeps during the trip. No answer says nothing new, and
+        // IWizardModule asks that a probe that is not sure keeps what it had.
+        using var gate = new ManualResetEventSlim();
+        var calls = 0;
+        var module = await ModuleChecking(
+            FolderCheck(_ =>
+            {
+                if (Interlocked.Increment(ref calls) > 1) gate.Wait(TimeSpan.FromSeconds(30));
+                return Fine;
+            }),
+            answerWait: TimeSpan.FromSeconds(30),
+            checkLimit: TimeSpan.FromSeconds(1));
+        module.TargetFolder = @"\\nas\share\AI";
+        module.Validate().IsValid.Should().BeTrue();
+
+        await ((IWizardModule)module).RefreshAfterResumeAsync();
+        var validation = module.Validate();
+        var timedOut = module.FolderCheckTimedOut;
+        gate.Set();
+
+        validation.IsValid.Should().BeTrue();
+        timedOut.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task An_answer_for_a_folder_the_user_has_left_is_ignored()
     {
         using var gate = new ManualResetEventSlim();
