@@ -159,7 +159,7 @@
         }
 
         @* After an automatic apply the user never saw the list before it landed: show what changed. *@
-        @if (Catalog.Phase == CatalogUpdatePhase.Applied && Catalog.LastApplyAutomatic && Catalog.LastCheck is { } applied)
+        @if (!SwitchPending && Catalog.Phase == CatalogUpdatePhase.Applied && Catalog.LastApplyAutomatic && Catalog.LastCheck is { } applied)
         {
             @ChangeList(applied)
         }
@@ -189,7 +189,7 @@
         {
             <p class="catalog-progress">@ProgressText</p>
         }
-        @if (Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApplyFailed && Catalog.LastApply is { } failed)
+        @if (!SwitchPending && Catalog.Phase != CatalogUpdatePhase.Applying && Catalog.LastApplyFailed && Catalog.LastApply is { } failed)
         {
             <p class="catalog-error">@ApplyFailureText(failed, Catalog.LastApplyUncertain)</p>
         }
@@ -224,6 +224,7 @@
     private bool _autoApplyBusy;
     private string? _autoApplyError;
     private int _autoApplyGeneration;
+    private bool _left;
 
     private static bool ElectronActive => ElectronHost.IsActive;
 
@@ -293,7 +294,12 @@
             }
 
             // Waiting for Switch or Keep: the warning under the radios says so.
-            if (Catalog.PendingSwitch?.Target == channel) return;
+            if (Catalog.PendingSwitch?.Target == channel)
+            {
+                // The page went while the preview ran, so nobody would see the question (see Dispose).
+                if (_left) Catalog.KeepChannel();
+                return;
+            }
 
             await AfterSwitchAsync(channel);
         }
@@ -479,6 +485,11 @@
         // page alive for the life of the app.
         Session.Changed -= OnLogChanged;
         Catalog.Changed -= OnLogChanged;
+
+        // Only this page shows the question, and while it waits checks and applies are refused and the
+        // update notice is hidden across the app. Leaving is not saying Switch, so nothing is saved.
+        _left = true;
+        if (Catalog.PendingSwitch is not null) Catalog.KeepChannel();
     }
 
     // Worded like the catalog row beside it, so the two read as one list.

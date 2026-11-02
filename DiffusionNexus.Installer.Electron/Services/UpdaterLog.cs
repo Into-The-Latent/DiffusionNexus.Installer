@@ -166,12 +166,12 @@ public sealed class UpdaterLog
     }
 
     /// <summary>
-    /// A check nothing answered. Unlike an error event this knows it is about the check, so a download
-    /// on disk or still running stays on offer (see <see cref="Set"/>).
+    /// A check that threw, or that nothing answered. Unlike an error event this knows it is about the
+    /// check, so a download on disk or still running stays on offer (see <see cref="Set"/>).
     /// </summary>
-    public void MarkNoAnswer(string message)
+    public void MarkCheckFailed(string message)
     {
-        Error = message;
+        Error = Shortened(message);
         Set(AppUpdateStatus.Failed);
         Append($"Updater error: {message}");
     }

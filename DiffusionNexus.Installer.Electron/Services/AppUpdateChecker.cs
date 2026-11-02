@@ -97,7 +97,7 @@ public sealed class AppUpdateChecker(
         }
         catch (Exception ex)
         {
-            log.Append($"Update check failed: {ex.Message}");
+            log.MarkCheckFailed(ex.Message);
         }
         finally
         {
@@ -127,7 +127,7 @@ public sealed class AppUpdateChecker(
             var first = await Task.WhenAny(check, answered.Task, Task.Delay(_answerLimit)).ConfigureAwait(false);
 
             if (first == check) await check.ConfigureAwait(false);
-            else if (first != answered.Task) log.MarkNoAnswer($"The update check did not answer within {_answerLimit.TotalSeconds:0} seconds.");
+            else if (first != answered.Task) log.MarkCheckFailed($"The update check did not answer within {_answerLimit.TotalSeconds:0} seconds.");
         }
         finally
         {

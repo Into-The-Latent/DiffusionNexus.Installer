@@ -408,13 +408,14 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         {
             var fresh = await CheckAfterSwitchAsync().ConfigureAwait(false);
             var current = fresh.Outcome == CatalogUpdateOutcome.UpToDate;
+            // Before the phase flips: a reader that waits for Checking to end must find it recorded.
+            if (current) _confirmations.Confirm(target, state, otherFoldersUntouched: _options.UsesSharedFolders);
             lock (_gate)
             {
                 LastCheck = fresh;
                 if (current) _notLanded = null;
                 Phase = CatalogUpdatePhase.Checked;
             }
-            if (current) _confirmations.Confirm(target, state, otherFoldersUntouched: _options.UsesSharedFolders);
         }
         Raise();
     }

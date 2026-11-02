@@ -878,6 +878,94 @@ public class UpdatesPageTests : BunitContext
         page.FindAll(".catalog-changes").Should().OnlyContain(c => c.Closest(".channel-switch-warning") != null);
     }
 
+    // Review round 5: what the channel being left last did is not part of the question.
+    [Fact]
+    public void While_a_switch_waits_the_old_channels_automatic_apply_list_is_not_shown()
+    {
+        Register(InstallPhase.Idle);
+        Available(CatalogChecks.WorkloadAdded("Flux-Krea", "V1.0"));
+        _catalog.Phase = CatalogUpdatePhase.Applied;
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.All, CatalogSections.None, null);
+        _catalog.LastApplyAutomatic = true;
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.FindAll(".catalog-changes").Should().OnlyContain(c => c.Closest(".channel-switch-warning") != null);
+    }
+
+    [Fact]
+    public void While_a_switch_waits_the_old_channels_failed_apply_is_not_shown()
+    {
+        Register(InstallPhase.Idle);
+        Available();
+        _catalog.LastApply = new CatalogApplyResult(CatalogSections.None, CatalogSections.All, "disk full");
+        OnPreviewWithPendingSwitch();
+
+        var page = Render<UpdatesPage>();
+
+        page.FindAll(".catalog-error").Should().BeEmpty();
+    }
+
+    // Review round 5: a question nobody can see refused every check and hid the update notice across
+    // the app. Leaving the page is not saying Switch.
+    [Fact]
+    public async Task Leaving_the_page_with_a_question_open_keeps_the_channel()
+    {
+        Register(InstallPhase.Idle);
+        OnPreviewWithPendingSwitch();
+        Render<UpdatesPage>();
+
+        await DisposeComponentsAsync();
+
+        _catalog.Keeps.Should().Be(1);
+        _catalog.PendingSwitch.Should().BeNull();
+        _catalog.Confirms.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Leaving_the_page_with_no_question_open_answers_nothing()
+    {
+        Register(InstallPhase.Idle);
+        Render<UpdatesPage>();
+
+        await DisposeComponentsAsync();
+
+        _catalog.Keeps.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_question_that_opens_after_the_page_was_left_is_kept_too()
+    {
+        Register(InstallPhase.Idle);
+        _catalog.ChannelSource = CatalogChannelSource.Setting;
+        _catalog.PendingOnSwitch = DownloadSwitch(CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0"));
+        _catalog.SwitchGate = new TaskCompletionSource();
+        var page = Render<UpdatesPage>();
+
+        page.Find(Radio(CatalogChannel.Preview)).Change("Preview");
+        await DisposeComponentsAsync();
+        _catalog.SwitchGate.SetResult();
+
+        SpinWait.SpinUntil(() => _catalog.Keeps == 1, 5000).Should().BeTrue();
+        _catalog.PendingSwitch.Should().BeNull();
+    }
+
+    // Review round 5: the question is about what Switch does now, so it follows the install.
+    [Fact]
+    public void An_install_ending_while_the_question_is_open_updates_what_it_says()
+    {
+        var session = Register(InstallPhase.Running);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0"));
+        var page = Render<UpdatesPage>();
+        Normalized(page.Find(".channel-switch-warning p")).Should().Contain("after switching");
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
+        session.Raise(s => s.Changed += null);
+
+        page.WaitForAssertion(() => Normalized(page.Find(".channel-switch-warning p")).Should().Contain("Switching downloads catalog v7."));
+    }
+
     [Theory]
     [InlineData(2, 0, "Stable is at v4. Switching removes A and B. Software you have already installed is not affected.")]
     [InlineData(3, 0, "Stable is at v4. Switching removes A, B and C. Software you have already installed is not affected.")]

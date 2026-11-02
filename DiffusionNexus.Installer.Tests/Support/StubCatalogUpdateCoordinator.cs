@@ -57,14 +57,17 @@ internal sealed class StubCatalogUpdateCoordinator : ICatalogUpdateCoordinator
     public bool RefuseChannelChange { get; set; }
     public Exception? ChannelSaveFailure { get; set; }
 
-    public Task SwitchChannelAsync(CatalogChannel channel, CancellationToken ct = default)
+    /// <summary>When set, a switch parks here until the test completes it: a preview still running.</summary>
+    public TaskCompletionSource? SwitchGate { get; set; }
+
+    public async Task SwitchChannelAsync(CatalogChannel channel, CancellationToken ct = default)
     {
         ChannelSet = channel;
-        if (RefuseChannelChange) return Task.CompletedTask;
-        if (PendingOnSwitch is not null) { PendingSwitch = PendingOnSwitch; return Task.CompletedTask; }
-        if (ChannelSaveFailure is not null) return Task.FromException(ChannelSaveFailure);
+        if (SwitchGate is { } gate) await gate.Task;
+        if (RefuseChannelChange) return;
+        if (PendingOnSwitch is not null) { PendingSwitch = PendingOnSwitch; return; }
+        if (ChannelSaveFailure is not null) throw ChannelSaveFailure;
         Channel = channel;
-        return Task.CompletedTask;
     }
 
     public Task ConfirmSwitchAsync(CancellationToken ct = default)

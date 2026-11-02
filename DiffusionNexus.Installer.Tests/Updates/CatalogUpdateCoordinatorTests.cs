@@ -2615,6 +2615,7 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         using var coordinator = Create(options);
 
         await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
 
         coordinator.PendingSwitch.Should().BeNull();
         VerifySaved("Preview");
@@ -2757,6 +2758,75 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         _service.ApplyCalls.Should().Be(0);
         coordinator.CanApply.Should().BeTrue("the release waits for a click");
+    }
+
+    // Review round 5: the question says what Switch does now, so the answer goes by the install then.
+    [Fact]
+    public async Task An_install_ending_while_the_question_waits_leaves_Switch_to_download()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _service.NextPreview = _ => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadRemoved("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Idle);
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_install_starting_while_the_question_waits_holds_the_download()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task An_install_starting_during_the_save_holds_the_download()
+    {
+        var options = NoFolderForPreview();
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) =>
+                 {
+                     _session.SetupGet(x => x.Phase).Returns(InstallPhase.Running);
+                     return s;
+                 });
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task Another_app_filling_the_folder_while_the_question_waits_is_followed_not_downloaded()
+    {
+        var options = NoFolderForPreview();
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeTrue();
+
+        State(7, CatalogChannel.Preview).Save(options.WriteFolderFor(CatalogChannel.Preview, 1));
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.Installed!.HighestCatalogVersion.Should().Be(7);
     }
 
     // Review round 3: the warning compared two folders, so its preview has nothing to download, and the

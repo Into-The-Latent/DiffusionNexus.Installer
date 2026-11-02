@@ -104,6 +104,57 @@ public class AppUpdateCheckerTests : IDisposable
         _log.Lines.Should().ContainSingle(l => l.Contains("net::ERR_INTERNET_DISCONNECTED"));
     }
 
+    // Review round 5: the turn was given back while the App row kept reading "Checking the app…".
+    [Fact]
+    public async Task A_failing_check_shows_on_the_page()
+    {
+        Installed();
+        _log.MarkChecking();
+        _shell.CheckFailure = new InvalidOperationException("the bridge went away");
+
+        await Create().CheckAsync();
+
+        _log.Status.Should().Be(AppUpdateStatus.Failed);
+        _log.Error.Should().Be("the bridge went away");
+    }
+
+    [Fact]
+    public async Task A_failing_check_leaves_a_running_download_on_offer()
+    {
+        _log.MarkAvailable("3.0.12");
+        _shell.CheckFailure = new InvalidOperationException("the bridge went away");
+
+        await Create().CheckAsync();
+
+        _log.Status.Should().Be(AppUpdateStatus.Downloading);
+    }
+
+    // Review round 5: a pinned Preview check ended by an event, not by its task, with a Stable check
+    // queued behind it. The Stable check must still undo the pin before it runs.
+    [Fact]
+    public async Task A_pinned_check_answered_only_by_an_event_hands_over_to_the_next_channel_cleanly()
+    {
+        var shipped = Installed();
+        _catalog.Channel = CatalogChannel.Preview;
+        _feed.Tags = ["v3.0.8", "v3.1.0"];
+        _shell.CheckGate = new TaskCompletionSource();
+        var checker = Create();
+
+        var preview = checker.CheckAsync();
+        SpinWait.SpinUntil(() => _shell.Calls.Contains("check"), 5000).Should().BeTrue();
+        _catalog.Channel = CatalogChannel.Stable;
+        var stable = checker.CheckAsync();
+        _shell.Calls.Count(c => c == "check").Should().Be(1, "the Stable check waits its turn");
+
+        _shell.CheckGate = null;
+        _log.MarkAvailable("3.1.0");
+        await Task.WhenAll(preview, stable).WaitAsync(TimeSpan.FromSeconds(5));
+
+        _shell.Calls.Should().Equal([
+            "allowPrerelease=True", $"configPath={PinnedPath}", "check",
+            "allowPrerelease=False", $"configPath={shipped}", "check"]);
+    }
+
     // ----- a check that never answers must not hold the next one (#56 testing) -----
 
     // ElectronNET 0.5.2 never completes its task when a check fails (see AppUpdateChecker). Only the
