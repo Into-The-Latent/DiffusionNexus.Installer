@@ -838,6 +838,19 @@ public class UpdatesPageTests : BunitContext
             "Preview is at v7. Switching removes Qwen-Image-2.1. Software you have already installed is not affected.");
     }
 
+    // Review round 3: Switch holds the download during an install, so the question must not promise it.
+    [Fact]
+    public void During_an_install_the_question_does_not_promise_a_download_now()
+    {
+        Register(InstallPhase.Running);
+        _catalog.PendingSwitch = DownloadSwitch(CatalogChecks.WorkloadRemoved("Qwen-Image-2.1", "V1"));
+
+        var page = Render<UpdatesPage>();
+
+        Normalized(page.Find(".channel-switch-warning p")).Should().Be(
+            "Preview has no catalog on this PC yet. You can download catalog v7 after switching, once the current install has finished.");
+    }
+
     [Fact]
     public void While_a_switch_waits_the_radios_show_the_choice_and_cannot_be_changed()
     {

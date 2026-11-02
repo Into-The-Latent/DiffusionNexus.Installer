@@ -417,10 +417,13 @@
     /// "Preview has no catalog on this PC yet. Switching downloads catalog v7." The sentence about
     /// installed software is mandatory too, and closes the warning below when there is one.
     /// </summary>
-    private static string DownloadText(CatalogChannelSwitch pending)
+    private string DownloadText(CatalogChannelSwitch pending)
     {
         var release = pending.Preview.Remote is { } remote ? $"catalog v{remote.CatalogVersion}" : "its catalog";
-        var text = $"{pending.Target} has no catalog on this PC yet. Switching downloads {release}.";
+        // During an install Switch only saves the choice; Apply offers the download afterwards.
+        var text = InstallRunning
+            ? $"{pending.Target} has no catalog on this PC yet. You can download {release} after switching, once {RunningWorkload} has finished."
+            : $"{pending.Target} has no catalog on this PC yet. Switching downloads {release}.";
         return pending.Warning is null ? $"{text} Software you have already installed is not affected." : text;
     }
 

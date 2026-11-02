@@ -2710,6 +2710,53 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
         coordinator.PendingSwitch.Downloads.Should().BeTrue();
     }
 
+    // Review round 3: nothing was asked because an install ran, and it ended during the save.
+    [Fact]
+    public async Task An_install_ending_during_the_save_does_not_start_a_download_nobody_was_asked_about()
+    {
+        var options = NoFolderForPreview();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((UserSettings s, CancellationToken _) =>
+                 {
+                     _session.SetupGet(x => x.Phase).Returns(InstallPhase.Idle);
+                     return s;
+                 });
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        Settle(coordinator);
+
+        coordinator.PendingSwitch.Should().BeNull();
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.CanApply.Should().BeTrue("the release waits for a click");
+    }
+
+    // Review round 3: the warning compared two folders, so its preview has nothing to download, and the
+    // target's state went while it waited. Applying it failed with "Nothing to apply", again on each retry.
+    [Fact]
+    public async Task A_folder_that_goes_while_a_warning_waits_does_not_apply_the_comparison()
+    {
+        _saved.CatalogChannel = "Stable";
+        var options = Shared();
+        WriteCatalog(options.WriteFolderFor(CatalogChannel.Stable, 1), 7, CatalogChannel.Stable, "Krea", "Wan");
+        var previewFolder = options.WriteFolderFor(CatalogChannel.Preview, 1);
+        WriteCatalog(previewFolder, 6, CatalogChannel.Preview, "Krea");
+        _service.NextCheck = () => CatalogChecks.Available(7, CatalogChannel.Preview, [CatalogChecks.WorkloadAdded("Wan-2.3", "V1.0")]);
+        using var coordinator = Create(options);
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+        coordinator.PendingSwitch!.Downloads.Should().BeFalse();
+
+        File.Delete(Path.Combine(previewFolder, CatalogSchema.StateFileName));
+        await coordinator.ConfirmSwitchAsync();
+        Settle(coordinator);
+
+        _service.ApplyCalls.Should().Be(0);
+        coordinator.LastApplyFailed.Should().BeFalse();
+        coordinator.CanApply.Should().BeTrue("the check of the folder offers the real release");
+    }
+
     [Fact]
     public async Task During_an_install_nothing_downloads_so_nothing_is_asked()
     {

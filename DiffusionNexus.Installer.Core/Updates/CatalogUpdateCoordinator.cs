@@ -624,7 +624,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 return;
             }
 
-            await CommitSwitchAsync(preview, phaseBefore, ct).ConfigureAwait(false);
+            await CommitSwitchAsync(preview, phaseBefore, downloadAnswered: false, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -658,7 +658,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         _logger.LogInformation("Catalog channel switch to {Channel} confirmed", pending.Target);
         try
         {
-            await CommitSwitchAsync(pending.Preview, phaseBefore, ct).ConfigureAwait(false);
+            await CommitSwitchAsync(pending.Preview, phaseBefore, pending.Downloads, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -783,7 +783,13 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     /// the choice is saved; the rest reports through <see cref="Changed"/> like a manual apply. The
     /// caller holds <see cref="_switching"/>. Only a failed save throws, and then nothing was changed.
     /// </summary>
-    private async Task CommitSwitchAsync(CatalogUpdateCheck preview, CatalogUpdatePhase phaseBefore, CancellationToken ct)
+    /// <param name="downloadAnswered">
+    /// The user said Switch to a question that named the download. With shared folders nothing downloads
+    /// without it, whatever has changed since the switch began: an install that ended during the save, or
+    /// a folder that went while a warning waited (whose preview compared folders and has nothing to apply).
+    /// The check below then offers the release.
+    /// </param>
+    private async Task CommitSwitchAsync(CatalogUpdateCheck preview, CatalogUpdatePhase phaseBefore, bool downloadAnswered, CancellationToken ct)
     {
         var target = preview.Channel;
         string saved;
@@ -843,7 +849,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                     // switching back there is complete, whatever this preview answered.
                     : _notLanded is { From: var from } ? (from == target ? null : (from, target))
                     : (left, target);
-                if (appliable && !InstallRunning)
+                if (appliable && (downloadAnswered || !_options.UsesSharedFolders) && !InstallRunning)
                 {
                     // Not under the caller's token: the switch has returned by the time the download
                     // runs, and a caller that cancels afterwards (a page going away) does not own it.
@@ -885,7 +891,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
         _logger.LogInformation("Catalog channel switched to {Channel}: {Next}", target,
             applying ? "downloading v" + preview.Remote?.CatalogVersion
             : followsFolder ? "reading and checking its folder"
-            : appliable ? "the apply waits for the running install"
+            : appliable ? "the apply waits for a click"
             : preview.Outcome.ToString());
     }
 
