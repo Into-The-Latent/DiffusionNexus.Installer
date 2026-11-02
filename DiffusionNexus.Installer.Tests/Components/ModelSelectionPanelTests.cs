@@ -71,7 +71,7 @@ public class ModelSelectionPanelTests : BunitContext
         var estimator = new Mock<IDiskSpaceEstimator>();
         estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DiskSpaceEstimate(1, 2, true, []));
-        var module = new ModelSelectionModule(scanner.Object, estimator.Object);
+        var module = new ModelSelectionModule(scanner.Object, estimator.Object) { ScanWait = TimeSpan.FromSeconds(30) };
         var selection = Selection();
         await module.InitializeAsync(selection);
         selection.TargetFolder = @"C:\Elsewhere";   // stale, so the panel's first render scans (and blocks)
@@ -91,7 +91,7 @@ public class ModelSelectionPanelTests : BunitContext
     [Fact]
     public async Task Lists_every_model_ticked_under_its_folder_and_marks_the_one_already_on_disk()
     {
-        var module = new ModelSelectionModule(Scanner(vaePresent: true).Object, Estimator());
+        var module = new ModelSelectionModule(Scanner(vaePresent: true).Object, Estimator()) { ScanWait = TimeSpan.FromSeconds(30) };
         var selection = Selection();
         await module.InitializeAsync(selection);
 
@@ -106,7 +106,7 @@ public class ModelSelectionPanelTests : BunitContext
     [Fact]
     public async Task Unticking_a_model_updates_the_module_and_raises_Changed()
     {
-        var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, Estimator());
+        var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, Estimator()) { ScanWait = TimeSpan.FromSeconds(30) };
         var selection = Selection();
         await module.InitializeAsync(selection);
         var changed = false;
@@ -125,7 +125,7 @@ public class ModelSelectionPanelTests : BunitContext
         estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DiskSpaceEstimate(3L * 1024 * 1024 * 1024, 0, true, [], AvailableKnown: false));
         var selection = Selection();
-        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object);
+        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object) { ScanWait = TimeSpan.FromSeconds(30) };
         await module.InitializeAsync(selection);
 
         var cut = RenderPanel(module, selection);
@@ -144,7 +144,7 @@ public class ModelSelectionPanelTests : BunitContext
         estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DiskSpaceEstimate(70, 40, true, [], AvailableKnown: true, LibraryAvailableBytes: null, ModelBytes: 60, HasLibrary: true));
         var selection = Selection();
-        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object);
+        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object) { ScanWait = TimeSpan.FromSeconds(30) };
         await module.InitializeAsync(selection);
 
         var cut = RenderPanel(module, selection);
@@ -173,7 +173,7 @@ public class ModelSelectionPanelTests : BunitContext
                 if (++scans == 2) selection.SelectedVramProfile = 16;
                 return [];
             });
-        var module = new ModelSelectionModule(scanner.Object, Estimator());
+        var module = new ModelSelectionModule(scanner.Object, Estimator()) { ScanWait = TimeSpan.FromSeconds(30) };
         await module.InitializeAsync(selection);
         var cut = RenderPanel(module, selection);
 
@@ -186,7 +186,7 @@ public class ModelSelectionPanelTests : BunitContext
     [Fact]
     public async Task Shows_the_disk_space_estimate_and_flags_a_shortfall()
     {
-        var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, Estimator(sufficient: false));
+        var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, Estimator(sufficient: false)) { ScanWait = TimeSpan.FromSeconds(30) };
         var selection = Selection();
         await module.InitializeAsync(selection);
 
@@ -205,7 +205,7 @@ public class ModelSelectionPanelTests : BunitContext
         // The VRAM panel is a sibling; its Changed re-renders the page, which re-renders this panel
         // with the same parameters. That render must notice the tier moved and rescan.
         var scanner = Scanner(vaePresent: false);
-        var module = new ModelSelectionModule(scanner.Object, Estimator());
+        var module = new ModelSelectionModule(scanner.Object, Estimator()) { ScanWait = TimeSpan.FromSeconds(30) };
         var selection = Selection("8,12,16");
         selection.SelectedVramProfile = 8;
         await module.InitializeAsync(selection);
@@ -231,7 +231,7 @@ public class ModelSelectionPanelTests : BunitContext
         w.Repository.Type = RepositoryType.ComfyUI;
         w.ModelDownloads.Add(new ModelDownload { Name = "Off", Enabled = false });
         var selection = new WizardSelection { Workload = w, TargetFolder = @"C:\AI" };
-        var module = new ModelSelectionModule(Scanner(false).Object, Estimator());
+        var module = new ModelSelectionModule(Scanner(false).Object, Estimator()) { ScanWait = TimeSpan.FromSeconds(30) };
         await module.InitializeAsync(selection);
 
         var cut = RenderPanel(module, selection);

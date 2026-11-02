@@ -7,6 +7,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.Electron.Components.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.SDK.Shared;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -113,5 +114,125 @@ public class InstallFolderPanelTests : BunitContext
 
         changed.Should().BeFalse("a dismissed dialog must not be treated as an edit");
         module.TargetFolder.Should().Be(@"C:\Existing");
+    }
+
+    // ----- the folder check runs off the page (#60) -----
+
+    private static async Task<InstallFolderModule> ModuleChecking(Func<PreInstallationValidationResult> answer, TimeSpan? checkLimit = null)
+    {
+        var settings = new Mock<IUserSettingsRepository>();
+        settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSettings { DefaultTargetInstallFolder = string.Empty });
+        var check = new Mock<IPreInstallationService>();
+        check.Setup(c => c.ValidateTargetFolder(It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationType>()))
+            .Returns(answer);
+        var module = new InstallFolderModule(settings.Object, check.Object)
+        {
+            AnswerWait = TimeSpan.FromMilliseconds(10),
+            CheckLimit = checkLimit ?? TimeSpan.FromSeconds(60),
+        };
+        var w = new InstallationConfiguration();
+        w.Repository.Type = RepositoryType.ComfyUI;
+        w.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+        await module.InitializeAsync(new WizardSelection { Workload = w });
+        return module;
+    }
+
+    private static readonly PreInstallationValidationResult Fine = PreInstallationValidationResult.Success(@"E:\x", false, false);
+
+    [Fact]
+    public async Task While_the_folder_is_checked_the_panel_says_so_and_then_tells_the_parent_the_answer()
+    {
+        // The parent owns Next, so the answer has to reach it without the user touching anything.
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        using var gate = new ManualResetEventSlim();
+        var module = await ModuleChecking(() => { gate.Wait(TimeSpan.FromSeconds(30)); return Fine; });
+        var changes = 0;
+        var cut = Render<InstallFolderPanel>(parameters => parameters
+            .Add(p => p.Module, module)
+            .Add(p => p.Changed, EventCallback.Factory.Create(this, () => changes++)));
+
+        cut.Find("input").Input(@"\\nas\share\AI");
+
+        cut.Find(".panel-hint.folder-check").TextContent.Should().Contain("Checking this folder");
+        cut.FindAll(".validation-error").Should().BeEmpty("a check under way is not a problem yet");
+        var changesWhileChecking = changes;
+
+        gate.Set();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".folder-check").Should().BeEmpty();
+            changes.Should().BeGreaterThan(changesWhileChecking);
+        }, TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task A_folder_that_never_answered_can_be_tried_again()
+    {
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        using var gate = new ManualResetEventSlim();
+        var calls = 0;
+        var module = await ModuleChecking(() =>
+        {
+            if (Interlocked.Increment(ref calls) == 1) gate.Wait(TimeSpan.FromSeconds(30));
+            return Fine;
+        }, checkLimit: TimeSpan.FromSeconds(2));
+        var cut = Render<InstallFolderPanel>(p => p.Add(x => x.Module, module));
+
+        cut.FindAll("button").Where(b => b.TextContent.Trim() == "Try again").Should().BeEmpty();
+        cut.Find("input").Input(@"\\nas\share\AI");
+
+        cut.WaitForAssertion(() => cut.Find(".validation-error").TextContent.Should().Contain("did not answer"), TimeSpan.FromSeconds(30));
+        cut.FindAll(".destination").Should().BeEmpty("nothing promises a folder Windows could not reach");
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Try again").Click();
+        gate.Set();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".validation-error").Should().BeEmpty();
+            cut.FindAll("button").Where(b => b.TextContent.Trim() == "Try again").Should().BeEmpty();
+            cut.FindAll(".destination").Should().HaveCount(1);
+        }, TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task An_answer_that_arrived_before_the_panel_listened_still_reaches_the_parent()
+    {
+        // The page reads Next while the check runs, then mounts this panel: an answer in between is
+        // announced to nobody, and Next would stay greyed on a good folder with nothing to say why.
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        using var gate = new ManualResetEventSlim();
+        var module = await ModuleChecking(() => { gate.Wait(TimeSpan.FromSeconds(30)); return Fine; });
+        module.TargetFolder = @"\\nas\share\AI";
+        gate.Set();
+        SpinWait.SpinUntil(() => !module.IsCheckingFolder, TimeSpan.FromSeconds(30)).Should().BeTrue();
+        var changes = 0;
+
+        Render<InstallFolderPanel>(parameters => parameters
+            .Add(p => p.Module, module)
+            .Add(p => p.Changed, EventCallback.Factory.Create(this, () => changes++)));
+
+        changes.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task A_panel_that_went_away_no_longer_listens_for_the_answer()
+    {
+        // A wizard kept for a side trip (#45) outlives its panel; the check it started runs on.
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        using var gate = new ManualResetEventSlim();
+        var module = await ModuleChecking(() => { gate.Wait(TimeSpan.FromSeconds(30)); return Fine; });
+        var cut = Render<InstallFolderPanel>(p => p.Add(x => x.Module, module));
+        cut.Find("input").Input(@"\\nas\share\AI");
+        var renders = cut.RenderCount;
+        var answered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await DisposeComponentsAsync();
+        module.FolderCheckAnswered += () => answered.TrySetResult();
+
+        gate.Set();
+        await answered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        cut.RenderCount.Should().Be(renders);
     }
 }

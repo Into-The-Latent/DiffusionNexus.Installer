@@ -24,11 +24,13 @@ public sealed class InstallFolderModule(
 {
     private WizardSelection? _selection;
 
-    // Validate() is called on every render, and the check touches the filesystem. Cached against
-    // the exact path it was computed for, so typing a folder name is not one directory enumeration
-    // per keystroke.
-    private string? _validatedPath;
-    private string? _validationError;
+    // Validate() is called on every render, so it only reads this: the check touches the filesystem,
+    // and an unreachable network path takes about 21 seconds to answer (#60). Started when the folder
+    // changes and replaced by the next one, so an answer about a folder the user has left is never read.
+    private Task<FolderAnswer>? _check;
+    private string? _checkedPath;
+
+    private sealed record FolderAnswer(string? Problem, bool TimedOut = false);
 
     public string Id => "install-folder";
     public WizardStage Stage => WizardStage.Location;
@@ -52,6 +54,7 @@ public sealed class InstallFolderModule(
             // Pushed eagerly, not only from Contribute: the Content stage scans the install folder
             // for models already on disk before Confirm ever runs ToOptions.
             if (_selection is not null) _selection.TargetFolder = Folder;
+            StartCheckIfNew();
         }
     }
 
@@ -74,13 +77,55 @@ public sealed class InstallFolderModule(
             ? null
             : RepositoryPaths.Resolve(_selection.Workload, Folder);
 
+    /// <summary>
+    /// How long a change of folder waits for the check. An ordinary folder answers well inside this, so
+    /// the render that follows already has the answer and no "checking" state flickers past.
+    /// </summary>
+    public TimeSpan AnswerWait { get; init; } = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>How long the check may take before the folder counts as a problem.</summary>
+    public TimeSpan CheckLimit { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>The folder in the box has no answer yet, so <see cref="Validate"/> holds Next back.</summary>
+    public bool IsCheckingFolder => _check is { IsCompleted: false };
+
+    /// <summary>The folder in the box did not answer within <see cref="CheckLimit"/>; <see cref="CheckFolderAgain"/> asks again.</summary>
+    public bool FolderCheckTimedOut => _check is { IsCompletedSuccessfully: true, Result.TimedOut: true };
+
+    /// <summary>The folder in the box has its answer, whatever it says.</summary>
+    public bool HasFolderAnswer => _check is { IsCompleted: true };
+
+    /// <summary>
+    /// The folder in the box got the answer it did not have when it changed. Raised off the page's
+    /// thread; never for an answer that was there in time for the next render.
+    /// </summary>
+    public event Action? FolderCheckAnswered;
+
+    /// <summary>The network drive may be back. Nothing else asks again: the folder in the box has not changed.</summary>
+    public void CheckFolderAgain()
+    {
+        _checkedPath = null;
+        StartCheckIfNew();
+    }
+
+    /// <summary>
+    /// The folder may have been emptied or filled during the trip, and the box has not changed. A
+    /// check that gets no answer says nothing new, so an earlier real answer stands.
+    /// </summary>
+    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
+    {
+        _checkedPath = null;
+        StartCheckIfNew(_check is { IsCompletedSuccessfully: true, Result.TimedOut: false } earlier ? earlier.Result : null);
+        return Task.CompletedTask;
+    }
+
     public bool AppliesTo(WizardSelection selection) => true;
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
         _selection = selection;
-        _validatedPath = null;
-        _validationError = null;
+        _check = null;
+        _checkedPath = null;
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         TargetFolder = user.DefaultTargetInstallFolder;
@@ -111,59 +156,104 @@ public sealed class InstallFolderModule(
         if (folder.Length == 0)
             return ModuleValidation.Error("Choose a folder to install into.");
 
+        if (ProblemFromTheTextAlone(folder) is { } problem)
+            return ModuleValidation.Error(problem);
+
+        if (_check is not { } check)
+            return ModuleValidation.Ok();
+
+        if (!check.IsCompleted)
+            return ModuleValidation.Error("Checking this folder...");
+
+        return check.Result.Problem is { } found
+            ? ModuleValidation.Error(found)
+            : ModuleValidation.Ok();
+    }
+
+    /// <summary>What can be refused without touching the disk.</summary>
+    private string? ProblemFromTheTextAlone(string folder)
+    {
         // Before any disk access: a relative folder installed under the app's working directory,
         // and a bare "\\nas" made the folder check wait on the network for it.
         if (FolderInput.InstallFolderProblem(folder) is { } problem)
-            return ModuleValidation.Error(problem);
+            return problem;
 
-        if (_selection is null)
-            return ModuleValidation.Ok();
+        if (_selection is null || !RepositoryPaths.EndsInRepositoryNameTwice(_selection.Workload, folder))
+            return null;
 
-        if (RepositoryPaths.EndsInRepositoryNameTwice(_selection.Workload, folder))
+        var install = RepositoryPaths.Resolve(_selection.Workload, folder);
+        return $"This folder is never created: the software installs one level up, into {install}. Choose {Path.GetDirectoryName(install)} instead.";
+    }
+
+    private void StartCheckIfNew(FolderAnswer? ifNoAnswer = null)
+    {
+        var folder = Folder;
+        if (string.Equals(_checkedPath, folder, StringComparison.Ordinal)) return;
+
+        _checkedPath = folder;
+        if (_selection is null || folder.Length == 0 || ProblemFromTheTextAlone(folder) is not null)
         {
-            var install = RepositoryPaths.Resolve(_selection.Workload, folder);
-            return ModuleValidation.Error(
-                $"This folder is never created: the software installs one level up, into {install}. Choose {Path.GetDirectoryName(install)} instead.");
+            _check = null;
+            return;
         }
 
-        if (!string.Equals(_validatedPath, folder, StringComparison.Ordinal))
-        {
-            _validatedPath = folder;
-            _validationError = CheckTargetFolder(folder);
-        }
+        // Not again while the last folder has no answer: typing under a server that does not answer is
+        // one new path per key, and waiting on each holds up every event behind it.
+        var slowAlready = _check is { IsCompleted: false };
+        var check = _check = AnswerWithinLimitAsync(folder, ifNoAnswer);
+        if (slowAlready || !check.Wait(AnswerWait)) _ = AnnounceAsync(check);
+    }
 
-        return _validationError is null
-            ? ModuleValidation.Ok()
-            : ModuleValidation.Error(_validationError);
+    private async Task<FolderAnswer> AnswerWithinLimitAsync(string folder, FolderAnswer? ifNoAnswer)
+    {
+        try
+        {
+            // Its own thread rather than the pool's: this blocks for as long as Windows takes, and one
+            // new path per keystroke would otherwise queue behind the ones still waiting.
+            var probe = Task.Factory.StartNew(() => CheckTargetFolder(folder),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            return new FolderAnswer(await probe.WaitAsync(CheckLimit).ConfigureAwait(false));
+        }
+        catch (TimeoutException)
+        {
+            // Not waited out and not adopted later: when Windows gives up on a computer that is off, it
+            // answers "no such folder", the same as for a folder still to be created.
+            return ifNoAnswer ?? new FolderAnswer(
+                $"Windows did not answer about this folder within {CheckLimit.TotalSeconds:0} seconds. If it is on a network drive, make sure the drive is on and try again, or choose another folder.",
+                TimedOut: true);
+        }
+        catch (Exception ex)
+        {
+            // A path the OS refuses to even look at is still a bad answer. Nobody awaits this but the
+            // page's next render, which a thrown answer would take down.
+            return new FolderAnswer($"That folder cannot be used: {ex.Message}");
+        }
+    }
+
+    private async Task AnnounceAsync(Task<FolderAnswer> check)
+    {
+        await check.ConfigureAwait(false);
+        if (ReferenceEquals(_check, check)) FolderCheckAnswered?.Invoke();
     }
 
     private string? CheckTargetFolder(string folder)
     {
-        try
-        {
-            // The validator appends the repository name itself, so it gets the folder that name is
-            // appended to by the pipeline too: "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and
-            // checking E:\AI\ComfyUI\ComfyUI instead let Next through onto a live installation.
-            var result = preInstallation.ValidateTargetFolder(
-                _selection!.Workload,
-                RepositoryPaths.NormalizedTarget(_selection.Workload, folder),
-                InstallationType.FullInstall);
+        // The validator appends the repository name itself, so it gets the folder that name is
+        // appended to by the pipeline too: "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and
+        // checking E:\AI\ComfyUI\ComfyUI instead let Next through onto a live installation.
+        var result = preInstallation.ValidateTargetFolder(
+            _selection!.Workload,
+            RepositoryPaths.NormalizedTarget(_selection.Workload, folder),
+            InstallationType.FullInstall);
 
-            if (result.CanProceed) return null;
+        if (result.CanProceed) return null;
 
-            // ShouldSuggestModelsNodesOnly is the SDK's "there is already an install here, offer to
-            // only add models/nodes to it" path. Slice 1 has no models-only mode to offer, so the
-            // honest answer is to name the folder and let the user pick another one rather than
-            // silently installing on top of a working installation.
-            var where = result.FullTargetPath ?? folder;
-            return result.ErrorMessage
-                ?? $"'{where}' already exists and is not empty. Choose an empty or new folder.";
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
-        {
-            // A path the OS refuses to even look at is still a bad answer, but the message should
-            // say so rather than take the wizard down.
-            return $"That folder cannot be used: {ex.Message}";
-        }
+        // ShouldSuggestModelsNodesOnly is the SDK's "there is already an install here, offer to
+        // only add models/nodes to it" path. Slice 1 has no models-only mode to offer, so the
+        // honest answer is to name the folder and let the user pick another one rather than
+        // silently installing on top of a working installation.
+        var where = result.FullTargetPath ?? folder;
+        return result.ErrorMessage
+            ?? $"'{where}' already exists and is not empty. Choose an empty or new folder.";
     }
 }

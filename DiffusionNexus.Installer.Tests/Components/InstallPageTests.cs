@@ -16,6 +16,7 @@ using DiffusionNexus.Installer.SDK.Services;
 using DiffusionNexus.Installer.SDK.Services.Hardware;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.SDK.Services.Settings;
+using DiffusionNexus.Installer.SDK.Shared;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
@@ -41,6 +42,9 @@ public class InstallPageTests : BunitContext
     private static readonly Guid WorkloadId = Guid.NewGuid();
 
     private readonly FakeCatalogProvenance _provenance = new(() => "Catalog v6 (Preview, 2df647e)");
+    private IPreInstallationService _preInstallation = new PreInstallationService();
+    private TimeSpan _folderAnswerWait = TimeSpan.FromSeconds(30);
+    private Mock<IUserSettingsRepository>? _registeredSettings;
 
     private static InstallationConfiguration Workload(string name = "Fooocus")
     {
@@ -56,7 +60,7 @@ public class InstallPageTests : BunitContext
     /// </summary>
     private Mock<IInstallSession> Register(params InstallationConfiguration[] workloads)
     {
-        var settings = new Mock<IUserSettingsRepository>();
+        var settings = _registeredSettings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings());
 
@@ -103,12 +107,75 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton<ICatalogProvenance>(_provenance);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
-            new InstallFolderModule(settings.Object, new PreInstallationService()),
+            new InstallFolderModule(settings.Object, _preInstallation) { AnswerWait = _folderAnswerWait },
             new ShortcutsModule(),
             new DisclaimerModule(),
         ]));
 
         return session;
+    }
+
+    [Fact]
+    public void Next_waits_for_a_folder_being_checked_while_the_page_stays_usable()
+    {
+        // #60. With the check back on the render, Input would wait the gate out and come back
+        // with Next already enabled, so the first assertion fails rather than the test hanging.
+        using var gate = new ManualResetEventSlim();
+        var check = new Mock<IPreInstallationService>();
+        check.Setup(c => c.ValidateTargetFolder(It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationType>()))
+            .Returns(() =>
+            {
+                gate.Wait(TimeSpan.FromSeconds(5));
+                return PreInstallationValidationResult.Success(@"\\nas\share\AI\Fooocus", false, false);
+            });
+        _preInstallation = check.Object;
+        _folderAnswerWait = TimeSpan.FromMilliseconds(10);
+        Register(Workload());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+
+        page.Find(".path-row input").Input(@"\\nas\share\AI");
+
+        page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+            .HasAttribute("disabled").Should().BeTrue("the folder has no answer yet");
+        page.Find(".folder-check").TextContent.Should().Contain("Checking this folder");
+
+        gate.Set();
+
+        page.WaitForAssertion(() =>
+        {
+            page.FindAll(".folder-check").Should().BeEmpty();
+            page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+                .HasAttribute("disabled").Should().BeFalse("the answer reaches the page that owns Next");
+        }, TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task A_click_on_Next_that_beat_the_folder_check_saves_nothing()
+    {
+        // The click left the browser while Next still looked enabled. Saving here would make a
+        // folder nobody has an answer for the one every later wizard opens with.
+        using var gate = new ManualResetEventSlim();
+        var check = new Mock<IPreInstallationService>();
+        check.Setup(c => c.ValidateTargetFolder(It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationType>()))
+            .Returns((InstallationConfiguration _, string folder, InstallationType _) =>
+            {
+                if (folder.StartsWith(@"\\", StringComparison.Ordinal)) gate.Wait(TimeSpan.FromSeconds(30));
+                return PreInstallationValidationResult.Success(folder, false, false);
+            });
+        _preInstallation = check.Object;
+        _folderAnswerWait = TimeSpan.FromMilliseconds(100);
+        Register(Workload());
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.Find(".path-row input").Input(@"E:\AI");
+        page.WaitForAssertion(() => page.FindAll("button").Single(b => b.TextContent.Trim() == "Next")
+            .HasAttribute("disabled").Should().BeFalse(), TimeSpan.FromSeconds(30));
+        var nextAsTheBrowserLastSawIt = page.FindAll("button").Single(b => b.TextContent.Trim() == "Next");
+
+        page.Find(".path-row input").Input(@"\\nas\share\AI");
+        await nextAsTheBrowserLastSawIt.ClickAsync(new MouseEventArgs());
+        gate.Set();
+
+        _registeredSettings!.Verify(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -544,10 +611,10 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton<ICatalogProvenance>(_provenance);
         Services.AddSingleton(new WizardModuleRegistry(() =>
         [
-            new InstallFolderModule(settings.Object, new PreInstallationService()),
+            new InstallFolderModule(settings.Object, new PreInstallationService()) { AnswerWait = TimeSpan.FromSeconds(30) },
             new ComfyFoldersModule(settings.Object),
             new VramProfileModule(),
-            new ModelSelectionModule(scanner.Object, estimator.Object),
+            new ModelSelectionModule(scanner.Object, estimator.Object) { ScanWait = TimeSpan.FromSeconds(30) },
             new WorkflowSelectionModule(),
             new ShortcutsModule(),
             new DisclaimerModule(),

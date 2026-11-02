@@ -29,7 +29,7 @@ public class ModelPreflightTests
             new ModelPresence(Vae.Id, vaePresent, vaePresent ? @"C:\AI\ComfyUI\models\vae\ae.safetensors" : null,
                 [new ModelFileTarget(Vae, Vae.Url, @"C:\AI\ComfyUI\models\vae", "ae.safetensors", vaePresent ? @"C:\AI\ComfyUI\models\vae\ae.safetensors" : null)]),
         ]);
-        var module = new ModelSelectionModule(scanner.Object, Mock.Of<IDiskSpaceEstimator>());
+        var module = new ModelSelectionModule(scanner.Object, Mock.Of<IDiskSpaceEstimator>()) { ScanWait = TimeSpan.FromSeconds(30) };
 
         var registry = new WizardModuleRegistry(() => [module]);
         var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = w, TargetFolder = @"C:\AI" });

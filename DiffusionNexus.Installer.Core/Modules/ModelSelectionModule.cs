@@ -58,6 +58,9 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
 
     public int SelectedCount => Rows.Count(r => r.IsSelected);
 
+    /// <summary>How long opening the wizard waits for the scan of a remembered folder.</summary>
+    public TimeSpan ScanWait { get; init; } = TimeSpan.FromMilliseconds(200);
+
     public DiskSpaceEstimate? Estimate { get; private set; }
     public string? EstimateError { get; private set; }
 
@@ -95,7 +98,12 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         LastScannedTier = -1;
         LastScannedFolder = null;
 
-        RefreshPresence();
+        // The remembered folder can be on a computer that is now off, where the first file check takes
+        // about 21 seconds (#60). A longer scan runs on and commits by itself; until it has, the panel
+        // finds the scan stale and starts its own.
+        var scan = Task.Factory.StartNew(RefreshPresence, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Task.WaitAny([scan], ScanWait);
+        if (scan.IsCompleted) scan.GetAwaiter().GetResult();
         return Task.CompletedTask;
     }
 

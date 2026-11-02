@@ -23,6 +23,11 @@ function New-ReleaseFixture {
     $f
 }
 
+# PowerShell's error view wraps a message at the console width, under a "|" gutter, so a sentence can
+# split anywhere. Where depends on the message's length, which can hold the machine's installed SDKs.
+# Colours off first: under CI's nested pwsh they sit between the line break and the gutter.
+function Join-WrappedError([string]$Text) { ($Text -replace '\x1b\[[0-9;]*m', '') -replace '\s*\n\s*\|\s*', ' ' }
+
 # -LeakedReleases sets DIFFUSIONNEXUS_CATALOG_RELEASES for the run, as a value left in a developer's
 # environment would; it is cleared otherwise.
 function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$NativeErrors, [string]$LeakedReleases) {
@@ -50,7 +55,7 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
         $exit = $LASTEXITCODE
         [pscustomobject]@{
             ExitCode       = $exit
-            Text           = ($output | ForEach-Object { "$_" }) -join "`n"
+            Text           = Join-WrappedError (($output | ForEach-Object { "$_" }) -join "`n")
             VersionWritten = (Get-Content -LiteralPath $props -Raw).Contains('<Version>9.9.9</Version>')
         }
     } finally {
@@ -62,6 +67,16 @@ function Invoke-NewRelease($Fixture, [string[]]$ExtraArgs = @(), [switch]$Native
         $env:NEWRELEASE_TEST_ALLOWOLDERCATALOG = $null
         $env:NEWRELEASE_TEST_RELEASES = $null
     }
+}
+
+Test-Case 'a sentence the error view wrapped still reads as one line' {
+    Assert-Equal (Join-WrappedError "Line |`n  176 |  throw`n     | Nothing was built or`r`n     | changed.`nStep 1") "Line |`n  176 |  throw Nothing was built or changed.`nStep 1" 'joined'
+}
+
+Test-Case 'a sentence the error view wrapped in colour reads as one line too' {
+    # CI's nested pwsh keeps the colours: the codes sit between the line break and the gutter.
+    $esc = [char]27
+    Assert-Equal (Join-WrappedError "${esc}[31;1mNothing was built or${esc}[0m`n${esc}[31;1m     | ${esc}[31;1mchanged.${esc}[0m") 'Nothing was built or changed.' 'joined'
 }
 
 Test-Case 'a .NET SDK in global.json that is not installed refuses before the version write' {

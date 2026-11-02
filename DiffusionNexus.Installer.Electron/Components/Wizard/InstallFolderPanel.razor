@@ -1,20 +1,30 @@
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Modules
+@implements IDisposable
 @inject IFolderPicker FolderPicker
 
 <section class="panel">
     <h2>Install location</h2>
     <p class="panel-hint">Where the software gets installed.</p>
-    @if (Module.Validate() is { IsValid: false, ErrorMessage: { } problem })
+    @if (Module.IsCheckingFolder)
+    {
+        <p class="panel-hint folder-check">Checking this folder...</p>
+    }
+    else if (Module.Validate() is { IsValid: false, ErrorMessage: { } problem })
     {
         @* Shown here, next to the box it is about; the page skips this module in its own list. *@
         <p class="validation-error">@problem</p>
+        @if (Module.FolderCheckTimedOut)
+        {
+            <button class="btn-secondary folder-retry" @onclick="TryAgain">Try again</button>
+        }
     }
     <div class="path-row">
-        <input type="text" value="@Module.TargetFolder" @oninput="OnFolderTyped" />
+        @* @bind, not value + @oninput: a render that falls behind the typing must not write the older text back. *@
+        <input type="text" @bind:get="Module.TargetFolder" @bind:set="OnFolderTyped" @bind:event="oninput" />
         <button class="btn-secondary" @onclick="Browse">Browse...</button>
     </div>
-    @if (Module.DestinationFolder is { } destination)
+    @if (!Module.FolderCheckTimedOut && Module.DestinationFolder is { } destination)
     {
         <p class="destination">Will be created: <code>@destination</code></p>
     }
@@ -30,9 +40,32 @@
     /// </summary>
     [Parameter] public EventCallback Changed { get; set; }
 
-    private async Task OnFolderTyped(ChangeEventArgs e)
+    protected override void OnInitialized() => Module.FolderCheckAnswered += OnFolderCheckAnswered;
+
+    // The page too: it owns Next, and Blazor re-renders only the component that owns a handler.
+    private void OnFolderCheckAnswered() => _ = InvokeAsync(async () =>
     {
-        Module.TargetFolder = e.Value?.ToString() ?? string.Empty;
+        await Changed.InvokeAsync();
+        StateHasChanged();
+    });
+
+    // The page reads Next before this panel exists: an answer in between was announced to nobody.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Module.HasFolderAnswer) await Changed.InvokeAsync();
+    }
+
+    public void Dispose() => Module.FolderCheckAnswered -= OnFolderCheckAnswered;
+
+    private async Task TryAgain()
+    {
+        Module.CheckFolderAgain();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnFolderTyped(string? folder)
+    {
+        Module.TargetFolder = folder ?? string.Empty;
         await Changed.InvokeAsync();
     }
 
