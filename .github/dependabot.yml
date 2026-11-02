@@ -1,0 +1,14 @@
+# global.json pins the .NET SDK with no roll-forward, so nothing else moves the runtime the app ships.
+# This asks for the bump when a patch ships. CI's notices check fails on that PR until they are regenerated.
+version: 2
+updates:
+  - package-ecosystem: dotnet-sdk
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
