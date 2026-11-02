@@ -2934,7 +2934,7 @@ license file is covered by the standard text of its declared license.
   MIT            cors 2.8.6
   MIT            dasherize 2.0.0
   MIT            debug 4.4.3
-  MIT            electron-updater 6.8.9
+  MIT            electron-updater 6.8.11
   MIT            engine.io 6.6.11
   MIT            engine.io-parser 5.2.3
   MIT            fs-extra 10.1.0
@@ -3501,7 +3501,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-### electron-updater 6.8.9 - MIT
+### electron-updater 6.8.11 - MIT
 Author: Vladimir Krivosheev
 Source: git+https://github.com/electron-userland/electron-builder.git
 
