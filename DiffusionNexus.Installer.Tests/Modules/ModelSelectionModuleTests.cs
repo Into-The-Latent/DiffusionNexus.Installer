@@ -39,7 +39,51 @@ public class ModelSelectionModuleTests
         new(m.Id, false, null, [new ModelFileTarget(m, m.Url, @"C:\AI\ComfyUI\models", "x", null)]);
 
     private static ModelSelectionModule Module(Mock<IModelPresenceScanner>? scanner = null, IDiskSpaceEstimator? estimator = null) =>
-        new((scanner ?? Scanner()).Object, estimator ?? Mock.Of<IDiskSpaceEstimator>());
+        new((scanner ?? Scanner()).Object, estimator ?? Mock.Of<IDiskSpaceEstimator>()) { ScanWait = TimeSpan.FromSeconds(30) };
+
+    // ----- #60: a folder that does not answer -----
+
+    [Fact]
+    public async Task A_folder_slow_to_scan_does_not_hold_up_opening_the_wizard()
+    {
+        // A remembered install folder on a NAS that is now off: the first file check takes about
+        // 21 seconds, and the wizard sat on "Preparing..." for all of it.
+        using var gate = new ManualResetEventSlim();
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns(() =>
+        {
+            gate.Wait(TimeSpan.FromSeconds(10));
+            return [Present(Vae, @"\\nas\share\ae.safetensors")];
+        });
+        var module = new ModelSelectionModule(scanner.Object, Mock.Of<IDiskSpaceEstimator>()) { ScanWait = TimeSpan.FromMilliseconds(10) };
+        var selection = Selection(Vae);
+        selection.TargetFolder = @"\\nas\share";
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        await module.InitializeAsync(selection);
+        watch.Stop();
+        var scannedInTime = module.LastScannedFolder;
+        gate.Set();
+
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
+        scannedInTime.Should().BeNull("the panel scans again when it finds the scan stale");
+        SpinWait.SpinUntil(() => module.LastScannedFolder is not null, TimeSpan.FromSeconds(10)).Should().BeTrue();
+        module.Rows.Single().IsExisting.Should().BeTrue("the late answer still counts");
+    }
+
+    [Fact]
+    public async Task A_scanner_that_fails_at_once_still_fails_the_initialization()
+    {
+        // As before the scan left this thread: moving it must not hide a failure.
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Throws(new InvalidOperationException("Scanner broke."));
+        var selection = Selection(Vae);
+        selection.TargetFolder = @"E:\AI";
+
+        var init = () => Module(scanner).InitializeAsync(selection);
+
+        await init.Should().ThrowAsync<InvalidOperationException>().WithMessage("Scanner broke.");
+    }
 
     // ----- #45: one module, two pages for a moment -----
 

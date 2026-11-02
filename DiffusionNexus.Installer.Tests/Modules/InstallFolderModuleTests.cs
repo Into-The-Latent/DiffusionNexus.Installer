@@ -26,7 +26,7 @@ public class InstallFolderModuleTests
         var settings = new Mock<IUserSettingsRepository>();
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserSettings { DefaultTargetInstallFolder = remembered });
-        var module = new InstallFolderModule(settings.Object, new PreInstallationService());
+        var module = new InstallFolderModule(settings.Object, new PreInstallationService()) { AnswerWait = TimeSpan.FromSeconds(30) };
         await module.InitializeAsync(selection);
         return module;
     }
@@ -91,7 +91,7 @@ public class InstallFolderModuleTests
         settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>())).ReturnsAsync(stored);
         settings.Setup(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((UserSettings u, CancellationToken _) => u);
-        var module = new InstallFolderModule(settings.Object, new PreInstallationService());
+        var module = new InstallFolderModule(settings.Object, new PreInstallationService()) { AnswerWait = TimeSpan.FromSeconds(30) };
         await module.InitializeAsync(Selection());
         module.TargetFolder = @"E:\Installer\9 ";
 
@@ -331,6 +331,44 @@ public class InstallFolderModuleTests
     }
 
     [Fact]
+    public async Task While_a_folder_has_no_answer_the_next_change_does_not_wait_again()
+    {
+        // Typing under a server that does not answer is one new path per key. Waiting on each held
+        // up every event behind it: renders fell behind the typing and clicks queued for seconds.
+        using var gate = new ManualResetEventSlim();
+        var module = await ModuleChecking(
+            FolderCheck(_ => { gate.Wait(TimeSpan.FromSeconds(30)); return Fine; }),
+            answerWait: TimeSpan.FromSeconds(2));
+        module.TargetFolder = Nas;
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        module.TargetFolder = Nas + "2";
+        watch.Stop();
+        gate.Set();
+
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Coming_back_from_a_side_trip_checks_the_folder_again()
+    {
+        // The refusal said the folder is not empty; the user emptied it in Explorer during a trip to
+        // Licences (#45). Nothing else would ask again, because the box has not changed.
+        var calls = 0;
+        var module = await ModuleChecking(
+            FolderCheck(_ => Interlocked.Increment(ref calls) == 1
+                ? Fine with { CanProceed = false, ErrorMessage = "Not empty." }
+                : Fine),
+            answerWait: TimeSpan.FromSeconds(30));
+        module.TargetFolder = @"E:\AI\Test2";
+        module.Validate().ErrorMessage.Should().Be("Not empty.");
+
+        await ((IWizardModule)module).RefreshAfterResumeAsync();
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task An_answer_for_a_folder_the_user_has_left_is_ignored()
     {
         using var gate = new ManualResetEventSlim();
@@ -343,9 +381,11 @@ public class InstallFolderModuleTests
             return Fine with { CanProceed = false, ErrorMessage = "The folder the user left." };
         }), answerWait: TimeSpan.FromSeconds(1));
         var announcements = 0;
+        var answered = Answered(module);
 
         module.TargetFolder = Nas;
         module.TargetFolder = OtherNas;
+        await answered;
         module.Validate().IsValid.Should().BeTrue("the folder in the box has its answer");
         module.FolderCheckAnswered += () => Interlocked.Increment(ref announcements);
 

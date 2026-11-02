@@ -184,6 +184,7 @@ public class InstallFolderPanelTests : BunitContext
         cut.Find("input").Input(@"\\nas\share\AI");
 
         cut.WaitForAssertion(() => cut.Find(".validation-error").TextContent.Should().Contain("did not answer"));
+        cut.FindAll(".destination").Should().BeEmpty("nothing promises a folder Windows could not reach");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Try again").Click();
         gate.Set();
 
@@ -191,6 +192,7 @@ public class InstallFolderPanelTests : BunitContext
         {
             cut.FindAll(".validation-error").Should().BeEmpty();
             cut.FindAll("button").Where(b => b.TextContent.Trim() == "Try again").Should().BeEmpty();
+            cut.FindAll(".destination").Should().HaveCount(1);
         });
     }
 

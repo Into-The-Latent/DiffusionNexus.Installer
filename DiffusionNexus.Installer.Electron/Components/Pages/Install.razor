@@ -331,6 +331,10 @@
         // prompt service throws opening a second mismatch dialog on top of the first.
         if (_preflightBusy || _savingSettings) return;
 
+        // A click that left the browser before the disabled state reached it (#60): the save below
+        // would make a folder without an answer the one every later wizard opens with.
+        if (!_run!.CanGoNext) return;
+
         // A notice about the previous stage's save must not follow the user any further.
         _settingsNotice = null;
 

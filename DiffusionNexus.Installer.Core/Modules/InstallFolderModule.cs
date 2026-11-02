@@ -117,6 +117,13 @@ public sealed class InstallFolderModule(
         TargetFolder = user.DefaultTargetInstallFolder;
     }
 
+    /// <summary>The folder may have been emptied or filled during the trip, and the box has not changed.</summary>
+    public Task RefreshAfterResumeAsync(CancellationToken ct = default)
+    {
+        CheckFolderAgain();
+        return Task.CompletedTask;
+    }
+
     public void Contribute(InstallationOptionsDraft draft)
     {
         // The target folder is not an InstallationOptions field — the orchestrator takes it as a
@@ -183,8 +190,11 @@ public sealed class InstallFolderModule(
             return;
         }
 
+        // Not again while the last folder has no answer: typing under a server that does not answer is
+        // one new path per key, and waiting on each holds up every event behind it.
+        var slowAlready = _check is { IsCompleted: false };
         var check = _check = AnswerWithinLimitAsync(folder);
-        if (!check.Wait(AnswerWait)) _ = AnnounceAsync(check);
+        if (slowAlready || !check.Wait(AnswerWait)) _ = AnnounceAsync(check);
     }
 
     private async Task<FolderAnswer> AnswerWithinLimitAsync(string folder)
