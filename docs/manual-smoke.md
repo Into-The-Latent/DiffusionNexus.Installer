@@ -326,7 +326,8 @@ Stable does not have or has in another version (publish one with the editor's **
 do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no catalog override.
 
 1. Follow Preview and apply its update, so the Catalog row on `/updates` reads "vP (Preview)".
-2. Pick **Stable**. **Expect:** "Checking the catalog…" with the radios greyed, then under the
+2. Pick **Stable**. **Expect:** "Checking the catalog…" with the radios greyed (it compares two local
+   folders, so it may flash by), then under the
    radios: "Stable is at vS. Switching removes **<name>** and changes N workflows. Software you
    have already installed is not affected." (only the parts that apply), the change list below
    it, and **Switch to Stable** / **Keep Preview**. The Stable dot is set, both radios and Check
@@ -341,8 +342,9 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
    **Apply catalog update** when Stable's release is newer and changes an installer workload.
    `catalog-preview\` beside it still holds vP. A workload the warning named as removed is gone from
    the gallery; a copy of it you installed earlier is untouched on disk.
-5. Disconnect the network and pick Preview. **Expect:** a warning if the two folders differ (it needs
-   no network); answer **Switch to Preview**. Then "The catalog check failed: …", and the Catalog row
+5. Disconnect the network and pick Preview. **Expect:** a warning if the switch removes or changes
+   something (it needs no network; additions alone ask nothing); answer **Switch to Preview**. Then
+   "The catalog check failed: …", and the Catalog row
    reads "vP (Preview)": the Preview folder from step 1 is read again, nothing is downloaded, and there
    is no "still from" line. The radios and **Check for updates** stay usable although the app check
    failed too.
@@ -381,12 +383,14 @@ do not Release it). A Release build, no `DIFFUSIONNEXUS_CATALOG_CHANNEL`, no cat
 10. A channel with no catalog on this PC, online: quit, delete `catalog-preview\`, launch on Stable and
     pick Preview. **Expect:** "Preview has no catalog on this PC yet. Switching downloads catalog vP.
     Software you have already installed is not affected." with the change list, **Switch to Preview**
-    and **Keep Stable**. The folder is still missing and the settings file still says Stable, also
+    and **Keep Stable**. If the release also removes or changes something, a second paragraph says so
+    and carries that last sentence. The folder is still missing and the settings file still says Stable, also
     with **Apply catalog updates automatically** on. **Keep Stable** leaves it all that way. Pick
     Preview again and press **Switch to Preview**. **Expect:** "Downloading catalog vP… NN%", then
     "Catalog updated to vP.", and `catalog-preview\` holds vP.
 11. With **Apply catalog updates automatically** on and a folder behind its release, switch to that
-    channel. **Expect:** after the check, the folder catches up without asking and the page lists what
+    channel (answer **Switch** if the switch asks: the setting does not answer that question).
+    **Expect:** after the check, the folder catches up without asking again and the page lists what
     changed.
 12. With an update offered on the channel you follow, pick the other channel so that a question opens,
     then leave `/updates` by **Back**. **Expect:** the top bar reads **Update Available**. Return to
@@ -437,7 +441,8 @@ app announces only changes to its own workloads (`workloadTarget` in the manifes
    list, no Apply button. Switch "Apply catalog updates automatically" on and relaunch.
    **Expect:** the startup check applies it anyway ("Catalog v6 applied automatically; no changes for
    the installer.", no list): the folder is shared, so it stays current for the other app.
-3. **The switch warning counts installer workloads only.** From Stable, pick Preview when Preview
+3. **The switch warning counts installer workloads only.** Turn the setting from step 2 off, since a
+   switch with it on brings a folder up to its release. From Stable, pick Preview when Preview
    differs from Stable only in the app's workloads. If `catalog-preview\` exists, **Expect:** no
    question; the Catalog row reads "v6 (Preview)". If it does not, **Expect:** "Preview has no catalog
    on this PC yet. Switching downloads catalog v6." with no warning about removals; press **Switch to
