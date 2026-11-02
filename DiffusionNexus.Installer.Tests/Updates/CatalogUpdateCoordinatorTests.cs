@@ -1289,15 +1289,32 @@ public sealed class CatalogUpdateCoordinatorTests : IDisposable
 
         saveGate.SetResult();
         await switching;
-        // The preview found the same content in the one folder, so the switch applies nothing: it returns
-        // under Checked with the read of the catalog now followed still running in the background, and a
-        // check that arrives meanwhile joins that read instead of starting (#53). Awaiting the joined task
-        // waits the read out, so the loop ends at the first check that runs; a refusal never runs one.
-        // A single check here failed whenever the read was slower than the test (always, run on its own).
-        for (var i = 0; i < 100 && _service.CheckCalls == 0; i++) await coordinator.CheckAsync();
+        await coordinator.CheckAsync();
 
         _service.CheckCalls.Should().Be(1);
         _options.Channel.Should().Be(CatalogChannel.Preview);
+    }
+
+    [Fact]
+    public async Task A_check_during_the_read_after_a_switch_that_applied_nothing_still_runs()
+    {
+        // The preview failed, so the switch applies nothing and reads the catalog now followed in the
+        // background (an extraction, when it seeds a channel folder). "Retry" clicked meanwhile has to
+        // check: the read runs none, and the page would go on showing the failed preview.
+        using var readGate = new ManualResetEventSlim();
+        _catalog.SetupGet(c => c.State).Returns(() => { readGate.Wait(); return new LocalCatalogState(); });
+        _service.NextPreview = channel => CatalogChecks.Outcome(CatalogUpdateOutcome.Failed, "offline") with { Channel = channel };
+        using var coordinator = Create();
+        await coordinator.SwitchChannelAsync(CatalogChannel.Preview);
+
+        var retry = coordinator.CheckAsync();
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checking, "the page shows the retry as running");
+        readGate.Set();
+        await retry;
+
+        _service.CheckCalls.Should().Be(1);
+        coordinator.Phase.Should().Be(CatalogUpdatePhase.Checked);
+        coordinator.LastCheck!.Outcome.Should().Be(CatalogUpdateOutcome.UpToDate);
     }
 
     [Fact]

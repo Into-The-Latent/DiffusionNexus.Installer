@@ -138,6 +138,7 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
     public Task CheckAsync(CancellationToken ct = default)
     {
         Task inFlight;
+        Task? readFirst = null;
         lock (_gate)
         {
             if (_switching || PendingSwitch is not null)
@@ -150,9 +151,15 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
                 // A running check is joined. A running apply is not: handing its task back would
                 // hold the caller ("Check for updates" sitting on "Checking...") for the length
                 // of the whole download -- the same trap ApplyAsync's refusals avoid below.
-                if (Phase != CatalogUpdatePhase.Applying) return _inFlight;
-                _logger.LogInformation("Catalog check refused: an apply is in progress");
-                return Task.CompletedTask;
+                if (Phase == CatalogUpdatePhase.Checking) return _inFlight;
+                if (Phase == CatalogUpdatePhase.Applying)
+                {
+                    _logger.LogInformation("Catalog check refused: an apply is in progress");
+                    return Task.CompletedTask;
+                }
+                // Neither: the read after a switch that applied nothing, which checks nothing. Joined,
+                // a "Retry" would end with no check run and the failed preview still on the page.
+                readFirst = _inFlight;
             }
             Phase = CatalogUpdatePhase.Checking;
             Progress = null;
@@ -162,16 +169,17 @@ public sealed class CatalogUpdateCoordinator : ICatalogUpdateCoordinator, IDispo
             // nobody has attempted since.
             LastApply = null;
             _applyAutomatic = false;
-            inFlight = _inFlight = Task.Run(() => CheckCoreAsync(ct), CancellationToken.None);
+            inFlight = _inFlight = Task.Run(() => CheckCoreAsync(readFirst, ct), CancellationToken.None);
         }
         Raise();
         return inFlight;
     }
 
-    private async Task CheckCoreAsync(CancellationToken ct)
+    private async Task CheckCoreAsync(Task? readFirst, CancellationToken ct)
     {
         try
         {
+            if (readFirst is not null) await readFirst.ConfigureAwait(false);
             await EnsureChannelAsync(ct).ConfigureAwait(false);
             _logger.LogInformation("Catalog update check started on {Channel}", Channel);
 
