@@ -10,6 +10,7 @@ using DiffusionNexus.Installer.SDK.Models.Enums;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
@@ -60,6 +61,92 @@ public class SoftwareWorkloadsPageTests : BunitContext
 
     private IRenderedComponent<SoftwareWorkloads> RenderFor(string software) =>
         Render<SoftwareWorkloads>(p => p.Add(x => x.Software, software));
+
+    private static InstallationConfiguration WithModel(InstallationConfiguration workload, bool enabled = true)
+    {
+        workload.ModelDownloads.Add(new ModelDownload { Name = "model", Enabled = enabled });
+        return workload;
+    }
+
+    private IRenderedComponent<SoftwareWorkloads> RenderModelsOnly() =>
+        Render<SoftwareWorkloads>(p => p.Add(x => x.Software, "ComfyUI").Add(x => x.Mode, WizardMode.ModelsOnly));
+
+    [Fact]
+    public void Models_only_hides_workloads_without_models()
+    {
+        Arrange(
+            WithModel(Workload(RepositoryType.ComfyUI, "Has one", WorkflowType.Image)),
+            WithModel(Workload(RepositoryType.ComfyUI, "All disabled", WorkflowType.Image), enabled: false),
+            Workload(RepositoryType.ComfyUI, "Blank ComfyUI", WorkflowType.Image));
+
+        var cut = RenderModelsOnly();
+
+        cut.WaitForAssertion(() => CardNames(cut).Should().Equal("Has one"));
+    }
+
+    [Fact]
+    public void Models_only_says_what_this_screen_is_for()
+    {
+        Arrange(WithModel(Workload(RepositoryType.ComfyUI, "Has one", WorkflowType.Image)));
+
+        var cut = RenderModelsOnly();
+
+        cut.WaitForAssertion(() => cut.Find(".workload-screen-head p").TextContent.Should().Be("Choose which workload's models you want to download."));
+        cut.Find(".workload-screen-back").GetAttribute("href").Should().Be("/existing");
+    }
+
+    [Fact]
+    public void Models_only_offers_workloads_a_fresh_install_blocks()
+    {
+        // No published wheel for this pairing: the fresh path disables the card. A download needs no wheel.
+        var blocked = WithModel(Workload(RepositoryType.ComfyUI, "Odd torch", WorkflowType.Image));
+        blocked.Torch = new TorchSettings { TorchVersion = "2.13.0", CudaVersion = "11.8" };
+        Arrange(blocked);
+
+        var cut = RenderModelsOnly();
+
+        cut.WaitForAssertion(() => cut.Find(".workload-card-install").TextContent.Trim().Should().Be("Download models"));
+        cut.FindAll(".workload-card-unavailable").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Models_only_button_goes_to_the_models_route()
+    {
+        var workload = WithModel(Workload(RepositoryType.ComfyUI, "Has one", WorkflowType.Image));
+        Arrange(workload);
+
+        var cut = RenderModelsOnly();
+        cut.WaitForAssertion(() => cut.Find(".workload-card-install").Click());
+
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"/existing/models/{workload.Id}");
+    }
+
+    [Fact]
+    public void Models_only_legacy_switch_hides_when_no_legacy_pack_has_models()
+    {
+        Arrange(
+            WithModel(Workload(RepositoryType.ComfyUI, "Current", WorkflowType.Image)),
+            Workload(RepositoryType.ComfyUI, "Old and blank", WorkflowType.Image, legacy: true));
+
+        var cut = RenderModelsOnly();
+
+        cut.WaitForAssertion(() => CardNames(cut).Should().Equal("Current"));
+        cut.FindAll("[data-role=show-legacy]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Fresh_workload_screen_is_unchanged()
+    {
+        var workload = Workload(RepositoryType.ComfyUI, "Blank ComfyUI", WorkflowType.Image);
+        Arrange(workload);
+
+        var cut = RenderFor("ComfyUI");
+
+        cut.WaitForAssertion(() => cut.Find(".workload-card-install").TextContent.Trim().Should().Be("Install"));
+        cut.Find(".workload-screen-back").GetAttribute("href").Should().Be("/");
+        cut.Find(".workload-card-install").Click();
+        Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"/install/{workload.Id}");
+    }
 
     [Fact]
     public void Lists_only_the_chosen_softwares_workloads()

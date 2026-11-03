@@ -27,6 +27,45 @@ public class ReturnTargetTests
     }
 
     [Fact]
+    public async Task A_kept_models_only_wizard_survives_its_own_route_being_remembered()
+    {
+        var workload = new Core.Wizard.WizardSelection
+        {
+            Workload = new SDK.Models.Configuration.InstallationConfiguration { Id = Guid.NewGuid() },
+            Mode = Core.Wizard.WizardMode.ModelsOnly
+        };
+        var plan = await new Core.Wizard.WizardModuleRegistry(() => []).BuildPlanAsync(workload);
+        var target = new ReturnTarget(new StubCatalogUpdateCoordinator())
+        {
+            WizardInProgress = new KeptWizard(new Core.Wizard.WizardRun(plan), false, 0)
+        };
+
+        target.Remember($"existing/models/{workload.Workload.Id}");
+        target.WizardInProgress.Should().NotBeNull("the wizard's own screen keeps it");
+
+        target.Remember("existing/models");
+        target.WizardInProgress.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_apply_does_not_move_the_way_back_to_a_models_only_report()
+    {
+        var workload = new Core.Wizard.WizardSelection
+        {
+            Workload = new SDK.Models.Configuration.InstallationConfiguration { Id = Guid.NewGuid() },
+            Mode = Core.Wizard.WizardMode.ModelsOnly
+        };
+        var plan = await new Core.Wizard.WizardModuleRegistry(() => []).BuildPlanAsync(workload);
+        var catalog = new StubCatalogUpdateCoordinator();
+        var target = new ReturnTarget(catalog) { InstallOnScreen = plan };
+        target.Remember($"existing/models/{workload.Workload.Id}");
+
+        catalog.ContentGeneration++;
+
+        target.Path.Should().Be($"/existing/models/{workload.Workload.Id}");
+    }
+
+    [Fact]
     public void Knows_whether_a_page_is_being_returned_to_or_arrived_at()
     {
         var target = new ReturnTarget(new StubCatalogUpdateCoordinator());

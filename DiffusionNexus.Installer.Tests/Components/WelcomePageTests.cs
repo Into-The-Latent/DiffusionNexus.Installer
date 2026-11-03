@@ -77,6 +77,34 @@ public class WelcomePageTests : BunitContext
     }
 
     [Fact]
+    public void One_new_tile_directly_after_ComfyUI()
+    {
+        Arrange(
+            Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"),
+            Workload(RepositoryType.ComfyUI, "Ideogram-4.0"),
+            Workload(RepositoryType.Fooocus, "Fooocus"));
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(3));
+        var tile = cut.FindAll(".software-card")[1];
+        tile.QuerySelector("a")!.GetAttribute("href").Should().Be("/existing");
+        tile.QuerySelector(".software-card-name")!.TextContent.Should().Be("Update ComfyUI or Download Models");
+        cut.FindAll("a[href='/existing']").Should().ContainSingle("the owner allows at most one new tile");
+    }
+
+    [Fact]
+    public void No_tile_without_ComfyUI()
+    {
+        Arrange(Workload(RepositoryType.Fooocus, "Fooocus"));
+
+        var cut = Render<Welcome>();
+
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().ContainSingle());
+        cut.FindAll("a[href='/existing']").Should().BeEmpty();
+    }
+
+    [Fact]
     public void Shows_the_banner_and_the_title()
     {
         Arrange(Workload(RepositoryType.ComfyUI, "Krea-2-Turbo"));
@@ -98,7 +126,7 @@ public class WelcomePageTests : BunitContext
 
         var cut = Render<Welcome>();
 
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(3, "ComfyUI, its Update or Download tile, Fooocus"));
         cut.Markup.Should().Contain("ComfyUI").And.Contain("Fooocus");
         cut.Markup.Should().NotContain("Automatic 1111", "no A1111 workload is in this catalog");
     }
@@ -216,7 +244,7 @@ public class WelcomePageTests : BunitContext
 
         var cut = Render<Welcome>();
 
-        cut.WaitForAssertion(() => cut.FindAll(".jukebox-track .software-card").Should().HaveCount(3));
+        cut.WaitForAssertion(() => cut.FindAll(".jukebox-track .software-card").Should().HaveCount(4));
         cut.FindAll(".software-grid").Should().BeEmpty("the grid is what wrapped");
         cut.FindAll(".jukebox-arrow").Should().HaveCount(2);
     }
@@ -494,16 +522,16 @@ public class WelcomePageTests : BunitContext
         Services.AddSingleton(new SoftwareGalleryBuilder(gallery));
 
         var cut = Render<Welcome>();
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
 
         // A re-render without new content does not read the catalog again.
         _signals.Catalog.RaiseChanged();
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
 
         _signals.Catalog.ContentGeneration = 1;
         _signals.Catalog.RaiseChanged();
 
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(3));
         cut.Markup.Should().Contain("Fooocus");
     }
 
@@ -526,14 +554,14 @@ public class WelcomePageTests : BunitContext
         var cut = Render<Welcome>();
         _signals.Catalog.ContentGeneration = 1;
         _signals.Catalog.RaiseChanged();
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(3));
 
         // The first read ends OnInitializedAsync, which renders once more: wait for that render.
         var renders = cut.RenderCount;
         await cut.InvokeAsync(() => first.SetResult([Workload(RepositoryType.ComfyUI, "Krea-2-Turbo")]));
         cut.WaitForState(() => cut.RenderCount > renders);
 
-        cut.FindAll(".software-card").Should().HaveCount(2);
+        cut.FindAll(".software-card").Should().HaveCount(3);
         cut.Markup.Should().Contain("Fooocus");
     }
 
@@ -554,14 +582,14 @@ public class WelcomePageTests : BunitContext
         var cut = Render<Welcome>();
         _signals.Catalog.ContentGeneration = 1;
         _signals.Catalog.RaiseChanged();
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(1));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
 
         var renders = cut.RenderCount;
         await cut.InvokeAsync(() => first.SetException(new IOException("catalog moved away mid-read")));
         cut.WaitForState(() => cut.RenderCount > renders);
 
         cut.FindAll(".gallery-error").Should().BeEmpty();
-        cut.FindAll(".software-card").Should().HaveCount(1);
+        cut.FindAll(".software-card").Should().HaveCount(2);
     }
 
     [Fact]

@@ -147,6 +147,9 @@
 @code {
     [Parameter] public Guid WorkloadId { get; set; }
 
+    /// <summary>Which path this wizard is on. The router never sets it: ModelsOnlyInstall does.</summary>
+    [Parameter] public WizardMode Mode { get; set; } = WizardMode.FreshInstall;
+
     private WizardRun? _run;
     private string? _busyWith;
 
@@ -191,7 +194,7 @@
             // A circuit reconnect rebuilds this component while the install keeps running in the
             // singleton session. Rejoin that run rather than starting the wizard over, which would
             // hide the install and reset the answers the user already gave.
-            if (running.Selection.Workload.Id == WorkloadId)
+            if (IsThisWizard(running))
             {
                 _run = new WizardRun(running, WizardStage.Install);
                 Return.InstallOnScreen = running;
@@ -214,7 +217,7 @@
         if (returning
             && Session.Plan is { } finished
             && ReferenceEquals(finished, onScreen)
-            && finished.Selection.Workload.Id == WorkloadId)
+            && IsThisWizard(finished))
         {
             _run = new WizardRun(finished, WizardStage.Install);
             Return.InstallOnScreen = finished;
@@ -229,7 +232,7 @@
         // rebuilt from the new content.
         if (returning
             && kept is { } left
-            && left.Run.Plan.Selection.Workload.Id == WorkloadId)
+            && IsThisWizard(left.Run.Plan))
         {
             _run = left.Run;
             _onlyWorkloadOfItsSoftware = left.OnlyWorkloadOfItsSoftware;
@@ -279,9 +282,9 @@
         var software = SoftwareGalleryBuilder
             .Group(Gallery.Build(workloads.Where(w => w.Repository.Type == workload.Repository.Type)))
             .SingleOrDefault();
-        _onlyWorkloadOfItsSoftware = software?.SingleWorkload?.Workload.Id == workload.Id;
+        _onlyWorkloadOfItsSoftware = Mode == WizardMode.FreshInstall && software?.SingleWorkload?.Workload.Id == workload.Id;
 
-        var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload, Catalog = catalog });
+        var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload, Catalog = catalog, Mode = Mode });
         WireShortcutPrompt(plan, Prompt, Session);
 
         _run = new WizardRun(plan);
@@ -291,6 +294,10 @@
         if (_pageCts.IsCancellationRequested) return;
         KeepWizard();
     }
+
+    // The same workload on the other path is another wizard, and must not rejoin this one's run.
+    private bool IsThisWizard(WizardPlan plan) =>
+        plan.Selection.Workload.Id == WorkloadId && plan.Selection.Mode == Mode;
 
     // What a side trip from here comes back to (#45). Cleared once the Install stage is reached,
     // where InstallOnScreen takes over, and by Done/Cancel.
@@ -452,7 +459,7 @@
     {
         if (Session.Plan is not { } running) return;
 
-        Nav.NavigateTo($"/install/{running.Selection.Workload.Id}");
+        Nav.NavigateTo(WizardRoutes.Install(running.Selection.Workload.Id, running.Selection.Mode));
     }
 
     private string AdvancedSubtitle() => _run!.CurrentStage == WizardStage.Content ? "models and workflows" : "more options";

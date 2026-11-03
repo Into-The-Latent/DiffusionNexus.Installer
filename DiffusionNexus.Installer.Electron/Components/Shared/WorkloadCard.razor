@@ -44,7 +44,7 @@
         @if (Entry.IsInstallable)
         {
             <button class="workload-card-install" type="button" @onclick="() => OnInstall.InvokeAsync(Entry)">
-                Install
+                @ActionLabel
             </button>
         }
         else
@@ -59,6 +59,9 @@
 
     /// <summary>Raised with this card's entry when the user chooses to install it.</summary>
     [Parameter] public EventCallback<GalleryEntry> OnInstall { get; set; }
+
+    /// <summary>What the button says.</summary>
+    [Parameter] public string ActionLabel { get; set; } = "Install";
 
     /// <summary>The catalog's own description, or null when it has none worth showing.</summary>
     private string? Description => string.IsNullOrWhiteSpace(Entry.Workload.Description)

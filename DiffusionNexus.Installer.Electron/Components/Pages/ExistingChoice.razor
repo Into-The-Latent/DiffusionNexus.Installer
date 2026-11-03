@@ -1,0 +1,29 @@
+@page "/existing"
+@using DiffusionNexus.Installer.Electron.Components.Shared
+
+<PageTitle>Easy Workload Installer - Into the Latent</PageTitle>
+
+<ScreenShell>
+    <div class="workload-screen">
+        <a class="workload-screen-back" href="/">&larr; All software</a>
+
+        <div class="workload-screen-head">
+            <h1>What do you want to do?</h1>
+            <p>Choose one. Nothing changes until you confirm at the end.</p>
+        </div>
+
+        <div class="choice-grid">
+            @* No anchor until the update path exists (#28), so there is nothing to click through to. *@
+            <div class="choice-card choice-card-disabled" data-role="update-card">
+                <h2>Update existing ComfyUI</h2>
+                <p>Updates your ComfyUI and adds a workload's custom nodes, models and workflows. You choose your ComfyUI folder and we check it.</p>
+                <p class="choice-soon">Coming soon</p>
+            </div>
+
+            <a class="choice-card" data-role="models-card" href="/existing/models">
+                <h2>Download models only</h2>
+                <p>Downloads a workload's models into any folder you choose. We don't check the folder, and nothing else is installed or changed.</p>
+            </a>
+        </div>
+    </div>
+</ScreenShell>
