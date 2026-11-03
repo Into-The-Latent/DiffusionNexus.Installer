@@ -1,5 +1,6 @@
 @page "/"
 @implements IAsyncDisposable
+@using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Electron.Components.Shared
@@ -354,7 +355,7 @@
     private static string? CardHref(SoftwareEntry software) => software.SingleWorkload switch
     {
         null => $"/software/{software.Type}",
-        { IsInstallable: true } only => $"/install/{only.Workload.Id}",
+        { IsInstallable: true } only => WizardRoutes.Install(only.Workload.Id, WizardMode.FreshInstall),
         _ => null
     };
 

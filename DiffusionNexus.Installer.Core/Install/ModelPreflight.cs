@@ -22,9 +22,9 @@ public interface IModelPreflight
 /// ToOptions carries them as ForceRedownloadUrls / TrustedUrls. Never a prompt per file, never
 /// mid-install. Dismissing the dialog refuses to proceed; a failing check warns and proceeds.
 /// <para>
-/// Not on models only. The dialog redownloads by default, which suits an install's own folder, where
-/// a wrong size usually means a partial file. In a folder the user chose it usually means a different
-/// file of that name, and that path overwrites nothing: the file stays and the report says it was found.
+/// No dialog on models only. It redownloads by default, which suits an install's own folder, where a
+/// wrong size usually means a partial file. In a folder the user chose it usually means a different
+/// file of that name, and that path overwrites nothing: the file stays and its report row warns.
 /// </para>
 /// </summary>
 public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedFilePrompt prompt) : IModelPreflight
@@ -34,7 +34,7 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         ArgumentNullException.ThrowIfNull(plan);
 
         var module = plan.AllModules.OfType<ModelSelectionModule>().FirstOrDefault();
-        if (module is null || plan.Selection.Mode == WizardMode.ModelsOnly) return new PreflightResult(true, null);
+        if (module is null) return new PreflightResult(true, null);
 
         // The folder may have changed since the Content stage rendered; scan against what Confirm
         // shows. Off the render thread: a large library on a slow disk must not freeze the window
@@ -66,6 +66,12 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         }
 
         if (mismatches.Count == 0) return new PreflightResult(true, null);
+
+        if (plan.Selection.Mode == WizardMode.ModelsOnly)
+        {
+            module.ApplyVerification([], mismatches.Select(m => m.Url));
+            return new PreflightResult(true, null);
+        }
 
         var resolution = await prompt.ResolveAsync(mismatches, ct).ConfigureAwait(false);
         if (resolution is null) return new PreflightResult(false, null);

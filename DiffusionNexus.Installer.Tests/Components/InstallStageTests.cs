@@ -97,6 +97,25 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task Models_only_shows_the_file_going_by_not_a_step_that_never_moves()
+    {
+        // One step means "Step 1 of 1" and an empty bar for hours.
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _session.SetupGet(s => s.Progress).Returns(new InstallationProgress { CurrentStep = InstallationStep.DownloadModels, StepIndex = 0, TotalSteps = 1, Message = "Downloading models" });
+        _session.SetupGet(s => s.CurrentDownload).Returns(new DownloadProgress
+        {
+            FileName = "ae.safetensors", BytesDownloaded = 25, TotalBytes = 100, IsActive = true
+        });
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.Markup.Should().NotContain("Step 1 of 1");
+        stage.Markup.Should().Contain("ae.safetensors");
+        stage.Find("progress").GetAttribute("value").Should().Be("25");
+    }
+
+    [Fact]
     public async Task Models_only_says_downloading_while_it_runs()
     {
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);

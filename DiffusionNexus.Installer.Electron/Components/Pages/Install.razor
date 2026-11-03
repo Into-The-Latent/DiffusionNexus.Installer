@@ -58,7 +58,7 @@
             <ol class="stage-strip">
                 @foreach (var stage in _run.Plan.Stages)
                 {
-                    <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@stage</li>
+                    <li class="@(stage == _run.CurrentStage ? "stage-current" : "stage")">@(stage == WizardStage.Install && Mode == WizardMode.ModelsOnly ? "Download" : stage.ToString())</li>
                 }
             </ol>
 
