@@ -67,6 +67,9 @@ public sealed class ExistingReviewModule : IWizardModule
                 !Directory.Exists(Path.Combine(profile.RepositoryPath!, "custom_nodes", PathNormalizer.GetRepositoryName(r.Url))));
             if (newNodes > 0) lines.Add($"Custom nodes: {newNodes} to add.");
 
+            if (_selection.Workload.SelectedLamaCppWheelId.HasValue)
+                lines.Add("llama.cpp: its package is installed, which also sets the versions of numpy and pillow.");
+
             lines.Add(profile.UpdateScript switch
             {
                 UpdateScriptState.Legacy => "Update script: the old one is replaced.",

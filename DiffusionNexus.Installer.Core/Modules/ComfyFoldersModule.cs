@@ -225,11 +225,12 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>Update path: continuing changes where this ComfyUI loads its models from.</summary>
     public bool ModelFolderDiffers =>
         _existing?.Profile is not null
-        && (!SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) || (UseModelLibraryFolder && (AdvancedEdited || MissingModelTypes.Count > 0)));
+        && (!SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) || (UseModelLibraryFolder && AdvancedEdited));
 
     /// <summary>
     /// Types this run's models go into that the install's yaml doesn't list. ComfyUI reads only what
     /// it lists under a base_path, so a model of such a type would land where nothing looks for it.
+    /// A warning only: rewriting the file would drop whatever else it holds.
     /// </summary>
     public IReadOnlyList<string> MissingModelTypes =>
         _existing?.Profile?.ModelFolderMappings is not { } mappings || !UseModelLibraryFolder || _selection is null
@@ -237,10 +238,22 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             : _selection.Workload.ModelDownloads
                 .Where(m => m.Enabled)
                 .Select(m => ModelDestinationType(m.Destination))
-                .Where(type => type is not null && _folderTypes.Any(r => r.Key.Equals(type, StringComparison.OrdinalIgnoreCase)) && !mappings.ContainsKey(type))
+                .Where(type => type is not null && _folderTypes.Any(r => r.Key.Equals(type, StringComparison.OrdinalIgnoreCase)) && Listed(mappings, type) is null)
                 .Select(type => type!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+    /// <summary>The folder the yaml gives a type, under either of the names ComfyUI reads it by.</summary>
+    private static string? Listed(IReadOnlyDictionary<string, string> mappings, string type) =>
+        mappings.GetValueOrDefault(type) ?? (OtherNames.TryGetValue(type, out var other) ? mappings.GetValueOrDefault(other) : null);
+
+    private static readonly Dictionary<string, string> OtherNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["diffusion_models"] = "unet",
+        ["unet"] = "diffusion_models",
+        ["text_encoders"] = "clip",
+        ["clip"] = "text_encoders",
+    };
 
     /// <summary>"vae" from "models/vae". Null for a destination with no type folder.</summary>
     private static string? ModelDestinationType(string? destination)
@@ -285,7 +298,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         // Its own type folders, so a model goes where this ComfyUI will look for it.
         foreach (var row in _folderTypes)
-            row.Value = profile.ModelFolderMappings?.GetValueOrDefault(row.Key) ?? row.Standard;
+            row.Value = (profile.ModelFolderMappings is { } mappings ? Listed(mappings, row.Key) : null) ?? row.Standard;
         _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
 
         SyncSelection();

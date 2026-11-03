@@ -190,7 +190,7 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     }
 
     [Fact]
-    public async Task A_type_the_yaml_does_not_list_gets_it_rewritten_so_comfyui_can_find_the_model()
+    public async Task A_type_the_yaml_does_not_list_warns_and_leaves_the_file_alone()
     {
         var module = await WithWorkloadAsync(WithModel("models/vae"), Profile() with
         {
@@ -201,9 +201,34 @@ public class ComfyFoldersUpdatePathTests : BunitContext
         module.Contribute(draft);
 
         module.MissingModelTypes.Should().Equal("vae");
-        draft.GenerateExtraModelPaths.Should().BeTrue();
-        Panel(module).Find("[data-role=model-differs]").TextContent.Should()
-            .Be("Your extra_model_paths.yaml doesn't list vae, so ComfyUI wouldn't find these models. Continuing rewrites that file; a backup is kept.");
+        draft.GenerateExtraModelPaths.Should().BeFalse("rewriting would drop whatever else the file holds");
+        Panel(module).Find("[data-role=model-missing-types]").TextContent.Should()
+            .Be("Your extra_model_paths.yaml doesn't list vae, so ComfyUI won't find these models there until you add it. We leave that file as it is.");
+    }
+
+    [Theory]
+    [InlineData("models/diffusion_models", "unet")]
+    [InlineData("models/text_encoders", "clip")]
+    [InlineData("models/clip", "text_encoders")]
+    public async Task ComfyUIs_other_name_for_a_type_counts_as_listing_it(string destination, string yamlKey)
+    {
+        var module = await WithWorkloadAsync(WithModel(destination), Profile() with
+        {
+            ModelFolderMappings = new Dictionary<string, string> { [yamlKey] = "models/" + yamlKey },
+        });
+
+        module.MissingModelTypes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_model_goes_where_the_yaml_says_under_its_other_name()
+    {
+        var (_, selection) = await ModuleAsync(Profile() with
+        {
+            ModelFolderMappings = new Dictionary<string, string> { ["unet"] = "models/unet" },
+        });
+
+        selection.FolderPathOverrides.Should().Contain("diffusion_models", "models/unet");
     }
 
     [Fact]

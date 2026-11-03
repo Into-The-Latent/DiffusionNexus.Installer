@@ -123,6 +123,25 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task Confirm_says_to_close_comfyui()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+
+        ReviewPanel(run).Find("[data-role=close-comfyui]").TextContent.Should().Contain("Close ComfyUI");
+    }
+
+    [Fact]
+    public async Task A_llama_workload_says_what_it_changes()
+    {
+        var a = Workload("A");
+        a.SelectedLamaCppWheelId = Guid.NewGuid();
+        var run = await UpdateRunAsync(false, new WorkloadChoice(a, 16));
+        run.Plan.Selection.Existing!.RunUpdate = false;
+
+        Review(run).Lines.Should().Contain(l => l.StartsWith("llama.cpp:") && l.Contains("numpy"));
+    }
+
+    [Fact]
     public async Task A_changed_answer_asks_again()
     {
         var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
