@@ -48,6 +48,31 @@ public sealed class ModelPresenceScannerTests : IDisposable
         new(workload, _repo, null, NoOverrides, 0, DownloadOnly: true, SortIntoSubfolders: sort);
 
     [Fact]
+    public void Models_only_flat_does_not_count_a_file_further_down()
+    {
+        // The run downloads it in that case, so the marker has to say it's missing.
+        var workload = Workload(Model("Vae", "models/vae", Link("https://h.invalid/a.safetensors")));
+        Touch(Path.Combine("backup", "old", "a.safetensors"));
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(workload, sort: false)).Single();
+
+        presence.AllPartsPresent.Should().BeFalse();
+        presence.Targets.Single().ExistingPath.Should().BeNull();
+    }
+
+    [Fact]
+    public void Models_only_sorted_counts_a_file_filed_below_its_subfolder()
+    {
+        var workload = Workload(Model("Vae", "models/vae", Link("https://h.invalid/a.safetensors")));
+        var file = Touch(Path.Combine("vae", "flux", "a.safetensors"));
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(workload, sort: true)).Single();
+
+        presence.AllPartsPresent.Should().BeTrue();
+        presence.ExistingPath.Should().Be(file);
+    }
+
+    [Fact]
     public void Models_only_sorted_looks_in_the_subfolder()
     {
         var workload = Workload(Model("Vae", "models/vae", Link("https://h.invalid/a.safetensors")));
