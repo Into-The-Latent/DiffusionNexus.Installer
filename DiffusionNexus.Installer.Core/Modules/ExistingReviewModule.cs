@@ -99,8 +99,7 @@ public sealed class ExistingReviewModule : IWizardModule
     public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
         _selection = selection;
-        Understood = false;
-        if (selection.Existing is { } run) run.Changed += () => Understood = false;
+        _ticked = null;
         return Task.CompletedTask;
     }
 

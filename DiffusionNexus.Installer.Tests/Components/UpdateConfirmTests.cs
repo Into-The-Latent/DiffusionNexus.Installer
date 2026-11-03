@@ -130,7 +130,7 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
 
         Review(run).Validate().ErrorMessage.Should().Contain("Checking your ComfyUI folder");
 
-        existing.Profile = Profile() with { PythonVersion = "3.13.0" };
+        existing.Profile = Profile() with { UpdateScript = UpdateScriptState.Current };
         check.SetResult();
 
         cut.WaitForAssertion(() =>
@@ -153,6 +153,33 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
         Review(run).Understood = true;
 
         Review(run).Validate().IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_answer_that_changes_nothing_on_the_list_keeps_the_tick()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+        Review(run).Understood = true;
+
+        run.Plan.Selection.Existing!.Profile = Profile() with { PythonVersion = "3.12.8" };
+
+        Review(run).Understood.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_node_installed_during_a_side_trip_comes_off_the_list_when_the_check_answers()
+    {
+        var a = Workload("A");
+        a.GitRepositories.Add(new GitRepository { Name = "Node", Url = "https://github.com/x/node.git" });
+        var run = await UpdateRunAsync(false, new WorkloadChoice(a, 16));
+        var existing = run.Plan.Selection.Existing!;
+        existing.Profile = Profile();
+        Review(run).Lines.Should().Contain("Custom nodes: 1 to add.");
+        Directory.CreateDirectory(Path.Combine(_repo, "custom_nodes", "node"));
+
+        existing.CheckedAgain();
+
+        Review(run).Lines.Should().NotContain(l => l.StartsWith("Custom nodes"));
     }
 
     [Fact]

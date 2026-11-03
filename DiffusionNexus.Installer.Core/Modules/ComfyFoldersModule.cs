@@ -81,7 +81,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
     private WizardSelection? _selection;
     private ExistingRun? _existing;
-    private string? _seededFrom;
+    private ExistingComfyUIProfile? _seededFrom;
     private UserSettings? _user;
     private bool _useModelLibraryFolder;
     private string _modelBaseFolder = string.Empty;
@@ -291,28 +291,42 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     public bool OffersOverwrite => _existing is null;
 
     /// <summary>
-    /// The panels start filled in from the install, each time another install is found there. Not
-    /// when the same one is checked again, as after a side trip: that would wipe what was typed.
+    /// The panels start filled in from the install, each time another install is found there. When
+    /// the same one is checked again, as after a side trip, only what nobody touched here follows the
+    /// files: what was typed stays, and a file edited during the trip must not read as a change to undo.
     /// </summary>
     private void SeedFromInstall()
     {
         if (_existing?.Profile is not { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository } profile
-            || SameFolder(repository, _seededFrom)) return;
+            || ReferenceEquals(profile, _seededFrom)) return;
 
-        _seededFrom = repository;
-        _useModelLibraryFolder = profile.ModelBaseFolder is not null;
-        _modelBaseFolder = profile.ModelBaseFolder ?? string.Empty;
-        UseOwnOutputFolder = profile.OutputFolder is not null;
-        OutputFolder = profile.OutputFolder ?? string.Empty;
+        var again = _seededFrom is not null && SameFolder(repository, _seededFrom.RepositoryPath);
 
-        // Its own type folders, so a model goes where this ComfyUI will look for it.
-        foreach (var row in _folderTypes)
-            row.Value = (profile.ModelFolderMappings is { } mappings ? Listed(mappings, row.Key) : null) ?? row.Standard;
-        _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
-        // A new list, not Clear: this runs on the folder check's thread, and a render may be walking the old one.
-        _additionalFolders = [];
-        _loadedAdditional = [];
+        if (!again || SameFolder(EffectiveOutputFolder, _seededFrom!.OutputFolder))
+        {
+            UseOwnOutputFolder = profile.OutputFolder is not null;
+            OutputFolder = profile.OutputFolder ?? string.Empty;
+        }
 
+        if (!again || (SameFolder(EffectiveModelBaseFolder, _seededFrom!.ModelBaseFolder) && !AdvancedEdited))
+        {
+            _useModelLibraryFolder = profile.ModelBaseFolder is not null;
+            _modelBaseFolder = profile.ModelBaseFolder ?? string.Empty;
+
+            // Its own type folders, so a model goes where this ComfyUI will look for it.
+            foreach (var row in _folderTypes)
+                row.Value = (profile.ModelFolderMappings is { } mappings ? Listed(mappings, row.Key) : null) ?? row.Standard;
+            _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (!again)
+        {
+            // A new list, not Clear: this runs on the folder check's thread, and a render may be walking the old one.
+            _additionalFolders = [];
+            _loadedAdditional = [];
+        }
+
+        _seededFrom = profile;
         SyncSelection();
     }
 

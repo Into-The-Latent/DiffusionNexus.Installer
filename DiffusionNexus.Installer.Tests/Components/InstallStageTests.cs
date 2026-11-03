@@ -170,6 +170,27 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_delivered_file_with_a_warning_leaves_the_download_complete()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("Downloaded 1 models, 0 already present, 0 skipped, 0 failed.", _folder));
+        _session.SetupGet(s => s.ReportRows).Returns(
+        [
+            new InstallReportEntry
+            {
+                PlannedOperation = "Model: First",
+                Category = InstallReportCategory.Model,
+                Outcome = InstallReportOutcome.Success,
+                Comment = "The host did not report a file size.",
+                IsWarning = true,
+            },
+        ]);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        Render<InstallStage>(p => p.Add(x => x.Run, run)).Find(".install-result h2").TextContent.Trim().Should().Be("Download complete");
+    }
+
+    [Fact]
     public async Task A_warning_about_something_other_than_a_model_leaves_the_download_complete()
     {
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);

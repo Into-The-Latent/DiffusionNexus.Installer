@@ -508,13 +508,30 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     }
 
     [Fact]
-    public async Task A_launcher_edited_during_a_side_trip_is_listed_too()
+    public async Task A_file_changed_during_a_side_trip_is_followed_when_nothing_was_typed()
     {
-        var (_, selection) = await ModuleAsync(Profile(output: null));
+        var (module, selection) = await ModuleAsync();
 
-        selection.Existing!.Profile = Profile(output: @"E:\AddedByHand");
+        selection.Existing!.Profile = Profile(output: @"E:\EditedOut", models: @"E:\EditedLib");
 
-        selection.Existing.FolderChangeLines.Should().ContainSingle().Which.Should().Contain("ComfyUI's own");
+        module.OutputFolder.Should().Be(@"E:\EditedOut");
+        module.ModelBaseFolder.Should().Be(@"E:\EditedLib");
+        module.OutputFolderDiffers.Should().BeFalse();
+        module.ModelFolderDiffers.Should().BeFalse("nobody asked for that file to be rewritten back");
+        selection.Existing.FolderChangeLines.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task What_was_typed_stays_when_the_other_folder_follows_the_file()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\Typed";
+
+        selection.Existing!.Profile = Profile(output: @"E:\EditedOut", models: @"E:\EditedLib");
+
+        module.OutputFolder.Should().Be(@"E:\Typed");
+        module.ModelBaseFolder.Should().Be(@"E:\EditedLib");
+        selection.Existing.FolderChangeLines.Should().ContainSingle().Which.Should().Contain(@"E:\Typed");
     }
 
     [Fact]

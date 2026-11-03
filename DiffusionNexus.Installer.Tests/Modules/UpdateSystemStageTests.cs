@@ -210,6 +210,32 @@ public class UpdateSystemStageTests : BunitContext
     }
 
     [Fact]
+    public async Task The_estimate_makes_no_room_when_torch_stays_and_only_accelerators_join_it()
+    {
+        var workload = Workload();
+        workload.Torch = new TorchSettings { TorchVersion = "2.8.0", CudaVersion = "12.8" };
+        workload.ModelDownloads.Add(new ModelDownload { Name = "m", Url = "https://h/m.safetensors" });
+        var union = ExtendConfigurationMerger.Union([new WorkloadChoice(workload, 0)]);
+        var selection = new WizardSelection { Workload = union.Configuration, Mode = WizardMode.UpdateExisting };
+        selection.Existing = new ExistingRun(selection, union, [workload], null);
+        DiskSpaceRequest? seen = null;
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DiskSpaceRequest, CancellationToken>((r, _) => seen = r)
+            .ReturnsAsync(Estimate());
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>())).Returns([]);
+        var module = new ModelSelectionModule(scanner.Object, estimator.Object) { ScanWait = TimeSpan.FromSeconds(30) };
+        await module.InitializeAsync(selection);
+        selection.Existing.Profile = Profile();
+
+        await module.RefreshEstimateAsync();
+
+        selection.Existing.UpgradeTorch.Should().BeTrue();
+        seen!.ModelsOnly.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task The_estimate_makes_room_for_torch_when_it_changes()
     {
         var workload = Workload();

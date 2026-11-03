@@ -188,7 +188,7 @@
 
     /// <summary>A kept file of another size or a name clash: a model may be missing, and "complete" would claim it isn't.</summary>
     private bool SomeDownloadsWarned(IReadOnlyList<InstallReportEntry> rows) =>
-        (ModelsOnly || Update) && rows.Any(r => r.IsWarning && r.Category == InstallReportCategory.Model);
+        (ModelsOnly || Update) && rows.Any(r => r.IsWarning && r.Category == InstallReportCategory.Model && r.Outcome == InstallReportOutcome.Skipped);
 
     private string? _startError;
     private string? _actionError;

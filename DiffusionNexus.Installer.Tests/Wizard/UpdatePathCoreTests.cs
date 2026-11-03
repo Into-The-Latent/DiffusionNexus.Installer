@@ -242,6 +242,18 @@ public class UpdatePathCoreTests
     }
 
     [Fact]
+    public void A_folder_that_can_no_longer_be_read_is_not_a_crash()
+    {
+        var (selection, run, _) = UpdateRun(Workload("A"));
+
+        run.Profile = new ExistingComfyUIProfile(@"Z:\NoSuchShare\ComfyUI", ExistingInstallSupport.Supported, @"Z:\NoSuchShare\ComfyUI", @"Z:\NoSuchShare\ComfyUI\venv", "3.12.7");
+
+        run.NewNodes.Should().BeEmpty();
+        run.HasModelPathsFile.Should().BeFalse();
+        selection.TargetFolder.Should().Be(@"Z:\NoSuchShare\ComfyUI");
+    }
+
+    [Fact]
     public void The_same_answer_again_changes_nothing()
     {
         var (_, run, _) = UpdateRun(Workload("A"));

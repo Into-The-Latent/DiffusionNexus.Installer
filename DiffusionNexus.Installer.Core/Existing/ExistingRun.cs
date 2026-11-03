@@ -25,6 +25,35 @@ public sealed class ExistingRun
     private bool _frozen;
     private Task _check = Task.CompletedTask;
     private readonly Lock _gate = new();
+    private FolderFacts _facts = FolderFacts.None;
+
+    /// <summary>What the rest of the run needs from the folder, read once per answer: it can be a share that takes 21 seconds to reply.</summary>
+    private sealed record FolderFacts(IReadOnlySet<string> NodeFolders, bool HasModelPathsFile)
+    {
+        public static readonly FolderFacts None = new(new HashSet<string>(), false);
+
+        public bool Same(FolderFacts other) =>
+            HasModelPathsFile == other.HasModelPathsFile && NodeFolders.SetEquals(other.NodeFolders);
+
+        public static FolderFacts Read(ExistingComfyUIProfile? profile)
+        {
+            if (profile is not { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository }) return None;
+
+            try
+            {
+                var nodes = Path.Combine(repository, "custom_nodes");
+                return new FolderFacts(
+                    Directory.Exists(nodes)
+                        ? Directory.EnumerateDirectories(nodes).Select(d => Path.GetFileName(d)).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                        : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                    File.Exists(Path.Combine(repository, "extra_model_paths.yaml")));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return None;
+            }
+        }
+    }
 
     /// <param name="selection">The selection this run writes to.</param>
     /// <param name="union">The chosen workloads, merged.</param>
@@ -50,9 +79,13 @@ public sealed class ExistingRun
         get => _profile;
         set
         {
-            if (_frozen) return;
-            _profile = value;
-            Follow();
+            // Outside the lock, so a click on the page doesn't wait behind a slow folder.
+            var facts = FolderFacts.Read(value);
+            Answer(() =>
+            {
+                _profile = value;
+                _facts = facts;
+            });
         }
     }
 
@@ -62,9 +95,7 @@ public sealed class ExistingRun
         get => _runUpdate;
         set
         {
-            if (_frozen || _runUpdate == value) return;
-            _runUpdate = value;
-            Follow();
+            if (_runUpdate != value) Answer(() => _runUpdate = value);
         }
     }
 
@@ -74,9 +105,7 @@ public sealed class ExistingRun
         get => _gpuUsable;
         set
         {
-            if (_frozen || _gpuUsable == value) return;
-            _gpuUsable = value;
-            Follow();
+            if (_gpuUsable != value) Answer(() => _gpuUsable = value);
         }
     }
 
@@ -119,33 +148,50 @@ public sealed class ExistingRun
     /// The install has started on what the selection says now. A check that answers later, like the
     /// one a side trip starts, must not rewrite the workload under it.
     /// </summary>
-    public void Freeze() => _frozen = true;
-
-    private void Follow()
+    public void Freeze()
     {
-        // The folder check answers off the page's thread, and Target and Workload must describe one answer.
+        lock (_gate) _frozen = true;
+    }
+
+    /// <summary>A check found the same install: the profile holds no node list, so those are read again.</summary>
+    public void CheckedAgain()
+    {
+        var facts = FolderFacts.Read(_profile);
+        if (!facts.Same(_facts)) Answer(() => _facts = facts);
+    }
+
+    /// <summary>The folder check answers off the page's thread, and Target and Workload must describe one answer.</summary>
+    private void Answer(Action change)
+    {
         lock (_gate)
         {
-            if (_profile is { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository })
-            {
-                Target = ExtendTargetResolver.Resolve(_profile, _packs);
-                _selection.TargetFolder = repository;
-                _selection.Workload = ExtendConfigurationMerger.ForExistingInstall(_union, _profile, Target, UpgradeTorch, _manager);
-                NewNodes = _selection.Workload.GitRepositories
-                    .Where(r => !Directory.Exists(Path.Combine(repository, "custom_nodes", PathNormalizer.GetRepositoryName(r.Url))))
-                    .ToList();
-                HasModelPathsFile = File.Exists(Path.Combine(repository, "extra_model_paths.yaml"));
-            }
-            else
-            {
-                Target = null;
-                _selection.TargetFolder = string.Empty;
-                _selection.Workload = _union.Configuration;
-                NewNodes = [];
-                HasModelPathsFile = false;
-            }
+            if (_frozen) return;
+
+            change();
+            Follow();
         }
 
         Changed?.Invoke();
+    }
+
+    private void Follow()
+    {
+        if (_profile is { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository } profile)
+        {
+            Target = ExtendTargetResolver.Resolve(profile, _packs);
+            _selection.TargetFolder = repository;
+            _selection.Workload = ExtendConfigurationMerger.ForExistingInstall(_union, profile, Target, UpgradeTorch, _manager);
+        }
+        else
+        {
+            Target = null;
+            _selection.TargetFolder = string.Empty;
+            _selection.Workload = _union.Configuration;
+        }
+
+        NewNodes = _profile is null ? [] : _selection.Workload.GitRepositories
+            .Where(r => !_facts.NodeFolders.Contains(PathNormalizer.GetRepositoryName(r.Url)))
+            .ToList();
+        HasModelPathsFile = _facts.HasModelPathsFile;
     }
 }

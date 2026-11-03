@@ -155,6 +155,7 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
                 if (token.IsCancellationRequested) return;
                 _checkFailure = failure;
                 if (!SameAnswer(run.Profile, profile)) run.Profile = profile;
+                else run.CheckedAgain();
             }
         });
         run.Checking(_check);
