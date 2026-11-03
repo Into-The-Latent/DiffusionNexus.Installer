@@ -369,7 +369,7 @@ public class ComfyFoldersUpdatePathTests : BunitContext
         module.ModelBaseFolder = @"E:\NewLib";
 
         Panel(module).Find("[data-role=model-differs]").TextContent
-            .Should().Be(@"Your ComfyUI currently loads models from E:\Lib (extra_model_paths.yaml). Continuing rewrites that file; a backup is kept.");
+            .Should().Be(@"Your ComfyUI currently loads models from E:\Lib (extra_model_paths.yaml). Continuing rewrites that file, and anything else in it stops applying; a backup is kept.");
     }
 
     [Fact]
@@ -412,6 +412,31 @@ public class ComfyFoldersUpdatePathTests : BunitContext
         selection.Existing!.Profile = Profile(output: @"F:\TheirOut", folder: @"F:\ComfyUI");
 
         module.OutputFolder.Should().Be(@"F:\TheirOut");
+    }
+
+    [Fact]
+    public async Task Another_install_does_not_inherit_an_additional_folder()
+    {
+        var (module, selection) = await ModuleAsync();
+        var row = module.AddAdditionalFolder();
+        row.BaseName = "extra";
+        row.MapsTo = @"E:\Extra";
+
+        selection.Existing!.Profile = Profile(folder: @"F:\ComfyUI", models: @"F:\Lib");
+
+        module.AdditionalFolders.Should().BeEmpty();
+        module.ModelFolderDiffers.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_folder_with_a_space_and_hash_is_refused_once_the_file_gets_rewritten()
+    {
+        var (module, _) = await ModuleAsync(Profile(models: @"D:\AI #2\Models"));
+        module.ModelFolderProblem.Should().BeNull("nothing rewrites the file yet");
+
+        module.SetFolderType("loras", "Lora");
+
+        module.ModelFolderProblem.Should().Contain("space followed by #");
     }
 
     [Fact]

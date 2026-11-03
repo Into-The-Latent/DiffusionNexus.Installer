@@ -55,6 +55,39 @@ public class ModelSelectionPanelTests : BunitContext
             .Add(x => x.Changed, EventCallback.Factory.Create(this, () => onChanged?.Invoke())));
 
     [Fact]
+    public async Task The_update_checkbox_moves_the_estimate()
+    {
+        var workload = new InstallationConfiguration
+        {
+            Name = "A",
+            Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI },
+            Torch = new TorchSettings { TorchVersion = "2.11.0", CudaVersion = "13.0" },
+            Python = new PythonEnvironmentSettings { PythonVersion = "3.12" },
+        };
+        workload.ModelDownloads.Add(Vae);
+        var union = SDK.Services.Installation.Existing.ExtendConfigurationMerger.Union([new SDK.Services.Installation.Existing.WorkloadChoice(workload, 0)]);
+        var selection = new WizardSelection { Workload = union.Configuration, Mode = WizardMode.UpdateExisting };
+        selection.Existing = new Core.Existing.ExistingRun(selection, union, [workload], null);
+        var seen = new System.Collections.Concurrent.ConcurrentQueue<bool>();
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DiskSpaceRequest, CancellationToken>((r, _) => seen.Enqueue(r.ModelsOnly))
+            .ReturnsAsync(new DiskSpaceEstimate(1, 2, true, []));
+        var module = new ModelSelectionModule(Scanner(false).Object, estimator.Object) { ScanWait = TimeSpan.FromSeconds(30) };
+        await module.InitializeAsync(selection);
+        selection.Existing.Profile = new SDK.Services.Installation.Existing.ExistingComfyUIProfile(
+            @"E:\C", SDK.Services.Installation.Existing.ExistingInstallSupport.Supported, @"E:\C", @"E:\C\venv", "3.12.7",
+            new SDK.Services.Installation.Existing.InstalledTorchStack("2.8.0", "12.8", false, false), ManagerInstalled: true);
+        var cut = RenderPanel(module, selection);
+        cut.WaitForAssertion(() => seen.Should().Contain(false));
+
+        selection.Existing.RunUpdate = false;
+        cut.Render();
+
+        cut.WaitForAssertion(() => seen.Should().Contain(true));
+    }
+
+    [Fact]
     public async Task A_panel_whose_page_left_finishes_its_scan_and_does_nothing_further()
     {
         // #45 shares the module with the page that left. Resumed elsewhere while this panel's scan was

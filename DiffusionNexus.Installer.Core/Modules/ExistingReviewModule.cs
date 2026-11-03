@@ -28,7 +28,8 @@ public sealed class ExistingReviewModule : IWizardModule
 
     public bool Understood { get; set; }
 
-    private ExistingRun? Run => _selection?.Existing;
+    /// <summary>The run this confirms, whose checks the panel follows.</summary>
+    public ExistingRun? Run => _selection?.Existing;
 
     public bool RunUpdate => _selection?.UpdateOnly == true || Run?.RunUpdate == true;
 
@@ -48,7 +49,8 @@ public sealed class ExistingReviewModule : IWizardModule
     {
         get
         {
-            if (Run is not { Profile: { } profile }) return [];
+            // A folder that stopped being usable has no repository path. Validate says what happened.
+            if (Run is not { Profile: { Support: ExistingInstallSupport.Supported } profile }) return [];
 
             var channel = ComfyUpdateModule.ChannelText(profile);
             var lines = new List<string>
@@ -95,6 +97,8 @@ public sealed class ExistingReviewModule : IWizardModule
 
     public ModuleValidation Validate()
     {
+        if (Run is { IsChecking: true }) return ModuleValidation.Error("Checking your ComfyUI folder again...");
+
         // Checked again here: coming back from a side trip looks at the install again.
         if (Run is { Profile: not { Support: ExistingInstallSupport.Supported } })
             return ModuleValidation.Error("This ComfyUI folder can't be used any more. Go back to Location and check it.");

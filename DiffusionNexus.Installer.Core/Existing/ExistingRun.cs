@@ -22,6 +22,7 @@ public sealed class ExistingRun
     private bool _runUpdate = true;
     private bool _gpuUsable = true;
     private bool _frozen;
+    private Task _check = Task.CompletedTask;
 
     /// <param name="selection">The selection this run writes to.</param>
     /// <param name="union">The chosen workloads, merged.</param>
@@ -59,7 +60,7 @@ public sealed class ExistingRun
         get => _runUpdate;
         set
         {
-            if (_frozen) return;
+            if (_frozen || _runUpdate == value) return;
             _runUpdate = value;
             Follow();
         }
@@ -71,7 +72,7 @@ public sealed class ExistingRun
         get => _gpuUsable;
         set
         {
-            if (_frozen) return;
+            if (_frozen || _gpuUsable == value) return;
             _gpuUsable = value;
             Follow();
         }
@@ -86,6 +87,19 @@ public sealed class ExistingRun
     /// <summary>Why torch can't change, when it was going to. Unticking the update clears it.</summary>
     public IReadOnlyList<string> TorchHardStop =>
         UpgradeTorch ? Target!.Compatibility.Errors.Select(e => e.Message).ToList() : [];
+
+    /// <summary>The folder is being checked, so what Confirm lists may be about to change.</summary>
+    public bool IsChecking => !_check.IsCompleted;
+
+    /// <summary>A check ended. Raised off the page's thread.</summary>
+    public event Action? CheckAnswered;
+
+    /// <summary>The check running now. The answer itself arrives through <see cref="Profile"/>.</summary>
+    public void Checking(Task check)
+    {
+        _check = check;
+        _ = check.ContinueWith(_ => CheckAnswered?.Invoke(), TaskScheduler.Default);
+    }
 
     /// <summary>What the folder panels will change in this install, as Confirm lists it.</summary>
     public IReadOnlyList<string> FolderChangeLines { get; private set; } = [];

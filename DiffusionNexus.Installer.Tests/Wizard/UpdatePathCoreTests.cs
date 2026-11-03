@@ -244,6 +244,20 @@ public class UpdatePathCoreTests
     }
 
     [Fact]
+    public void The_same_answer_again_changes_nothing()
+    {
+        var (_, run, _) = UpdateRun(Workload("A"));
+        run.Profile = Profile();
+        var announced = 0;
+        run.Changed += () => announced++;
+
+        run.GpuUsable = true;
+        run.RunUpdate = true;
+
+        announced.Should().Be(0);
+    }
+
+    [Fact]
     public void Every_change_is_announced()
     {
         var (_, run, _) = UpdateRun(Workload("A"));

@@ -101,6 +101,46 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_folder_that_stopped_being_usable_renders_its_message_not_a_crash()
+    {
+        var a = Workload("A");
+        a.GitRepositories.Add(new GitRepository { Name = "Node", Url = "https://github.com/x/node.git" });
+        var run = await UpdateRunAsync(false, new WorkloadChoice(a, 16));
+
+        run.Plan.Selection.Existing!.Profile = new ExistingComfyUIProfile(_repo, ExistingInstallSupport.NoVenv);
+
+        Review(run).Lines.Should().BeEmpty();
+        ReviewPanel(run);
+    }
+
+    [Fact]
+    public async Task Confirm_waits_for_the_check_a_side_trip_started_and_shows_its_answer()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+        var existing = run.Plan.Selection.Existing!;
+        var check = new TaskCompletionSource();
+        var refreshes = 0;
+        var cut = Render<ExistingReviewPanel>(p => p
+            .Add(x => x.Module, Review(run))
+            .Add(x => x.Changed, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => refreshes++)));
+        cut.Find("[data-role=understood]").Change(true);
+        refreshes = 0;
+
+        existing.Checking(check.Task);
+
+        Review(run).Validate().ErrorMessage.Should().Contain("Checking your ComfyUI folder");
+
+        existing.Profile = Profile() with { PythonVersion = "3.13.0" };
+        check.SetResult();
+
+        cut.WaitForAssertion(() =>
+        {
+            refreshes.Should().BePositive("the page owns the Start button");
+            cut.Find("[data-role=understood]").HasAttribute("checked").Should().BeFalse();
+        });
+    }
+
+    [Fact]
     public async Task Only_a_new_accelerator_does_not_claim_torch_changes()
     {
         var a = Workload("A", torch: "2.8.0");

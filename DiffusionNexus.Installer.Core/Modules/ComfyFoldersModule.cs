@@ -310,6 +310,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         foreach (var row in _folderTypes)
             row.Value = (profile.ModelFolderMappings is { } mappings ? Listed(mappings, row.Key) : null) ?? row.Standard;
         _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+        _additionalFolders.Clear();
+        _loadedAdditional = [];
 
         SyncSelection();
     }
@@ -464,7 +466,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         if (EffectiveModelBaseFolder is { } model && ModelFolderDiffers)
             lines.Add(HasModelPathsFile
-                ? $"Model folder: extra_model_paths.yaml is rewritten to read {model}, and a backup is kept."
+                ? $"Model folder: extra_model_paths.yaml is rewritten to read {model}, and anything else in it stops applying. A backup is kept."
                 : $"Model folder: an extra_model_paths.yaml is added to read {model}.");
 
         return lines;
@@ -515,7 +517,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// YAML reads a space followed by # as the start of a comment, so "D:\AI #2\Models" would send
     /// ComfyUI to D:/AI -- refused until the SDK quotes the value.
     /// </summary>
-    public string? ModelFolderProblem => _existing is not null && EffectiveModelBaseFolder is not null && SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) ? null : FolderProblem(
+    public string? ModelFolderProblem => _existing is not null && EffectiveModelBaseFolder is not null && !ModelFolderDiffers ? null : FolderProblem(
         UseModelLibraryFolder, _modelBaseFolder,
         blank: "Choose your model library folder, or turn off \"Use my own model folder\".",
         notFull: @"Enter the full path of your model library, for example D:\Models.",

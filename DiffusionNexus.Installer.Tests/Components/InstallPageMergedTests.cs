@@ -249,6 +249,20 @@ public class InstallPageMergedTests : BunitContext
     }
 
     [Fact]
+    public async Task Show_the_running_update_rejoins_it_even_after_other_picks()
+    {
+        var picks = new[] { new WorkloadPick(_a.Id, 16), new WorkloadPick(_b.Id, 16) };
+        await RunningUpdateOf(Core.Existing.MergedSelections.ForPicks(WizardMode.UpdateExisting, picks, [_a, _b], null)!);
+        _picks.Set(WizardMode.UpdateExisting, [new WorkloadPick(_a.Id, 24)]);
+        var cut = Render<InstallPage>(p => p.Add(x => x.Mode, WizardMode.UpdateExisting).Add(x => x.Selected, true));
+
+        cut.FindAll("button").Single(b => b.TextContent == "Show the running update").Click();
+
+        cut.FindAll(".panel-warning").Should().BeEmpty();
+        _picks.Get(WizardMode.UpdateExisting).Should().Equal(picks);
+    }
+
+    [Fact]
     public async Task The_same_picks_rejoin_a_running_update()
     {
         await RunningUpdateOf(Core.Existing.MergedSelections.ForPicks(WizardMode.UpdateExisting, [new WorkloadPick(_a.Id, 16), new WorkloadPick(_b.Id, 16)], [_a, _b], null)!);

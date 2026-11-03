@@ -150,7 +150,7 @@ else
     {
         (null, true) when Module.HasModelPathsFile =>
             "Your ComfyUI has an extra_model_paths.yaml. Continuing rewrites that file, and anything else in it stops applying; a backup is kept.",
-        ({ } current, true) => $"Your ComfyUI currently loads models from {current} (extra_model_paths.yaml). Continuing rewrites that file; a backup is kept.",
+        ({ } current, true) => $"Your ComfyUI currently loads models from {current} (extra_model_paths.yaml). Continuing rewrites that file, and anything else in it stops applying; a backup is kept.",
         ({ } current, false) => $"Your ComfyUI also loads models from {current} (extra_model_paths.yaml). That file stays, and new models go to ComfyUI's own models folder.",
         _ => "Your ComfyUI loads models from its own folder today. Continuing adds an extra_model_paths.yaml.",
     };

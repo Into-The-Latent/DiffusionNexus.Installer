@@ -122,6 +122,7 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
         if (ShapeProblem is not null)
         {
             _check = Task.CompletedTask;
+            run.Checking(_check);
             return;
         }
 
@@ -152,6 +153,7 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
                 if (!SameAnswer(run.Profile, profile)) run.Profile = profile;
             }
         });
+        run.Checking(_check);
         _ = _check.ContinueWith(t => FolderCheckAnswered?.Invoke(), TaskScheduler.Default);
     }
 

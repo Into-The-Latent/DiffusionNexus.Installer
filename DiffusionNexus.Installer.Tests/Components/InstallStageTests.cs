@@ -170,6 +170,30 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_warning_about_something_other_than_a_model_leaves_the_download_complete()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("Downloaded 1 models, 0 already present, 0 skipped, 0 failed.", _folder));
+        _session.SetupGet(s => s.ReportRows).Returns(
+        [
+            new InstallReportEntry
+            {
+                PlannedOperation = "Catalog: could not be read",
+                Category = InstallReportCategory.Step,
+                Outcome = InstallReportOutcome.Skipped,
+                Comment = "The catalog state file is locked.",
+                IsWarning = true,
+            },
+        ]);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var heading = Render<InstallStage>(p => p.Add(x => x.Run, run)).Find(".install-result h2");
+
+        heading.TextContent.Trim().Should().Be("Download complete");
+        heading.ClassList.Should().Contain("result-ok");
+    }
+
+    [Fact]
     public async Task Models_only_says_downloading_while_it_runs()
     {
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);

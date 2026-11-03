@@ -1,4 +1,5 @@
 @using DiffusionNexus.Installer.Core.Modules
+@implements IDisposable
 
 <section class="panel">
     <h2>What will change</h2>
@@ -43,6 +44,23 @@
     /// component that owns a handler.
     /// </summary>
     [Parameter] public EventCallback Changed { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (Module.Run is { } run) run.CheckAnswered += OnCheckAnswered;
+    }
+
+    /// <summary>The folder panel, which follows checks too, isn't on screen here.</summary>
+    private void OnCheckAnswered() => _ = InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        await Changed.InvokeAsync();
+    });
+
+    public void Dispose()
+    {
+        if (Module.Run is { } run) run.CheckAnswered -= OnCheckAnswered;
+    }
 
     private async Task OnChanged(ChangeEventArgs e)
     {

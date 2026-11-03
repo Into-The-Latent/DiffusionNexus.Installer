@@ -509,8 +509,13 @@
     {
         if (Session.Plan is not { } running) return;
 
-        // The same kind of page is reused for the new route, without running its first-render setup.
-        if (running.Selection.Mode == Mode && !Selected && !UpdateOnly && !running.Selection.IsMultiple && !running.Selection.UpdateOnly)
+        // The run's own picks back: new ones would keep its page from rejoining it.
+        if (running.Selection.IsMultiple) Picks.Set(running.Selection.Mode, running.Selection.Picks);
+
+        // The same kind of page is reused for the new route, without running its first-render setup,
+        // and the same route is no navigation at all.
+        if (WizardRoutes.For(running.Selection) == ThisRoute
+            || (running.Selection.Mode == Mode && !Selected && !UpdateOnly && !running.Selection.IsMultiple && !running.Selection.UpdateOnly))
         {
             _busyWith = null;
             _run = new WizardRun(running, WizardStage.Install);
