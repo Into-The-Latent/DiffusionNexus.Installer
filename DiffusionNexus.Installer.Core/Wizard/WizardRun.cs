@@ -52,6 +52,7 @@ public sealed class WizardRun
             var current = CurrentStage;
             _plan.RefreshStages();
             _index = _plan.Stages.TakeWhile(s => s <= current).Count();
+            if (CurrentStage == WizardStage.Install) _plan.Selection.Existing?.Freeze();
             return true;
         }
 

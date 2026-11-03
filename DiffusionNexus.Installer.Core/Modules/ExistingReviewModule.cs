@@ -41,7 +41,7 @@ public sealed class ExistingReviewModule : IWizardModule
     public bool TorchVersionChanges => ChangesTorch && ComfyUpdateModule.TorchVersionChanges(Run!);
 
     /// <summary>The note about workloads torch stays too old for, without the checkbox's wording around it.</summary>
-    public IReadOnlyList<string> NeedsNewerTorch => RunUpdate || Run is null ? [] : ComfyUpdateModule.NeedsNewerLines(Run);
+    public IReadOnlyList<string> NeedsNewerTorch => Run is null || Run.UpgradeTorch ? [] : ComfyUpdateModule.NeedsNewerLines(Run);
 
     /// <summary>The "What will change" list.</summary>
     public IReadOnlyList<string> Lines
@@ -76,6 +76,8 @@ public sealed class ExistingReviewModule : IWizardModule
                 UpdateScriptState.None => "Update script: one is added.",
                 _ => "Update script: already current.",
             });
+
+            lines.AddRange(Run.FolderChangeLines);
 
             return lines;
         }

@@ -30,7 +30,7 @@ public static class MergedSelections
         if (choices.Count == 0) return null;
 
         var name = choices.Count == 1 ? choices[0].Workload.Name : $"{choices.Count} workloads";
-        return Build(mode, choices, choices, name, updateOnly: false, workloads, catalog);
+        return Build(mode, choices, choices, name, updateOnly: false, workloads, catalog, picks);
     }
 
     /// <summary>One workload on the update path. The memory panel still chooses its version.</summary>
@@ -53,7 +53,8 @@ public static class MergedSelections
         string name,
         bool updateOnly,
         IReadOnlyList<InstallationConfiguration> workloads,
-        InstalledCatalogReading? catalog)
+        InstalledCatalogReading? catalog,
+        IReadOnlyList<WorkloadPick>? picks = null)
     {
         var union = ExtendConfigurationMerger.Union(merged, name);
         var selection = new WizardSelection
@@ -62,6 +63,7 @@ public static class MergedSelections
             Catalog = catalog,
             Mode = mode,
             Choices = shownAsSeveral,
+            Picks = picks ?? [],
             UpdateOnly = updateOnly,
             PackNameByModelId = shownAsSeveral.Count > 0 ? union.PackNameByModelId : new Dictionary<Guid, string>(),
         };

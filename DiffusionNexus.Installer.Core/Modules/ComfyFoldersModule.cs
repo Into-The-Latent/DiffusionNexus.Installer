@@ -81,7 +81,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
     private WizardSelection? _selection;
     private ExistingRun? _existing;
-    private ExistingComfyUIProfile? _seededFrom;
+    private string? _seededFrom;
     private UserSettings? _user;
     private bool _useModelLibraryFolder;
     private string _modelBaseFolder = string.Empty;
@@ -285,12 +285,22 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         }
     }
 
-    /// <summary>The panels start filled in from the install, each time another install is found there.</summary>
+    /// <summary>The folder box has no install behind it yet, so the panels have nothing to start from.</summary>
+    public bool WaitsForInstall => _existing is not null && _existing.Profile is not { Support: ExistingInstallSupport.Supported };
+
+    /// <summary>On the update path the run decides: a changed folder rewrites the file, with a backup.</summary>
+    public bool OffersOverwrite => _existing is null;
+
+    /// <summary>
+    /// The panels start filled in from the install, each time another install is found there. Not
+    /// when the same one is checked again, as after a side trip: that would wipe what was typed.
+    /// </summary>
     private void SeedFromInstall()
     {
-        if (_existing?.Profile is not { } profile || ReferenceEquals(profile, _seededFrom)) return;
+        if (_existing?.Profile is not { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository } profile
+            || SameFolder(repository, _seededFrom)) return;
 
-        _seededFrom = profile;
+        _seededFrom = repository;
         _useModelLibraryFolder = profile.ModelBaseFolder is not null;
         _modelBaseFolder = profile.ModelBaseFolder ?? string.Empty;
         UseOwnOutputFolder = profile.OutputFolder is not null;
@@ -414,7 +424,11 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         if (_selection is null || !AppliesTo(_selection)) return;
 
         // An update's folders belong to that install: the next fresh install must not start from them.
-        if (_existing is not null) return;
+        if (_existing is not null)
+        {
+            _existing.SetFolderChanges(FolderChangeLines());
+            return;
+        }
 
         // Re-read, never the copy from InitializeAsync: the install-folder module saves just
         // before this one, and writing a stale object back would undo it.
@@ -436,6 +450,24 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         }
 
         await settings.SaveAsync(user, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>What this page changes in the install, the same rules as <see cref="Contribute"/>.</summary>
+    private List<string> FolderChangeLines()
+    {
+        var lines = new List<string>();
+
+        if (OutputFolderDiffers)
+            lines.Add(EffectiveOutputFolder is { } output
+                ? $"Output folder: changes to {output}, in run_nvidia.bat."
+                : "Output folder: back to ComfyUI's own, in run_nvidia.bat.");
+
+        if (EffectiveModelBaseFolder is { } model && ModelFolderDiffers)
+            lines.Add(HasModelPathsFile
+                ? $"Model folder: extra_model_paths.yaml is rewritten to read {model}, and a backup is kept."
+                : $"Model folder: an extra_model_paths.yaml is added to read {model}.");
+
+        return lines;
     }
 
     /// <summary>
@@ -469,7 +501,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// Why the output folder cannot be used, or null. Beyond the checks every folder gets (see
     /// <see cref="FolderProblem"/>), some characters break the start script.
     /// </summary>
-    public string? OutputFolderProblem => _existing is not null && !OutputFolderDiffers ? null : FolderProblem(
+    public string? OutputFolderProblem => _existing is not null && EffectiveOutputFolder is not null && !OutputFolderDiffers ? null : FolderProblem(
         UseOwnOutputFolder, OutputFolder,
         blank: "Choose an output folder, or turn off \"Use my own output folder\".",
         notFull: @"Enter the full path of the output folder, for example D:\Renders.",
@@ -483,7 +515,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// YAML reads a space followed by # as the start of a comment, so "D:\AI #2\Models" would send
     /// ComfyUI to D:/AI -- refused until the SDK quotes the value.
     /// </summary>
-    public string? ModelFolderProblem => _existing is not null && SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) ? null : FolderProblem(
+    public string? ModelFolderProblem => _existing is not null && EffectiveModelBaseFolder is not null && SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) ? null : FolderProblem(
         UseModelLibraryFolder, _modelBaseFolder,
         blank: "Choose your model library folder, or turn off \"Use my own model folder\".",
         notFull: @"Enter the full path of your model library, for example D:\Models.",

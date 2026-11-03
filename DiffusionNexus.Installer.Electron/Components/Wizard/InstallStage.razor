@@ -46,7 +46,13 @@
             <progress max="100" value="@progress.ProgressPercentage.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
         }
 
-        @if (Session.CurrentDownload is { IsActive: true } download)
+        @* Running only: a run that ended may leave its last download marked active, and Skip then does nothing. *@
+        @if (ModelsOnly && Session.Phase == InstallPhase.Running && Session.Progress is { Message: { Length: > 0 } modelProgress })
+        {
+            <p data-role="model-progress">@modelProgress</p>
+        }
+
+        @if (Session.Phase == InstallPhase.Running && Session.CurrentDownload is { IsActive: true } download)
         {
             @if (ModelsOnly)
             {
@@ -76,9 +82,9 @@
             var rows = Session.ReportRows;
         }
 
-        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered && !SomethingFailedOnUpdate(rows) ? "result-ok" : "result-bad")">
+        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !SomeDownloadsWarned(rows) && !result.NothingDelivered && !SomethingFailedOnUpdate(rows) ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : !Update ? "Installation complete" : SomethingFailedOnUpdate(rows) ? "Finished with problems" : Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete")
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : SomeDownloadsWarned(rows) ? "Download finished with warnings" : ModelsOnly ? "Download complete" : !Update ? "Installation complete" : SomethingFailedOnUpdate(rows) ? "Finished with problems" : Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete")
               : result.IsCancelled ? "Cancelled"
               : ModelsOnly ? "Download failed"
               : Update ? "Update failed"
@@ -179,6 +185,10 @@
     /// </summary>
     private bool SomeDownloadsFailed(IReadOnlyList<InstallReportEntry> rows) =>
         ModelsOnly && rows.Any(r => r.Outcome == InstallReportOutcome.Failed);
+
+    /// <summary>A kept file of another size or a name clash: a model may be missing, and "complete" would claim it isn't.</summary>
+    private bool SomeDownloadsWarned(IReadOnlyList<InstallReportEntry> rows) =>
+        ModelsOnly && rows.Any(r => r.IsWarning);
 
     private string? _startError;
     private string? _actionError;

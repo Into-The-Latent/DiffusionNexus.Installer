@@ -114,6 +114,18 @@ public class ComfyUpdatePanelTests : BunitContext
     }
 
     [Fact]
+    public async Task Ticked_with_no_usable_gpu_still_names_the_workload_torch_stays_too_old_for()
+    {
+        var (module, selection) = await ModuleAsync(packs: Workload("Wan"));
+        selection.Existing!.GpuUsable = false;
+
+        var note = Panel(module).Find("[data-role=torch-note]").TextContent;
+
+        note.Should().Contain("Wan needs torch 2.11.0 with CUDA 13.0.");
+        note.Should().Contain("so this workload may not run.").And.NotContain("until you update");
+    }
+
+    [Fact]
     public async Task Ticked_says_nothing_about_a_workload_needing_more()
     {
         var (module, _) = await ModuleAsync(packs: Workload("Wan"));

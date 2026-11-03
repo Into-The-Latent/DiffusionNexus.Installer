@@ -383,6 +383,111 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     }
 
     [Fact]
+    public async Task The_overwrite_choice_is_not_offered_here_because_the_run_decides_it()
+    {
+        var (module, _) = await ModuleAsync();
+
+        Panel(module).FindAll("[data-role=overwrite-yaml]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Checking_the_same_install_again_keeps_what_was_typed()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\TypedOut";
+        module.ModelBaseFolder = @"E:\TypedLib";
+
+        selection.Existing!.Profile = Profile();
+
+        module.OutputFolder.Should().Be(@"E:\TypedOut");
+        module.ModelBaseFolder.Should().Be(@"E:\TypedLib");
+    }
+
+    [Fact]
+    public async Task Another_install_starts_from_its_own_folders()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\TypedOut";
+
+        selection.Existing!.Profile = Profile(output: @"F:\TheirOut", folder: @"F:\ComfyUI");
+
+        module.OutputFolder.Should().Be(@"F:\TheirOut");
+    }
+
+    [Fact]
+    public async Task Until_the_folder_is_checked_there_is_nothing_to_edit()
+    {
+        var (module, selection) = await ModuleAsync();
+
+        selection.Existing!.Profile = null;
+        var cut = Panel(module);
+
+        cut.FindAll("[data-role=output-panel]").Should().BeEmpty();
+        cut.FindAll("[data-role=model-panel]").Should().BeEmpty();
+        cut.Find("[data-role=folders-wait]").TextContent.Should().Contain("once its folder is checked");
+    }
+
+    [Fact]
+    public async Task A_folder_we_cannot_update_has_nothing_to_edit_either()
+    {
+        var (module, selection) = await ModuleAsync();
+
+        selection.Existing!.Profile = new ExistingComfyUIProfile(@"E:\Empty", ExistingInstallSupport.NotComfyUI);
+
+        Panel(module).Find("[data-role=folders-wait]");
+    }
+
+    [Fact]
+    public async Task On_with_a_blank_box_is_refused_even_when_the_install_has_none()
+    {
+        var (module, _) = await ModuleAsync(Profile(output: null, models: null));
+
+        module.UseOwnOutputFolder = true;
+        module.OutputFolderProblem.Should().Contain("Choose an output folder");
+
+        module.UseOwnOutputFolder = false;
+        module.UseModelLibraryFolder = true;
+        module.ModelFolderProblem.Should().Contain("Choose your model library folder");
+    }
+
+    [Fact]
+    public async Task Leaving_the_page_tells_the_run_what_will_change()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\NewOut";
+        module.ModelBaseFolder = @"E:\NewLib";
+
+        await module.PersistAsync();
+
+        selection.Existing!.FolderChangeLines.Should().HaveCount(2);
+        selection.Existing.FolderChangeLines.Should().Contain(l => l.Contains(@"E:\NewOut") && l.Contains("run_nvidia.bat"));
+        selection.Existing.FolderChangeLines.Should().Contain(l => l.Contains(@"E:\NewLib") && l.Contains("extra_model_paths.yaml"));
+    }
+
+    [Fact]
+    public async Task Turning_off_the_output_folder_is_a_change_and_turning_off_the_library_is_not()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.UseOwnOutputFolder = false;
+        module.UseModelLibraryFolder = false;
+
+        await module.PersistAsync();
+
+        // The yaml stays when the library goes off, so nothing in the install changes for it.
+        selection.Existing!.FolderChangeLines.Should().ContainSingle().Which.Should().Contain("ComfyUI's own");
+    }
+
+    [Fact]
+    public async Task Unchanged_folders_are_not_listed()
+    {
+        var (module, selection) = await ModuleAsync();
+
+        await module.PersistAsync();
+
+        selection.Existing!.FolderChangeLines.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task A_fresh_install_has_no_red_boxes()
     {
         var workload = new InstallationConfiguration { Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI } };

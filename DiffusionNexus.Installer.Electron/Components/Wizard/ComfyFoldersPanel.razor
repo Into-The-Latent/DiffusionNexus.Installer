@@ -3,6 +3,15 @@
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @inject IFolderPicker FolderPicker
 
+@if (Module.WaitsForInstall)
+{
+    <section class="panel" data-role="folders-wait">
+        <h2>Output and model folders</h2>
+        <p class="panel-hint">These fill in from your ComfyUI once its folder is checked.</p>
+    </section>
+}
+else
+{
 @* Two panels, not one (issue #27): the output folder and the model folder are unrelated
    settings, and in one box the model switch read as if it governed the output path above it. *@
 <section class="panel" data-role="output-panel">
@@ -77,7 +86,7 @@
 
     @* With the library, not in Advanced: it changes the install, and the Advanced badge speaks
        only for the folder names and additional folders, so ticked in there it went unseen. *@
-    @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+    @if (Module.OffersOverwrite && !string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
     {
         <label class="checkbox switch-body">
             <input type="checkbox" data-role="overwrite-yaml" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
@@ -128,6 +137,7 @@
     </AdvancedDisclosure>
     }
 </section>
+}
 
 @code {
     [Parameter, EditorRequired] public ComfyFoldersModule Module { get; set; } = default!;

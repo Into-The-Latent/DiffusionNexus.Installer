@@ -339,7 +339,10 @@
     }
 
     // The same workload on the other path is another wizard, and must not rejoin this one's run.
-    private bool IsThisWizard(WizardPlan plan) => WizardRoutes.For(plan.Selection) == ThisRoute;
+    // So must other picks: they share a route, and new ones during a run are another wizard.
+    private bool IsThisWizard(WizardPlan plan) =>
+        WizardRoutes.For(plan.Selection) == ThisRoute
+        && (!Selected || plan.Selection.Picks.SequenceEqual(Picks.Get(Mode)));
 
     private string ThisRoute =>
         UpdateOnly ? WizardRoutes.UpdateOnly

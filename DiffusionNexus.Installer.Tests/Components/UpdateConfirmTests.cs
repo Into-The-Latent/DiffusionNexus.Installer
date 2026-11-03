@@ -153,6 +153,40 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task Ticked_with_no_usable_gpu_says_the_workload_may_not_run()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+
+        run.Plan.Selection.Existing!.GpuUsable = false;
+
+        ReviewPanel(run).Find("[data-role=confirm-note]").TextContent.Should().Contain("A needs torch 2.11.0");
+    }
+
+    [Fact]
+    public async Task The_folders_the_run_changes_are_listed_and_a_new_answer_asks_again()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+        Review(run).Understood = true;
+
+        run.Plan.Selection.Existing!.SetFolderChanges(["Output folder: changes."]);
+
+        Review(run).Lines.Should().Contain("Output folder: changes.");
+        Review(run).Understood.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task The_same_folder_answer_does_not_ask_again()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+        run.Plan.Selection.Existing!.SetFolderChanges(["Output folder: changes."]);
+        Review(run).Understood = true;
+
+        run.Plan.Selection.Existing.SetFolderChanges(["Output folder: changes."]);
+
+        Review(run).Understood.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task The_list_says_what_changes_for_two_workloads()
     {
         var a = Workload("A");

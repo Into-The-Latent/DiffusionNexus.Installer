@@ -116,6 +116,60 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task Models_only_says_which_model_it_is_on()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        _session.SetupGet(s => s.Progress).Returns(new InstallationProgress { CurrentStep = InstallationStep.DownloadModels, StepIndex = 2, TotalSteps = 14, Message = "Model 3 of 14: Wan" });
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.Find("[data-role=model-progress]").TextContent.Should().Be("Model 3 of 14: Wan");
+    }
+
+    [Fact]
+    public async Task A_run_that_ended_shows_no_live_download_and_no_skip_button()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Cancelled);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Cancelled("Cancelled."));
+        _session.SetupGet(s => s.CurrentDownload).Returns(new DownloadProgress
+        {
+            FileName = "ae.safetensors", BytesDownloaded = 25, TotalBytes = 100, IsActive = true
+        });
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.FindAll(".download").Should().BeEmpty();
+        stage.FindAll("progress").Should().BeEmpty();
+        stage.Markup.Should().NotContain("Skip this file");
+    }
+
+    [Fact]
+    public async Task A_download_run_with_a_warning_is_not_green()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("Downloaded 1 models, 0 already present, 1 skipped, 0 failed.", _folder));
+        _session.SetupGet(s => s.ReportRows).Returns(
+        [
+            new InstallReportEntry
+            {
+                PlannedOperation = "Model: Second",
+                Category = InstallReportCategory.Model,
+                Outcome = InstallReportOutcome.Skipped,
+                Comment = "Skipped: another model in this run has the same file name.",
+                IsWarning = true,
+            },
+        ]);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var heading = Render<InstallStage>(p => p.Add(x => x.Run, run)).Find(".install-result h2");
+
+        heading.TextContent.Trim().Should().Be("Download finished with warnings");
+        heading.ClassList.Should().Contain("result-bad");
+    }
+
+    [Fact]
     public async Task Models_only_says_downloading_while_it_runs()
     {
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);

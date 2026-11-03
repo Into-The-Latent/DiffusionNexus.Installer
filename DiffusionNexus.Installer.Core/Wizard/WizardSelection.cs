@@ -21,6 +21,9 @@ public sealed class WizardSelection
     /// <summary>What Select multiple picked, each at its own version. Empty for a single workload.</summary>
     public IReadOnlyList<WorkloadChoice> Choices { get; init; } = [];
 
+    /// <summary>What Select multiple handed over, so another set of picks is known to be another wizard.</summary>
+    public IReadOnlyList<WorkloadPick> Picks { get; init; } = [];
+
     /// <summary>Several workloads merged into <see cref="Workload"/>.</summary>
     public bool IsMultiple => Choices.Count > 0;
 

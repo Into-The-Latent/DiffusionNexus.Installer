@@ -43,16 +43,16 @@
             <p><strong>Good choice if it's working.</strong></p>
             <p>Your ComfyUI stays on its current version. We only add the workload's custom nodes and models.</p>
         </div>
+    }
 
-        @if (Module.NeedsNewerTorch is { Count: > 0 } lines)
-        {
-            <div class="validation-error" data-role="torch-note">
-                @foreach (var line in lines)
-                {
-                    <p>@line</p>
-                }
-            </div>
-        }
+    @if (Module.NeedsNewerTorch is { Count: > 0 } lines)
+    {
+        <div class="validation-error" data-role="torch-note">
+            @foreach (var line in lines)
+            {
+                <p>@line</p>
+            }
+        </div>
     }
 </section>
 

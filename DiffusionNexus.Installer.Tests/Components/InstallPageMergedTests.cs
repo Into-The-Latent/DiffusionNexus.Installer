@@ -238,6 +238,28 @@ public class InstallPageMergedTests : BunitContext
     }
 
     [Fact]
+    public async Task Other_picks_during_a_running_update_do_not_rejoin_it()
+    {
+        await RunningUpdateOf(Core.Existing.MergedSelections.ForPicks(WizardMode.UpdateExisting, [new WorkloadPick(_a.Id, 16), new WorkloadPick(_b.Id, 16)], [_a, _b], null)!);
+        _picks.Set(WizardMode.UpdateExisting, [new WorkloadPick(_a.Id, 24), new WorkloadPick(_b.Id, 16)]);
+
+        var cut = Render<InstallPage>(p => p.Add(x => x.Mode, WizardMode.UpdateExisting).Add(x => x.Selected, true));
+
+        cut.Find(".panel-warning h1").TextContent.Should().Be("Another update is running");
+    }
+
+    [Fact]
+    public async Task The_same_picks_rejoin_a_running_update()
+    {
+        await RunningUpdateOf(Core.Existing.MergedSelections.ForPicks(WizardMode.UpdateExisting, [new WorkloadPick(_a.Id, 16), new WorkloadPick(_b.Id, 16)], [_a, _b], null)!);
+        _picks.Set(WizardMode.UpdateExisting, [new WorkloadPick(_a.Id, 16), new WorkloadPick(_b.Id, 16)]);
+
+        var cut = Render<InstallPage>(p => p.Add(x => x.Mode, WizardMode.UpdateExisting).Add(x => x.Selected, true));
+
+        cut.FindAll(".panel-warning").Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task The_wizard_of_a_running_update_rejoins_it()
     {
         await RunningUpdateOf(new WizardSelection { Workload = _a, Mode = WizardMode.UpdateExisting, UpdateOnly = true });

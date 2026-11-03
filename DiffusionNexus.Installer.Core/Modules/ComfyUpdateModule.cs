@@ -96,7 +96,7 @@ public sealed class ComfyUpdateModule : IWizardModule
     public string TargetTorch => Run?.Target is { } target ? Stack(target.Torch.TorchVersion, target.Torch.CudaVersion) : string.Empty;
 
     /// <summary>The red note beside the calm message: one line per torch wanted, then what is there. Empty when nothing is missing.</summary>
-    public IReadOnlyList<string> NeedsNewerTorch => RunUpdate || Run is null ? [] : NeedsNewerLines(Run);
+    public IReadOnlyList<string> NeedsNewerTorch => Run is null || Run.UpgradeTorch ? [] : NeedsNewerLines(Run);
 
     internal static IReadOnlyList<string> NeedsNewerLines(ExistingRun run)
     {
@@ -113,7 +113,7 @@ public sealed class ComfyUpdateModule : IWizardModule
             .ToList();
 
         var these = target.PacksNeedingNewer.Count == 1 ? "this workload" : "these workloads";
-        lines.Add($"You have torch {Installed(profile)}, and we won't change it, so {these} may not run until you update.");
+        lines.Add($"You have torch {Installed(profile)}, and we won't change it, so {these} may not run{(run.RunUpdate ? "" : " until you update")}.");
         return lines;
     }
 

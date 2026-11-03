@@ -21,6 +21,7 @@ public sealed class ExistingRun
     private ExistingComfyUIProfile? _profile;
     private bool _runUpdate = true;
     private bool _gpuUsable = true;
+    private bool _frozen;
 
     /// <param name="selection">The selection this run writes to.</param>
     /// <param name="union">The chosen workloads, merged.</param>
@@ -46,6 +47,7 @@ public sealed class ExistingRun
         get => _profile;
         set
         {
+            if (_frozen) return;
             _profile = value;
             Follow();
         }
@@ -57,6 +59,7 @@ public sealed class ExistingRun
         get => _runUpdate;
         set
         {
+            if (_frozen) return;
             _runUpdate = value;
             Follow();
         }
@@ -68,6 +71,7 @@ public sealed class ExistingRun
         get => _gpuUsable;
         set
         {
+            if (_frozen) return;
             _gpuUsable = value;
             Follow();
         }
@@ -82,6 +86,24 @@ public sealed class ExistingRun
     /// <summary>Why torch can't change, when it was going to. Unticking the update clears it.</summary>
     public IReadOnlyList<string> TorchHardStop =>
         UpgradeTorch ? Target!.Compatibility.Errors.Select(e => e.Message).ToList() : [];
+
+    /// <summary>What the folder panels will change in this install, as Confirm lists it.</summary>
+    public IReadOnlyList<string> FolderChangeLines { get; private set; } = [];
+
+    /// <summary>A different list is a changed answer, so Confirm asks again.</summary>
+    public void SetFolderChanges(IReadOnlyList<string> lines)
+    {
+        if (_frozen || lines.SequenceEqual(FolderChangeLines)) return;
+
+        FolderChangeLines = lines;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The install has started on what the selection says now. A check that answers later, like the
+    /// one a side trip starts, must not rewrite the workload under it.
+    /// </summary>
+    public void Freeze() => _frozen = true;
 
     private void Follow()
     {

@@ -205,8 +205,9 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
                 Rows.Where(r => !r.IsSelected).Select(r => r.Id).ToHashSet(),
                 Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet(),
                 _selection.ModelBaseFolder,
-                // Only a fresh install creates a repository and a venv to make room for.
-                _selection.Mode != WizardMode.FreshInstall), ct).ConfigureAwait(false);
+                // Only a fresh install creates a repository and a venv to make room for, and a torch
+                // that changes on an update takes gigabytes of its own.
+                _selection.Mode != WizardMode.FreshInstall && _selection.Existing?.UpgradeTorch != true), ct).ConfigureAwait(false);
 
             // An estimator that ignores ct finishes anyway; only the newest request may show.
             if (!Latest()) return;

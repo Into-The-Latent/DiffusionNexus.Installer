@@ -203,6 +203,47 @@ public class UpdatePathCoreTests
     }
 
     [Fact]
+    public void Once_the_install_has_started_a_late_answer_changes_nothing()
+    {
+        var (selection, run, _) = UpdateRun(Workload("A"));
+        run.Profile = Profile();
+        var workload = selection.Workload;
+        run.Freeze();
+        var announced = 0;
+        run.Changed += () => announced++;
+
+        run.Profile = null;
+        run.RunUpdate = false;
+        run.GpuUsable = false;
+        run.SetFolderChanges(["late"]);
+
+        selection.Workload.Should().BeSameAs(workload);
+        selection.TargetFolder.Should().Be(@"E:\ComfyUI");
+        run.UpgradeTorch.Should().BeTrue();
+        run.FolderChangeLines.Should().BeEmpty();
+        announced.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reaching_the_install_stage_is_what_starts_it()
+    {
+        var (selection, run, _) = UpdateRun(Workload("A"));
+        var plan = await new WizardModuleRegistry(() => []).BuildPlanAsync(selection);
+        run.Profile = Profile();
+        var wizard = new WizardRun(plan);
+
+        while (wizard.CurrentStage != WizardStage.Install)
+        {
+            run.Profile = Profile();
+            wizard.TryNext().Should().BeTrue();
+        }
+
+        run.Profile = null;
+
+        run.Profile.Should().NotBeNull();
+    }
+
+    [Fact]
     public void Every_change_is_announced()
     {
         var (_, run, _) = UpdateRun(Workload("A"));
