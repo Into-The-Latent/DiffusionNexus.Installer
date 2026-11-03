@@ -198,7 +198,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
                 Rows.Where(r => !r.IsSelected).Select(r => r.Id).ToHashSet(),
                 Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet(),
                 _selection.ModelBaseFolder,
-                _selection.Mode == WizardMode.ModelsOnly), ct).ConfigureAwait(false);
+                // Only a fresh install creates a repository and a venv to make room for.
+                _selection.Mode != WizardMode.FreshInstall), ct).ConfigureAwait(false);
 
             // An estimator that ignores ct finishes anyway; only the newest request may show.
             if (!Latest()) return;

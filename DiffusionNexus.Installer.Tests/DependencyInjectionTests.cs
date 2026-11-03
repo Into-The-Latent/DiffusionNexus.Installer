@@ -73,7 +73,7 @@ public class DependencyInjectionTests
 
         provider.GetServices<IWizardModule>().Select(m => m.Id).Should().BeEquivalentTo(
             "install-folder", "models-only-folder", "existing-folder", "comfy-folders", "comfy-update", "vram-profile", "model-selection", "workflow-selection",
-            "gpu-preflight", "vc-runtime", "llama-cpp", "shortcuts", "disclaimer");
+            "gpu-preflight", "existing-gpu", "vc-runtime", "llama-cpp", "shortcuts", "disclaimer");
     }
 
     [Fact]

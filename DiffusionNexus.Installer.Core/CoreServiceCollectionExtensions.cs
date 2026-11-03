@@ -76,6 +76,7 @@ public static class CoreServiceCollectionExtensions
         services.AddTransient<IWizardModule, ModelSelectionModule>();
         services.AddTransient<IWizardModule, WorkflowSelectionModule>();
         services.AddTransient<IWizardModule, GpuPreflightModule>();
+        services.AddTransient<IWizardModule, ExistingGpuModule>();
         services.AddTransient<IWizardModule, VcRuntimeModule>();
         services.AddTransient<IWizardModule, LlamaCppModule>();
         services.AddTransient<IWizardModule, ShortcutsModule>();
