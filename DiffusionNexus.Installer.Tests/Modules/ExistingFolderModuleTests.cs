@@ -248,6 +248,36 @@ public class ExistingFolderModuleTests
     }
 
     [Fact]
+    public async Task Coming_back_to_the_same_install_changes_no_answer()
+    {
+        var (module, selection) = await ModuleAsync();
+        await Choose(module, Folder);
+        var changes = 0;
+        selection.Existing!.Changed += () => changes++;
+
+        await module.RefreshAfterResumeAsync();
+        selection.Existing.Profile.Should().NotBeNull("Confirm must still have a folder while this checks");
+        selection.TargetFolder.Should().Be(Folder);
+        await module.WhenAnswered;
+
+        changes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Coming_back_to_an_install_that_changed_says_so()
+    {
+        var (module, selection) = await ModuleAsync();
+        await Choose(module, Folder);
+        _inspector.Setup(i => i.InspectAsync(Folder, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExistingComfyUIProfile(Folder, ExistingInstallSupport.NoVenv));
+
+        await module.RefreshAfterResumeAsync();
+        await module.WhenAnswered;
+
+        selection.Existing!.Profile!.Support.Should().Be(ExistingInstallSupport.NoVenv);
+    }
+
+    [Fact]
     public async Task The_summary_says_what_was_found()
     {
         var (module, _) = await ModuleAsync();

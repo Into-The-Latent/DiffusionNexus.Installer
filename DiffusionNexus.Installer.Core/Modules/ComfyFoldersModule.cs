@@ -223,7 +223,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     public bool OutputFolderDiffers => _existing?.Profile is not null && !SameFolder(EffectiveOutputFolder, CurrentOutputFolder);
 
     /// <summary>Update path: continuing changes where this ComfyUI loads its models from.</summary>
-    public bool ModelFolderDiffers => _existing?.Profile is not null && !SameFolder(EffectiveModelBaseFolder, CurrentModelFolder);
+    public bool ModelFolderDiffers =>
+        _existing?.Profile is not null
+        && (!SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) || (UseModelLibraryFolder && AdvancedEdited));
 
     private static bool SameFolder(string? a, string? b)
     {
@@ -253,6 +255,12 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         _modelBaseFolder = profile.ModelBaseFolder ?? string.Empty;
         UseOwnOutputFolder = profile.OutputFolder is not null;
         OutputFolder = profile.OutputFolder ?? string.Empty;
+
+        // Its own type folders, so a model goes where this ComfyUI will look for it.
+        foreach (var row in _folderTypes)
+            row.Value = profile.ModelFolderMappings?.GetValueOrDefault(row.Key) ?? row.Standard;
+        _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+
         SyncSelection();
     }
 
@@ -421,7 +429,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// Why the output folder cannot be used, or null. Beyond the checks every folder gets (see
     /// <see cref="FolderProblem"/>), some characters break the start script.
     /// </summary>
-    public string? OutputFolderProblem => FolderProblem(
+    public string? OutputFolderProblem => _existing is not null && !OutputFolderDiffers ? null : FolderProblem(
         UseOwnOutputFolder, OutputFolder,
         blank: "Choose an output folder, or turn off \"Use my own output folder\".",
         notFull: @"Enter the full path of the output folder, for example D:\Renders.",
@@ -435,7 +443,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// YAML reads a space followed by # as the start of a comment, so "D:\AI #2\Models" would send
     /// ComfyUI to D:/AI -- refused until the SDK quotes the value.
     /// </summary>
-    public string? ModelFolderProblem => FolderProblem(
+    public string? ModelFolderProblem => _existing is not null && SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) ? null : FolderProblem(
         UseModelLibraryFolder, _modelBaseFolder,
         blank: "Choose your model library folder, or turn off \"Use my own model folder\".",
         notFull: @"Enter the full path of your model library, for example D:\Models.",

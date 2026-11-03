@@ -116,6 +116,62 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     }
 
     [Fact]
+    public async Task The_installs_own_type_folders_decide_where_models_go()
+    {
+        var (module, selection) = await ModuleAsync(Profile() with
+        {
+            ModelFolderMappings = new Dictionary<string, string> { ["loras"] = "Lora", ["checkpoints"] = "models/checkpoints" },
+        });
+
+        selection.FolderPathOverrides.Should().Contain("loras", "Lora").And.Contain("checkpoints", "models/checkpoints");
+        module.ModelFolderDiffers.Should().BeFalse("reading them changes nothing in the file");
+    }
+
+    [Fact]
+    public async Task Changing_a_type_folder_rewrites_the_yaml_even_with_the_same_base()
+    {
+        var (module, _) = await ModuleAsync();
+
+        module.SetFolderType("loras", "MyLoras");
+
+        module.ModelFolderDiffers.Should().BeTrue();
+        var draft = new InstallationOptionsDraft();
+        module.Contribute(draft);
+        draft.GenerateExtraModelPaths.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("%~dp0renders")]
+    [InlineData("output2")]
+    public async Task An_output_folder_that_is_already_working_does_not_block_next(string folder)
+    {
+        var (module, _) = await ModuleAsync(Profile(output: folder));
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_new_folder_is_still_checked()
+    {
+        var (module, _) = await ModuleAsync(Profile(output: "output2"));
+
+        module.OutputFolder = "output3";
+
+        module.Validate().IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_recheck_with_an_equal_answer_keeps_what_was_typed()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\Typed";
+
+        selection.Existing!.GpuUsable = false;
+
+        module.OutputFolder.Should().Be(@"E:\Typed");
+    }
+
+    [Fact]
     public async Task Unchanged_folders_write_nothing()
     {
         var (module, _) = await ModuleAsync();

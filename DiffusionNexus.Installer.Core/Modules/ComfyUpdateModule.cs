@@ -56,9 +56,37 @@ public sealed class ComfyUpdateModule : IWizardModule
     public bool ChangesTorch => Run?.UpgradeTorch == true;
 
     /// <summary>"from X to Y", when this run changes torch.</summary>
-    public string? TorchChange => ChangesTorch && Run is { Target: { } target, Profile: { } profile }
-        ? $"Torch changes from {Installed(profile)} to {Stack(target.Torch.TorchVersion, target.Torch.CudaVersion)}."
-        : null;
+    public string? TorchChange => ChangesTorch ? TorchChangeText(Run!) : null;
+
+    internal static bool TorchVersionChanges(ExistingRun run) =>
+        run is { Target: { } target, Profile: { } profile }
+        && Installed(profile) != Stack(target.Torch.TorchVersion, target.Torch.CudaVersion);
+
+    internal static string TorchChangeText(ExistingRun run)
+    {
+        var (target, profile) = (run.Target!, run.Profile!);
+
+        if (TorchVersionChanges(run))
+            return $"Torch changes from {Installed(profile)} to {Stack(target.Torch.TorchVersion, target.Torch.CudaVersion)}.";
+
+        var added = NewAccelerators(run);
+        return $"{added} {(added.Contains(" and ") ? "are" : "is")} added to torch {Installed(profile)}.";
+    }
+
+    /// <summary>What the run adds beside a torch that stays.</summary>
+    internal static string NewAccelerators(ExistingRun run)
+    {
+        var (target, torch) = (run.Target!, run.Profile!.Torch);
+        var triton = target.InstallTriton && torch is not { TritonInstalled: true };
+        var sage = target.InstallSageAttention && torch is not { SageAttentionInstalled: true };
+
+        return (triton, sage) switch
+        {
+            (true, true) => "Triton and SageAttention",
+            (true, false) => "Triton",
+            _ => "SageAttention",
+        };
+    }
 
     /// <summary>The workloads whose own torch differs from the one the run settles on.</summary>
     public IReadOnlyList<string> ConflictingWorkloads => ChangesTorch ? Run!.Target!.ConflictingPackNames : [];

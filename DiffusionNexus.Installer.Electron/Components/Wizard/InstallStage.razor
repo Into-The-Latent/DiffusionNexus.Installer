@@ -76,9 +76,9 @@
             var rows = Session.ReportRows;
         }
 
-        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered ? "result-ok" : "result-bad")">
+        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered && !SomethingFailedOnUpdate(rows) ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : Update ? (Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete") : "Installation complete")
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : !Update ? "Installation complete" : SomethingFailedOnUpdate(rows) ? "Finished with problems" : Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete")
               : result.IsCancelled ? "Cancelled"
               : ModelsOnly ? "Download failed"
               : Update ? "Update failed"
@@ -168,6 +168,10 @@
     private bool ModelsOnly => Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
 
     private bool Update => Run.Plan.Selection.Mode == WizardMode.UpdateExisting;
+
+    /// <summary>The code left alone or a node that failed: the run went on, but "complete" would be a false claim.</summary>
+    private bool SomethingFailedOnUpdate(IReadOnlyList<InstallReportEntry> rows) =>
+        Update && rows.Any(r => r.Outcome == InstallReportOutcome.Failed);
 
     /// <summary>
     /// A models-only run is only its downloads, so "complete" over a failed one would be a false

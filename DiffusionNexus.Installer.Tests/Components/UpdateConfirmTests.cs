@@ -90,6 +90,29 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_folder_that_stopped_being_usable_stops_the_start()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+        Review(run).Understood = true;
+        run.Plan.Selection.Existing!.Profile = new ExistingComfyUIProfile(_repo, ExistingInstallSupport.NoVenv);
+        Review(run).Understood = true;
+
+        Review(run).Validate().IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Only_a_new_accelerator_does_not_claim_torch_changes()
+    {
+        var a = Workload("A", torch: "2.8.0");
+        a.Torch.CudaVersion = "12.8";
+        a.Python.InstallTriton = true;
+        var run = await UpdateRunAsync(false, new WorkloadChoice(a, 16));
+
+        Review(run).Lines.Should().Contain("Torch: stays at 2.8.0 with CUDA 12.8, and Triton is added.");
+        ReviewPanel(run).Find("[data-role=confirm-torch]").TextContent.Should().Be("Triton is added to torch 2.8.0 with CUDA 12.8.");
+    }
+
+    [Fact]
     public async Task A_changed_answer_asks_again()
     {
         var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
@@ -208,6 +231,29 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
 
         cut.Find(".install-result h2").TextContent.Trim().Should().Be(heading);
         cut.Find(".panel-head h2").TextContent.Should().Be("Updating");
+    }
+
+    [Fact]
+    public async Task A_run_with_something_that_failed_is_not_green()
+    {
+        Finished(InstallationResult.Success("ok", _repo));
+        _session.SetupGet(s => s.ReportRows).Returns(
+        [
+            new SDK.Models.Installation.InstallReportEntry
+            {
+                PlannedOperation = "Updating ComfyUI",
+                Category = SDK.Models.Installation.InstallReportCategory.Step,
+                Outcome = SDK.Models.Installation.InstallReportOutcome.Failed,
+                Comment = "ComfyUI code was not updated.",
+                IsWarning = true,
+            },
+        ]);
+        var run = await UpdateRunAsync(updateOnly: true);
+
+        var heading = Render<InstallStage>(p => p.Add(x => x.Run, run)).Find(".install-result h2");
+
+        heading.TextContent.Trim().Should().Be("Finished with problems");
+        heading.ClassList.Should().Contain("result-bad");
     }
 
     [Fact]

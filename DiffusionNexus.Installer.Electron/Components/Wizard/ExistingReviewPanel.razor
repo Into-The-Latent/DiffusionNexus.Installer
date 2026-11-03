@@ -15,7 +15,7 @@
     }
     @if (Module.TorchChange is { } change)
     {
-        <p class="validation-error" data-role="confirm-torch">@change Custom nodes built for the old one may stop loading.</p>
+        <p class="validation-error" data-role="confirm-torch">@change@(Module.TorchVersionChanges ? " Custom nodes built for the old one may stop loading." : null)</p>
     }
     @if (Module.NeedsNewerTorch is { Count: > 0 } lines)
     {

@@ -34,8 +34,11 @@ public sealed class ExistingReviewModule : IWizardModule
 
     public bool ChangesTorch => Run?.UpgradeTorch == true;
 
-    /// <summary>"Torch changes from X to Y."</summary>
-    public string? TorchChange => ChangesTorch ? Sentence(TorchFromTo()) : null;
+    /// <summary>"Torch changes from X to Y", or which accelerators join a torch that stays.</summary>
+    public string? TorchChange => ChangesTorch ? ComfyUpdateModule.TorchChangeText(Run!) : null;
+
+    /// <summary>Whether torch itself moves, not only what is added beside it.</summary>
+    public bool TorchVersionChanges => ChangesTorch && ComfyUpdateModule.TorchVersionChanges(Run!);
 
     /// <summary>The note about workloads torch stays too old for, without the checkbox's wording around it.</summary>
     public IReadOnlyList<string> NeedsNewerTorch => RunUpdate || Run is null ? [] : ComfyUpdateModule.NeedsNewerLines(Run);
@@ -53,7 +56,10 @@ public sealed class ExistingReviewModule : IWizardModule
                 RunUpdate
                     ? $"ComfyUI: updates {char.ToLowerInvariant(channel[0])}{channel[1..]}"
                     : "ComfyUI: stays on its current version.",
-                ChangesTorch ? $"Torch: changes {TorchFromTo()}." : "Torch: stays as it is.",
+                !ChangesTorch ? "Torch: stays as it is."
+                : ComfyUpdateModule.TorchVersionChanges(Run)
+                    ? $"Torch: changes from {ComfyUpdateModule.Installed(profile)} to {ComfyUpdateModule.Stack(Run.Target!.Torch.TorchVersion, Run.Target.Torch.CudaVersion)}."
+                    : $"Torch: stays at {ComfyUpdateModule.Installed(profile)}, and {ComfyUpdateModule.NewAccelerators(Run)} {(ComfyUpdateModule.NewAccelerators(Run).Contains(" and ") ? "are" : "is")} added.",
             };
 
             var newNodes = _selection!.Workload.GitRepositories.Count(r =>
@@ -71,12 +77,6 @@ public sealed class ExistingReviewModule : IWizardModule
         }
     }
 
-    private string TorchFromTo() => Run is { Target: { } target, Profile: { } profile }
-        ? $"from {ComfyUpdateModule.Installed(profile)} to {ComfyUpdateModule.Stack(target.Torch.TorchVersion, target.Torch.CudaVersion)}"
-        : string.Empty;
-
-    private static string Sentence(string fromTo) => $"Torch changes {fromTo}.";
-
     public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
         _selection = selection;
@@ -87,6 +87,12 @@ public sealed class ExistingReviewModule : IWizardModule
 
     public void Contribute(InstallationOptionsDraft draft) { }
 
-    public ModuleValidation Validate() =>
-        Understood ? ModuleValidation.Ok() : ModuleValidation.Error("Tick \"I understand what will change\" to continue.");
+    public ModuleValidation Validate()
+    {
+        // Checked again here: coming back from a side trip looks at the install again.
+        if (Run is { Profile: not { Support: ExistingInstallSupport.Supported } })
+            return ModuleValidation.Error("This ComfyUI folder can't be used any more. Go back to Location and check it.");
+
+        return Understood ? ModuleValidation.Ok() : ModuleValidation.Error("Tick \"I understand what will change\" to continue.");
+    }
 }

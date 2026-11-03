@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -95,11 +96,15 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
     /// <summary>The install may have changed during the trip, and the box has not.</summary>
     public Task RefreshAfterResumeAsync(CancellationToken ct = default)
     {
-        StartCheck();
+        StartCheck(keepAnswer: true);
         return Task.CompletedTask;
     }
 
-    private void StartCheck()
+    /// <param name="keepAnswer">
+    /// The same folder again, after a side trip: Confirm may be on screen, and it must still have a
+    /// folder. The answer only changes if the install did.
+    /// </param>
+    private void StartCheck(bool keepAnswer = false)
     {
         if (_selection?.Existing is not { } run) return;
 
@@ -112,7 +117,7 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
             _checkFailure = null;
         }
 
-        run.Profile = null;
+        if (!keepAnswer) run.Profile = null;
 
         if (ShapeProblem is not null)
         {
@@ -144,11 +149,14 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
                 // Another folder took over meanwhile: this answer is about a folder the user has left.
                 if (token.IsCancellationRequested) return;
                 _checkFailure = failure;
-                run.Profile = profile;
+                if (!SameAnswer(run.Profile, profile)) run.Profile = profile;
             }
         });
         _ = _check.ContinueWith(t => FolderCheckAnswered?.Invoke(), TaskScheduler.Default);
     }
+
+    private static bool SameAnswer(ExistingComfyUIProfile? a, ExistingComfyUIProfile? b) =>
+        JsonSerializer.Serialize(a) == JsonSerializer.Serialize(b);
 
     public async Task PersistAsync(CancellationToken ct = default)
     {

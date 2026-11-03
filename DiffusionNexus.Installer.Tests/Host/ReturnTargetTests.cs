@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.Electron.Services;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
@@ -7,6 +8,24 @@ namespace DiffusionNexus.Installer.Tests.Host;
 
 public class ReturnTargetTests
 {
+    [Theory]
+    [InlineData(true, "existing/update/only")]
+    [InlineData(false, "existing/models/selected")]
+    public async Task A_merged_wizard_is_kept_on_its_own_route(bool updateOnly, string route)
+    {
+        var workload = new DiffusionNexus.Installer.SDK.Models.Configuration.InstallationConfiguration();
+        var selection = updateOnly
+            ? new WizardSelection { Workload = workload, Mode = WizardMode.UpdateExisting, UpdateOnly = true }
+            : new WizardSelection { Workload = workload, Mode = WizardMode.ModelsOnly, Choices = [new DiffusionNexus.Installer.SDK.Services.Installation.Existing.WorkloadChoice(workload, 16)] };
+        var plan = await new WizardModuleRegistry(() => []).BuildPlanAsync(selection);
+        var target = new ReturnTarget(new StubCatalogUpdateCoordinator());
+        target.WizardInProgress = new KeptWizard(new WizardRun(plan), false, 0);
+
+        target.Remember(route);
+
+        target.WizardInProgress.Should().NotBeNull();
+    }
+
     [Fact]
     public void Leads_to_the_welcome_screen_until_a_flow_screen_has_been_seen()
         => new ReturnTarget(new StubCatalogUpdateCoordinator()).Path.Should().Be("/");
