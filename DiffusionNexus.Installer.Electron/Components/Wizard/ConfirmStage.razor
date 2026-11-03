@@ -8,17 +8,47 @@
     var options = Run.Plan.ToOptions();
     var models = Run.Plan.AllModules.OfType<ModelSelectionModule>().FirstOrDefault();
     var workflows = Run.Plan.AllModules.OfType<WorkflowSelectionModule>().FirstOrDefault();
-    var modelsOnly = Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
+    var selection = Run.Plan.Selection;
+    var modelsOnly = selection.Mode == WizardMode.ModelsOnly;
+    var update = selection.Mode == WizardMode.UpdateExisting;
 }
 
 <section class="panel">
-    <h2>@(modelsOnly ? "Ready to download" : "Ready to install")</h2>
+    <h2>@(modelsOnly ? "Ready to download" : update ? "Ready to update" : "Ready to install")</h2>
 
     <dl class="summary">
-        <dt>Workload</dt>
-        <dd>@Run.Plan.Selection.Workload.Name</dd>
+        @* Each chosen version, as a last chance to catch a wrong size: Select multiple starts at 32 GB,
+           so anyone who ignored its selector gets the largest downloads. *@
+        @if (selection.IsMultiple)
+        {
+            <dt>Workloads</dt>
+            <dd>
+                @foreach (var choice in selection.Choices)
+                {
+                    <span class="summary-line" data-role="version">@choice.Workload.Name: @(choice.VramGb > 0 ? $"{choice.VramGb} GB" : "one version only")</span>
+                }
+            </dd>
+        }
+        else if (selection.UpdateOnly)
+        {
+            <dt>Workloads</dt>
+            <dd data-role="no-workloads">None. This only updates ComfyUI.</dd>
+        }
+        else
+        {
+            <dt>Workload</dt>
+            <dd>@selection.Workload.Name</dd>
+        }
 
-        @if (modelsOnly)
+        @if (update)
+        {
+            <dt>ComfyUI folder</dt>
+            <dd>@selection.TargetFolder</dd>
+
+            <dt>ComfyUI update</dt>
+            <dd data-role="comfy-update">@(options.Extend is { RunUpdate: true } ? "On" : "Off")</dd>
+        }
+        else if (modelsOnly)
         {
             <dt>Download folder</dt>
             <dd>@Run.Plan.Selection.TargetFolder</dd>
@@ -74,7 +104,7 @@
             <dd>CPU-only build</dd>
         }
 
-        @if (!modelsOnly)
+        @if (!modelsOnly && !update)
         {
             <dt>Shortcuts</dt>
             <dd>

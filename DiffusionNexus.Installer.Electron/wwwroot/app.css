@@ -1939,6 +1939,16 @@ a.choice-card:hover {
     color: var(--muted);
 }
 
+.review-lines {
+    margin: 0 0 12px;
+    padding-left: 20px;
+    font-size: 14px;
+}
+
+.summary-line {
+    display: block;
+}
+
 .update-checkbox {
     display: flex;
     align-items: flex-start;

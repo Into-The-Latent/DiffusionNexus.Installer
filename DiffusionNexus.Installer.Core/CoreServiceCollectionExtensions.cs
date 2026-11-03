@@ -80,6 +80,7 @@ public static class CoreServiceCollectionExtensions
         services.AddTransient<IWizardModule, VcRuntimeModule>();
         services.AddTransient<IWizardModule, LlamaCppModule>();
         services.AddTransient<IWizardModule, ShortcutsModule>();
+        services.AddTransient<IWizardModule, ExistingReviewModule>();
         services.AddTransient<IWizardModule, DisclaimerModule>();
 
         // Size lookups get their OWN bounded client, never the container's: AddInstallationServices

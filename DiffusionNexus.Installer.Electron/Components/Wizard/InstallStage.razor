@@ -18,7 +18,7 @@
            into an issue needs what came before it. Hidden where there is no clipboard, for the
            same reason "Close installer" is hidden outside Electron (issue #14). *@
         <div class="panel-head">
-            <h2>@(ModelsOnly ? "Downloading" : "Installing")</h2>
+            <h2>@(ModelsOnly ? "Downloading" : Update ? "Updating" : "Installing")</h2>
             @if (Clipboard.IsAvailable)
             {
                 <span class="panel-head-actions">
@@ -33,7 +33,7 @@
 
         @if (_startError is not null)
         {
-            <p class="validation-error">This @(ModelsOnly ? "download" : "installation") could not be started: @_startError</p>
+            <p class="validation-error">This @(ModelsOnly ? "download" : Update ? "update" : "installation") could not be started: @_startError</p>
         }
 
         @* A models-only run is one step: the counter would say "Step 1 of 1" over an empty bar for hours. *@
@@ -78,9 +78,10 @@
 
         <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : "Installation complete")
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : Update ? (Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete") : "Installation complete")
               : result.IsCancelled ? "Cancelled"
               : ModelsOnly ? "Download failed"
+              : Update ? "Update failed"
               : "Installation failed")
         </h2>
 
@@ -127,7 +128,7 @@
 <div class="wizard-actions">
     @if (Session.Phase == InstallPhase.Running)
     {
-        <button class="btn-secondary" @onclick="() => Session.Cancel()">@(ModelsOnly ? "Cancel download" : "Cancel installation")</button>
+        <button class="btn-secondary" @onclick="() => Session.Cancel()">@(ModelsOnly ? "Cancel download" : Update ? "Cancel update" : "Cancel installation")</button>
     }
     else
     {
@@ -165,6 +166,8 @@
     private const int VisibleLogLines = 300;
 
     private bool ModelsOnly => Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
+
+    private bool Update => Run.Plan.Selection.Mode == WizardMode.UpdateExisting;
 
     /// <summary>
     /// A models-only run is only its downloads, so "complete" over a failed one would be a false
@@ -253,7 +256,7 @@
 
     private bool CanLaunch => Targets.LauncherScript is { } script && File.Exists(script);
 
-    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), ModelsOnly ? "open the download folder" : "open the installation folder");
+    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), ModelsOnly ? "open the download folder" : Update ? "open the ComfyUI folder" : "open the installation folder");
 
     /// <summary>
     /// The same rendering the log file uses, so what lands in an issue is what is on disk. A

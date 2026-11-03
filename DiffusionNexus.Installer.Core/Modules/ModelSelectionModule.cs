@@ -5,8 +5,11 @@ using DiffusionNexus.Installer.Core.Wizard;
 namespace DiffusionNexus.Installer.Core.Modules;
 
 /// <summary>One model the workload declares. <see cref="Group"/> is the catalog destination, for display only.</summary>
-public sealed class ModelRow(Guid id, string name, string group)
+public sealed class ModelRow(Guid id, string name, string group, string? packName = null)
 {
+    /// <summary>On a merged list, the workload this model came from.</summary>
+    public string? PackName { get; } = packName;
+
     public Guid Id { get; } = id;
     public string Name { get; } = name;
     public string Group { get; } = group;
@@ -87,7 +90,11 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         Rows = selection.Workload.ModelDownloads
             .Where(m => m.Enabled)
             .DistinctBy(m => m.Id)
-            .Select(m => new ModelRow(m.Id, m.Name, string.IsNullOrWhiteSpace(m.Destination) ? NotAssignedGroup : m.Destination))
+            .Select(m => new ModelRow(
+                m.Id,
+                m.Name,
+                string.IsNullOrWhiteSpace(m.Destination) ? NotAssignedGroup : m.Destination,
+                selection.PackNameByModelId.GetValueOrDefault(m.Id)))
             .ToList();
         Groups = Rows
             .GroupBy(r => r.Group)

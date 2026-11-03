@@ -1,0 +1,50 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel">
+    <h2>What will change</h2>
+    <ul class="review-lines">
+        @foreach (var line in Module.Lines)
+        {
+            <li>@line</li>
+        }
+    </ul>
+
+    @if (Module.RunUpdate)
+    {
+        <p class="validation-error" data-role="may-break">Depending on when you last updated, your ComfyUI may stop working after this update.</p>
+    }
+    @if (Module.TorchChange is { } change)
+    {
+        <p class="validation-error" data-role="confirm-torch">@change Custom nodes built for the old one may stop loading.</p>
+    }
+    @if (Module.NeedsNewerTorch is { Count: > 0 } lines)
+    {
+        <div class="validation-error" data-role="confirm-note">
+            @foreach (var line in lines)
+            {
+                <p>@line</p>
+            }
+        </div>
+    }
+
+    <label class="checkbox">
+        <input type="checkbox" data-role="understood" checked="@Module.Understood" @onchange="OnChanged" />
+        <span>I understand what will change</span>
+    </label>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ExistingReviewModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnChanged(ChangeEventArgs e)
+    {
+        Module.Understood = e.Value is true;
+        await Changed.InvokeAsync();
+    }
+}

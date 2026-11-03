@@ -129,6 +129,7 @@
                     <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">
                         @(_run.CurrentStage != WizardStage.Confirm ? "Next"
                           : Mode == WizardMode.ModelsOnly ? "Start download"
+                          : Mode == WizardMode.UpdateExisting ? "Start update"
                           : "Start installation")
                     </button>
                 </div>
@@ -555,6 +556,7 @@
         VcRuntimeModule m => @<VcRuntimePanel Module="m" Changed="_moduleChanged" />,
         LlamaCppModule m => @<LlamaCppPanel Module="m" />,
         ShortcutsModule m => @<ShortcutsPanel Module="m" Changed="_moduleChanged" />,
+        ExistingReviewModule m => @<ExistingReviewPanel Module="m" Changed="_moduleChanged" />,
         DisclaimerModule m => @<DisclaimerPanel Module="m" Changed="_moduleChanged" />,
         _ => @<p>Unknown module: @module.Id</p>
     };

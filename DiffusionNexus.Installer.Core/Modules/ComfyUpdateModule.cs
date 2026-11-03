@@ -43,7 +43,9 @@ public sealed class ComfyUpdateModule : IWizardModule
     public string Folder => _selection?.TargetFolder ?? string.Empty;
 
     /// <summary>Where the update goes. The script follows the same setting.</summary>
-    public string Channel => Run?.Profile switch
+    public string Channel => ChannelText(Run?.Profile);
+
+    internal static string ChannelText(ExistingComfyUIProfile? profile) => profile switch
     {
         { ManagerInstalled: false } => "To the newest stable release. ComfyUI-Manager is missing, so we'll install it.",
         { ManagerUpdatePolicy: "nightly-comfyui" } => "To the latest commit, following your ComfyUI-Manager setting.",
@@ -65,32 +67,31 @@ public sealed class ComfyUpdateModule : IWizardModule
     public string TargetTorch => Run?.Target is { } target ? Stack(target.Torch.TorchVersion, target.Torch.CudaVersion) : string.Empty;
 
     /// <summary>The red note beside the calm message: one line per torch wanted, then what is there. Empty when nothing is missing.</summary>
-    public IReadOnlyList<string> NeedsNewerTorch
+    public IReadOnlyList<string> NeedsNewerTorch => RunUpdate || Run is null ? [] : NeedsNewerLines(Run);
+
+    internal static IReadOnlyList<string> NeedsNewerLines(ExistingRun run)
     {
-        get
-        {
-            if (RunUpdate || Run is not { Target: { } target, Profile: { } profile } || target.PacksNeedingNewer.Count == 0) return [];
+        if (run is not { Target: { } target, Profile: { } profile } || target.PacksNeedingNewer.Count == 0) return [];
 
-            var lines = target.PacksNeedingNewer
-                .GroupBy(n => (n.TorchVersion, n.CudaVersion))
-                .Select(g =>
-                {
-                    var names = g.Select(n => n.PackName).ToList();
-                    var joined = names.Count == 1 ? names[0] : $"{string.Join(", ", names.SkipLast(1))} and {names[^1]}";
-                    return $"{joined} {(names.Count == 1 ? "needs" : "need")} torch {Stack(g.Key.TorchVersion, g.Key.CudaVersion)}.";
-                })
-                .ToList();
+        var lines = target.PacksNeedingNewer
+            .GroupBy(n => (n.TorchVersion, n.CudaVersion))
+            .Select(g =>
+            {
+                var names = g.Select(n => n.PackName).ToList();
+                var joined = names.Count == 1 ? names[0] : $"{string.Join(", ", names.SkipLast(1))} and {names[^1]}";
+                return $"{joined} {(names.Count == 1 ? "needs" : "need")} torch {Stack(g.Key.TorchVersion, g.Key.CudaVersion)}.";
+            })
+            .ToList();
 
-            var these = target.PacksNeedingNewer.Count == 1 ? "this workload" : "these workloads";
-            lines.Add($"You have torch {Installed(profile)}, and we won't change it, so {these} may not run until you update.");
-            return lines;
-        }
+        var these = target.PacksNeedingNewer.Count == 1 ? "this workload" : "these workloads";
+        lines.Add($"You have torch {Installed(profile)}, and we won't change it, so {these} may not run until you update.");
+        return lines;
     }
 
-    private static string Installed(ExistingComfyUIProfile profile) =>
+    internal static string Installed(ExistingComfyUIProfile profile) =>
         profile.Torch is { } torch ? Stack(torch.TorchVersion, torch.CudaVersion) : "that could not be read";
 
-    private static string Stack(string torch, string? cuda) =>
+    internal static string Stack(string torch, string? cuda) =>
         string.IsNullOrEmpty(cuda) ? $"{torch}, a CPU build" : $"{torch} with CUDA {cuda}";
 
     public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)

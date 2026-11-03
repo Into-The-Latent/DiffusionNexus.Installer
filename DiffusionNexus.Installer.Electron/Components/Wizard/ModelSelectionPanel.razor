@@ -25,6 +25,10 @@
                 <label class="checkbox">
                     <input type="checkbox" checked="@row.IsSelected" @onchange="e => OnRowChanged(row, e)" />
                     <span>@row.Name</span>
+                    @if (row.PackName is { } pack)
+                    {
+                        <span class="tag" data-role="pack">@pack</span>
+                    }
                     @if (row.IsExisting)
                     {
                         <span class="tag" title="@row.ExistingPath">already downloaded</span>
