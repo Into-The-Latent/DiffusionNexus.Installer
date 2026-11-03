@@ -1,0 +1,75 @@
+@using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.Core.Modules
+@inject IPostInstallActions Actions
+
+<section class="panel">
+    <label class="update-checkbox">
+        <input type="checkbox" data-role="run-update" checked="@Module.RunUpdate" disabled="@Module.Locked" @onchange="OnChanged" />
+        <span>
+            <strong>Update ComfyUI</strong>
+            <span class="panel-hint" data-role="channel">@Module.Channel</span>
+        </span>
+    </label>
+
+    @if (Module.RunUpdate)
+    {
+        <div class="update-warning" data-role="update-warning">
+            <h3>An update can destroy a working ComfyUI</h3>
+            <p>If your ComfyUI works today, this is the moment to think twice. After an update:</p>
+            <ul>
+                <li>Custom nodes may stop loading</li>
+                <li>Workflows you rely on may stop working</li>
+                <li>There's no automatic way back</li>
+            </ul>
+            @if (!Module.Locked)
+            {
+                <p><strong>Everything working?</strong> Untick this. You still get the workload's custom nodes and models.</p>
+            }
+            <button class="btn-secondary" type="button" data-role="open-folder" @onclick="OpenFolder">Open my ComfyUI folder to back it up</button>
+        </div>
+
+        @if (Module.TorchChange is { } change)
+        {
+            <p class="validation-error" data-role="torch-change">@change</p>
+        }
+        @if (Module.ConflictingWorkloads is { Count: > 0 } conflicts)
+        {
+            <p class="validation-error" data-role="torch-conflict">@string.Join(", ", conflicts) @(conflicts.Count == 1 ? "wants" : "want") a different torch. The biggest one wins: @Module.TargetTorch.</p>
+        }
+    }
+    else
+    {
+        <div class="update-calm" data-role="update-calm">
+            <p><strong>Good choice if it's working.</strong></p>
+            <p>Your ComfyUI stays on its current version. We only add the workload's custom nodes and models.</p>
+        </div>
+
+        @if (Module.NeedsNewerTorch is { Count: > 0 } lines)
+        {
+            <div class="validation-error" data-role="torch-note">
+                @foreach (var line in lines)
+                {
+                    <p>@line</p>
+                }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ComfyUpdateModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnChanged(ChangeEventArgs e)
+    {
+        Module.RunUpdate = e.Value is true;
+        await Changed.InvokeAsync();
+    }
+
+    private void OpenFolder() => Actions.OpenFolder(Module.Folder);
+}

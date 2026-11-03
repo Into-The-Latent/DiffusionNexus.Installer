@@ -28,6 +28,8 @@ public sealed class WorkflowSelectionModule : IWizardModule
     public IReadOnlyList<WorkflowRow> Rows { get; private set; } = [];
     public int SelectedCount => Rows.Count(r => r.IsSelected);
 
+    public bool UsedIn(WizardMode mode) => mode is WizardMode.FreshInstall or WizardMode.UpdateExisting;
+
     public bool AppliesTo(WizardSelection selection) => selection.Workload.Workflows.Count > 0;
 
     public Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)

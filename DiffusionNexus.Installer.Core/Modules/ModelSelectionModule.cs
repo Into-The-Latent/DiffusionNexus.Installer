@@ -148,7 +148,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
             ? []
             : scanner.Scan(new ModelScanRequest(
                 _selection.Workload,
-                downloadOnly ? folder : RepositoryPaths.Resolve(_selection.Workload, folder),
+                // Only a fresh install creates a folder under the one chosen.
+                _selection.Mode == WizardMode.FreshInstall ? RepositoryPaths.Resolve(_selection.Workload, folder) : folder,
                 _selection.ModelBaseFolder,
                 _selection.FolderPathOverrides,
                 tier,

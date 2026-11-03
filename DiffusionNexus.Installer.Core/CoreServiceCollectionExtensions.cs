@@ -71,6 +71,7 @@ public static class CoreServiceCollectionExtensions
         services.AddTransient<IWizardModule, ModelsOnlyFolderModule>();
         services.AddTransient<IWizardModule, ExistingFolderModule>();
         services.AddTransient<IWizardModule, ComfyFoldersModule>();
+        services.AddTransient<IWizardModule, ComfyUpdateModule>();
         services.AddTransient<IWizardModule, VramProfileModule>();
         services.AddTransient<IWizardModule, ModelSelectionModule>();
         services.AddTransient<IWizardModule, WorkflowSelectionModule>();
