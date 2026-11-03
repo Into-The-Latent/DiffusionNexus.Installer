@@ -95,7 +95,7 @@ The owner rejected a small dropdown and greyed-out cards, because people would n
 
 The Content step leaves out its "Graphics card memory" panel in multi-select. Confirm lists each workload's chosen version, as a last chance to catch a wrong size, because starting at 32 GB gives anyone who ignores the selector the largest downloads.
 
-With a single workload on these two new paths, today's memory panel appears on the Content step but **starts at the workload's highest version** (see section 9, item 1). Fresh installs keep starting at the lowest.
+With a single workload on these two new paths, today's memory panel appears on the Content step but **starts at the workload's highest version** (owner's decision, 2026-11-03). Fresh installs keep starting at the lowest.
 
 ### Models only: Location step
 
@@ -243,9 +243,8 @@ Add everything in section 5. Change the release target. The rest of the plan sta
 
 ## 9. Open questions for the owner
 
-A review of this design by a fresh reader raised two more questions, on torch when unticked and on machines with no usable GPU. The owner answered both on 2026-11-03, and section 3 has the answers.
+None. A review of this design by a fresh reader raised questions on torch when unticked and on machines with no usable GPU. The owner answered both on 2026-11-03, along with the single-workload starting size, and section 3 has the answers.
 
-1. **Single-workload starting size.** The last question asked was whether a single workload on the new paths also starts at the highest size. The owner's answer was "Okay, that is great" while wrapping up, which this document reads as accepting the recommendation: highest on both new paths, fresh installs unchanged. Please confirm.
 ## 9a. The split (owner's decision, 2026-11-03)
 
 Split into two issues per repo, so that one PR can deliver each.
@@ -258,7 +257,6 @@ In SDK #85, a same-named file can still already be in a flat folder from an earl
 
 ## 10. How to continue
 
-1. Answer section 9.
-2. Plan and build SDK #85 and Installer #63 first (superpowers:writing-plans). Then plan #70 and #28, settling section 6 first.
-3. Build the SDK side first. In the Installer use `-p:UseLocalSDK=true` until the SDK is tagged.
-4. Do GUI tests on the BenQ monitor only, per the owner's global rule.
+1. Plan and build SDK #85 and Installer #63 first (superpowers:writing-plans). Then plan #70 and #28, settling section 6 first.
+2. Build the SDK side first. In the Installer use `-p:UseLocalSDK=true` until the SDK is tagged.
+3. Do GUI tests on the BenQ monitor only, per the owner's global rule.
