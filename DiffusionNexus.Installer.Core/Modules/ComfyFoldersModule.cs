@@ -225,7 +225,34 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// <summary>Update path: continuing changes where this ComfyUI loads its models from.</summary>
     public bool ModelFolderDiffers =>
         _existing?.Profile is not null
-        && (!SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) || (UseModelLibraryFolder && AdvancedEdited));
+        && (!SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) || (UseModelLibraryFolder && (AdvancedEdited || MissingModelTypes.Count > 0)));
+
+    /// <summary>
+    /// Types this run's models go into that the install's yaml doesn't list. ComfyUI reads only what
+    /// it lists under a base_path, so a model of such a type would land where nothing looks for it.
+    /// </summary>
+    public IReadOnlyList<string> MissingModelTypes =>
+        _existing?.Profile?.ModelFolderMappings is not { } mappings || !UseModelLibraryFolder || _selection is null
+            ? []
+            : _selection.Workload.ModelDownloads
+                .Where(m => m.Enabled)
+                .Select(m => ModelDestinationType(m.Destination))
+                .Where(type => type is not null && _folderTypes.Any(r => r.Key.Equals(type, StringComparison.OrdinalIgnoreCase)) && !mappings.ContainsKey(type))
+                .Select(type => type!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    /// <summary>"vae" from "models/vae". Null for a destination with no type folder.</summary>
+    private static string? ModelDestinationType(string? destination)
+    {
+        var parts = destination?.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        var at = parts.Length > 0 && parts[0].Equals("models", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        return at < parts.Length ? parts[at] : null;
+    }
+
+    /// <summary>Whether the install has a yaml at all, which a switch that was off doesn't tell.</summary>
+    public bool HasModelPathsFile =>
+        _selection is not null && File.Exists(Path.Combine(_selection.TargetFolder, "extra_model_paths.yaml"));
 
     private static bool SameFolder(string? a, string? b)
     {

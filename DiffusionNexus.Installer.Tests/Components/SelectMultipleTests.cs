@@ -136,6 +136,26 @@ public class SelectMultipleTests : BunitContext
     }
 
     [Fact]
+    public void A_workload_that_only_brings_custom_nodes_is_offered_on_the_update_path()
+    {
+        var nodes = Workload("Nodes", withModel: false);
+        nodes.GitRepositories.Add(new GitRepository { Url = "https://github.com/x/SomeNode" });
+        Arrange(nodes);
+
+        RenderPath(WizardMode.UpdateExisting).FindAll(".workload-card:not(.update-only-tile) .workload-card-name").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_workload_that_only_brings_the_manager_is_what_update_only_already_does()
+    {
+        var bare = Workload("Blank", withModel: false);
+        bare.GitRepositories.Add(new GitRepository { Url = "https://github.com/ltdrdata/ComfyUI-Manager" });
+        Arrange(bare);
+
+        RenderPath(WizardMode.UpdateExisting).FindAll(".workload-card:not(.update-only-tile) .workload-card-name").Should().BeEmpty();
+    }
+
+    [Fact]
     public void A_workload_with_only_workflows_is_offered_on_the_update_path()
     {
         var workflows = Workload("Flows", withModel: false);

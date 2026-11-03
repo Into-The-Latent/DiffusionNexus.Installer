@@ -171,6 +171,67 @@ public class ComfyFoldersUpdatePathTests : BunitContext
         module.OutputFolder.Should().Be(@"E:\Typed");
     }
 
+    private static InstallationConfiguration WithModel(string destination)
+    {
+        var workload = new InstallationConfiguration { Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI } };
+        workload.ModelDownloads.Add(new SDK.Models.Entities.ModelDownload { Name = "m", Url = "https://h/m.safetensors", Destination = destination });
+        return workload;
+    }
+
+    private async Task<ComfyFoldersModule> WithWorkloadAsync(InstallationConfiguration workload, ExistingComfyUIProfile profile)
+    {
+        var union = ExtendConfigurationMerger.Union([new WorkloadChoice(workload, 0)]);
+        var selection = new WizardSelection { Workload = union.Configuration, Mode = WizardMode.UpdateExisting };
+        selection.Existing = new ExistingRun(selection, union, [workload], null);
+        var module = new ComfyFoldersModule(_settings.Object);
+        await module.InitializeAsync(selection);
+        selection.Existing.Profile = profile;
+        return module;
+    }
+
+    [Fact]
+    public async Task A_type_the_yaml_does_not_list_gets_it_rewritten_so_comfyui_can_find_the_model()
+    {
+        var module = await WithWorkloadAsync(WithModel("models/vae"), Profile() with
+        {
+            ModelFolderMappings = new Dictionary<string, string> { ["checkpoints"] = "checkpoints" },
+        });
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        module.MissingModelTypes.Should().Equal("vae");
+        draft.GenerateExtraModelPaths.Should().BeTrue();
+        Panel(module).Find("[data-role=model-differs]").TextContent.Should()
+            .Be("Your extra_model_paths.yaml doesn't list vae, so ComfyUI wouldn't find these models. Continuing rewrites that file; a backup is kept.");
+    }
+
+    [Fact]
+    public async Task A_type_the_yaml_lists_needs_nothing()
+    {
+        var module = await WithWorkloadAsync(WithModel("models/vae"), Profile() with
+        {
+            ModelFolderMappings = new Dictionary<string, string> { ["vae"] = "vae" },
+        });
+
+        module.MissingModelTypes.Should().BeEmpty();
+        module.ModelFolderDiffers.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_yaml_with_no_comfyui_block_is_not_said_to_be_added()
+    {
+        var (module, _) = await ModuleAsync(Profile(models: null, folder: Directory.CreateTempSubdirectory("dn-yaml-").FullName));
+        File.WriteAllText(Path.Combine(module.InstallFolder, "extra_model_paths.yaml"), "a111:\n  base_path: x\n");
+        module.UseModelLibraryFolder = true;
+        module.ModelBaseFolder = @"E:\NewLib";
+
+        Panel(module).Find("[data-role=model-differs]").TextContent.Should()
+            .Be("Your ComfyUI has an extra_model_paths.yaml. Continuing rewrites that file, and anything else in it stops applying; a backup is kept.");
+
+        Directory.Delete(module.InstallFolder, recursive: true);
+    }
+
     [Fact]
     public async Task Unchanged_folders_write_nothing()
     {

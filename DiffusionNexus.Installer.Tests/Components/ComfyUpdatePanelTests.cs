@@ -151,6 +151,7 @@ public class ComfyUpdatePanelTests : BunitContext
     [InlineData(true, "stable-comfyui", "To the newest stable release, following your ComfyUI-Manager setting.")]
     [InlineData(true, "nightly-comfyui", "To the latest commit, following your ComfyUI-Manager setting.")]
     [InlineData(false, null, "To the newest stable release. ComfyUI-Manager is missing, so we'll install it.")]
+    [InlineData(false, "nightly-comfyui", "To the latest commit, following your ComfyUI-Manager setting.")]
     public async Task The_channel_says_where_the_update_goes(bool manager, string? policy, string expected)
     {
         var (module, _) = await ModuleAsync(Profile(manager, policy), packs: Workload("A"));
@@ -214,6 +215,20 @@ public class ComfyUpdatePanelTests : BunitContext
         draft.Extend.Should().Be(new ExtendExistingOptions(Repo + @"\venv", update, torch, true));
         draft.CreateDesktopShortcut.Should().BeFalse();
         draft.CreateStartMenuShortcut.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Only_a_new_accelerator_keeps_the_torch_version()
+    {
+        var workload = Workload("A", "2.8.0", "12.8");
+        workload.Python.InstallTriton = true;
+        var (module, _) = await ModuleAsync(packs: workload);
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        draft.Extend!.UpgradeTorchStack.Should().BeTrue();
+        draft.Extend.KeepTorchVersion.Should().BeTrue();
     }
 
     [Fact]

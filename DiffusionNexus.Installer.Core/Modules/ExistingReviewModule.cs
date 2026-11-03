@@ -56,7 +56,8 @@ public sealed class ExistingReviewModule : IWizardModule
                 RunUpdate
                     ? $"ComfyUI: updates {char.ToLowerInvariant(channel[0])}{channel[1..]}"
                     : "ComfyUI: stays on its current version.",
-                !ChangesTorch ? "Torch: stays as it is."
+                profile.Torch is null ? "Torch: could not be read, so it is left as it is."
+                : !ChangesTorch ? "Torch: stays as it is."
                 : ComfyUpdateModule.TorchVersionChanges(Run)
                     ? $"Torch: changes from {ComfyUpdateModule.Installed(profile)} to {ComfyUpdateModule.Stack(Run.Target!.Torch.TorchVersion, Run.Target.Torch.CudaVersion)}."
                     : $"Torch: stays at {ComfyUpdateModule.Installed(profile)}, and {ComfyUpdateModule.NewAccelerators(Run)} {(ComfyUpdateModule.NewAccelerators(Run).Contains(" and ") ? "are" : "is")} added.",

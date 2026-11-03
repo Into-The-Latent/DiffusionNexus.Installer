@@ -7,6 +7,7 @@
 @using DiffusionNexus.Installer.SDK.Catalog
 @using DiffusionNexus.Installer.SDK.Models.Configuration
 @using DiffusionNexus.Installer.SDK.Models.Enums
+@using DiffusionNexus.Installer.SDK.Services.Installation.Existing
 @inject SoftwareGalleryBuilder Builder
 @inject IWorkloadSource Workloads
 @inject NavigationManager Nav
@@ -261,11 +262,15 @@
             .Select(e => e with { IsInstallable = true, Incompatibility = null })
             .ToList(),
         WizardMode.UpdateExisting => entries
-            .Where(e => e.Workload.ModelDownloads.Any(m => m.Enabled) || e.Workload.Workflows.Count > 0)
+            .Where(e => e.Workload.ModelDownloads.Any(m => m.Enabled) || e.Workload.Workflows.Count > 0 || BringsNodes(e.Workload))
             .Select(e => e with { IsInstallable = true, Incompatibility = null })
             .ToList(),
         _ => entries,
     };
+
+    /// <summary>A node beyond the Manager: only the Manager is what Update only already does.</summary>
+    private static bool BringsNodes(InstallationConfiguration workload) =>
+        workload.GitRepositories.Any(r => !ExtendConfigurationMerger.HasManagerRepository(new InstallationConfiguration { GitRepositories = [r] }));
 
     private int VersionOf(InstallationConfiguration workload) =>
         _versions.TryGetValue(workload.Id, out var version)

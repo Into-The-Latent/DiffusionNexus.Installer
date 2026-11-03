@@ -47,8 +47,9 @@ public sealed class ComfyUpdateModule : IWizardModule
 
     internal static string ChannelText(ExistingComfyUIProfile? profile) => profile switch
     {
-        { ManagerInstalled: false } => "To the newest stable release. ComfyUI-Manager is missing, so we'll install it.",
+        // The policy first: the script reads it from the Manager's config even with no Manager folder.
         { ManagerUpdatePolicy: "nightly-comfyui" } => "To the latest commit, following your ComfyUI-Manager setting.",
+        { ManagerInstalled: false } => "To the newest stable release. ComfyUI-Manager is missing, so we'll install it.",
         _ => "To the newest stable release, following your ComfyUI-Manager setting.",
     };
 
@@ -132,7 +133,7 @@ public sealed class ComfyUpdateModule : IWizardModule
     {
         if (Run is not { Profile.VenvPath: { } venv } run) return;
 
-        draft.Extend = new ExtendExistingOptions(venv, RunUpdate, run.UpgradeTorch, draft.ChangeOutputFolder);
+        draft.Extend = new ExtendExistingOptions(venv, RunUpdate, run.UpgradeTorch, draft.ChangeOutputFolder, run.UpgradeTorch && !TorchVersionChanges(run));
         draft.CreateDesktopShortcut = false;
         draft.CreateStartMenuShortcut = false;
     }

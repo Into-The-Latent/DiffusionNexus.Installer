@@ -113,6 +113,16 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_torch_that_could_not_be_read_says_it_is_left_alone()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+
+        run.Plan.Selection.Existing!.Profile = Profile() with { Torch = null };
+
+        Review(run).Lines.Should().Contain("Torch: could not be read, so it is left as it is.");
+    }
+
+    [Fact]
     public async Task A_changed_answer_asks_again()
     {
         var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
