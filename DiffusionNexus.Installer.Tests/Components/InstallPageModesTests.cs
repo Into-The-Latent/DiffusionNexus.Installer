@@ -1,5 +1,6 @@
 using Bunit;
 using DiffusionNexus.Installer.Core.Catalog;
+using DiffusionNexus.Installer.Core.Content;
 using DiffusionNexus.Installer.Core.Gallery;
 using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Install;
@@ -8,6 +9,7 @@ using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Catalog;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Shared.Services.Feedback;
 using DiffusionNexus.Installer.Tests.Support;
 using FluentAssertions;
@@ -26,7 +28,8 @@ public class InstallPageModesTests : BunitContext
     {
         Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
         Name = "The workload",
-        Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI }
+        Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI },
+        ModelDownloads = [new ModelDownload { Name = "The model", Enabled = true }]
     };
 
     private readonly Mock<IInstallSession> _session = new();
@@ -82,6 +85,19 @@ public class InstallPageModesTests : BunitContext
         cut.WaitForAssertion(() => cut.Find(".panel-warning .btn-primary").Click());
 
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"/existing/models/{Workload.Id}");
+    }
+
+    [Theory]
+    [InlineData(WizardMode.FreshInstall, "models and workflows")]
+    [InlineData(WizardMode.ModelsOnly, "models")]
+    public void The_advanced_bar_names_what_is_behind_it(WizardMode mode, string subtitle)
+    {
+        Services.AddSingleton(new WizardModuleRegistry(() =>
+            [new ModelSelectionModule(Mock.Of<IModelPresenceScanner>(), Mock.Of<IDiskSpaceEstimator>())]));
+
+        var cut = RenderInstall(mode);
+
+        cut.WaitForAssertion(() => cut.Find(".advanced-subtitle").TextContent.Trim().Should().Be(subtitle));
     }
 
     [Theory]

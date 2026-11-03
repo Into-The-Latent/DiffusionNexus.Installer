@@ -545,3 +545,23 @@ installer writes. Delete that file first for a clean run.
 7. Walk a ComfyUI workload through every stage. **Expect:** the hero stays up on Location,
    System and Content; on Confirm it shrinks to a small picture beside the name (no
    description) above "Ready to install"; the Install stage has the plain heading and no hero.
+
+## 11. Download models only (#63, SDK #85)
+
+Use a workload with a small model, such as Krea-2-Turbo with only 4x-UltraSharp ticked, so the runs stay short.
+
+1. Open the welcome screen. **Expect:** exactly one new tile, "Update ComfyUI or Download Models", directly after ComfyUI.
+2. Click it. **Expect:** "What do you want to do?" with two cards. "Update existing ComfyUI" says "Coming soon" and can't be clicked. Click "Download models only".
+3. **Expect:** "Select workload", with no workload that has no models (no Blank ComfyUI). Each card's button says "Download models". Back leads to the two cards.
+4. Pick Krea-2-Turbo. **Expect:** the stages are Location, Content, Confirm, Install, with no System stage. Location shows "Download folder" with an empty box, Next disabled, and "Choose a folder to download into." in red under the hint.
+5. Type `AI\models`. **Expect:** "Enter the full path...". Type a new folder that isn't a ComfyUI, such as `E:\Temp\models-a`. **Expect:** Next enabled and a list of subfolders and model names under the switch.
+6. Turn "Sort models into subfolders" off. **Expect:** the red "ComfyUI won't find these models..." box, and the list loses its subfolders. Turn it back on and press Next.
+7. On Content. **Expect:** the memory panel starts at the workload's highest size (32 GB), and no workflow list. Open Advanced and untick everything except 4x-UltraSharp.
+8. On Confirm. **Expect:** "Ready to download", with the download folder and "Subfolders: On". No Python, Software or Shortcuts row. Tick the disclaimer. The button says "Start download".
+9. Start it. **Expect:** "Downloading", then "Download complete", the step summary and a row for each model. No "Start app" button. "Open folder" opens the folder.
+10. List the folder. **Expect:** `upscale_models\4x-UltraSharp.pth` and nothing else: no script, shortcut, yaml, custom node, workflow or log file.
+11. Run steps 4 to 9 again with subfolders off and a new folder. **Expect:** `4x-UltraSharp.pth` directly in the folder and nothing else.
+12. Run again into that same folder, subfolders off. **Expect:** the model is marked "already downloaded", and its row says "Model found at", with the file untouched.
+13. Pick a folder named `ComfyUI`, such as `E:\Temp\ComfyUI`. **Expect:** the files land inside it and nothing lands in `E:\Temp`.
+14. Open a fresh ComfyUI wizard from the ComfyUI tile. **Expect:** today's stages and install folder, with its remembered folders unchanged, and the memory panel at the lowest size.
+15. Open Licences in the middle of step 7 and go Back. **Expect:** the same wizard with its answers.

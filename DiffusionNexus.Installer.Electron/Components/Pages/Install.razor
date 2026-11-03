@@ -464,7 +464,10 @@
         Nav.NavigateTo(WizardRoutes.Install(running.Selection.Workload.Id, running.Selection.Mode));
     }
 
-    private string AdvancedSubtitle() => _run!.CurrentStage == WizardStage.Content ? "models and workflows" : "more options";
+    private string AdvancedSubtitle() =>
+        _run!.CurrentStage != WizardStage.Content ? "more options"
+        : Mode == WizardMode.ModelsOnly ? "models"
+        : "models and workflows";
 
     /// <summary>What the closed Advanced bar on the Content stage says, e.g. "14 of 14 models, 3 of 3 workflows".</summary>
     private string ContentSummary()

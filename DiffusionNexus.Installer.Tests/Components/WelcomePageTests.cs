@@ -90,6 +90,8 @@ public class WelcomePageTests : BunitContext
         var tile = cut.FindAll(".software-card")[1];
         tile.QuerySelector("a")!.GetAttribute("href").Should().Be("/existing");
         tile.QuerySelector(".software-card-name")!.TextContent.Should().Be("Update ComfyUI or Download Models");
+        tile.QuerySelector("img").Should().BeNull("a second ComfyUI logo beside the first reads as a duplicate tile");
+        tile.QuerySelector(".software-card-art-text")!.TextContent.Should().Be("Update or Download");
         cut.FindAll("a[href='/existing']").Should().ContainSingle("the owner allows at most one new tile");
     }
 

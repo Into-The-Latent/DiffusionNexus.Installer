@@ -117,11 +117,10 @@
                         {
                             <div class="software-card">
                                 <a href="/existing">
+                                    @* Words, not the logo: at the usual window height the names sit below the
+                                       fold, and two identical ComfyUI pictures in a row read as a duplicate. *@
                                     <div class="card-art software-card-art">
-                                        @if (SoftwareLogos.PathFor(software.Type) is { } logo)
-                                        {
-                                            <img src="@logo" alt="ComfyUI" />
-                                        }
+                                        <span class="software-card-art-text">Update or Download</span>
                                     </div>
                                     <div class="software-card-meta">
                                         <p class="software-card-name">Update ComfyUI or Download Models</p>

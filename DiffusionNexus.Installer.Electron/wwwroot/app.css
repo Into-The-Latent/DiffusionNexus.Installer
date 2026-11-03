@@ -1672,6 +1672,14 @@ progress {
     opacity: 0.55;
 }
 
+.software-card-art-text {
+    padding: 0 16px;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--text);
+}
+
 .software-card-art-fallback {
     padding: 12px;
     text-align: center;
