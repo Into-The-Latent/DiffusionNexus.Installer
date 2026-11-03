@@ -92,7 +92,6 @@ public class InstallPageMergedTests : BunitContext
         Services.AddSingleton(_picks);
         Services.AddSingleton(Mock.Of<IPostInstallActions>());
         Services.AddSingleton(Mock.Of<IClipboard>());
-        Services.AddSingleton(Mock.Of<IJSRuntime>());
         Services.AddSingleton(Mock.Of<IUserPrompt>());
         Services.AddSingleton(Mock.Of<IModelPreflight>());
         Services.AddSingleton<ICatalogProvenance>(new FakeCatalogProvenance(() => "test catalog"));
