@@ -41,7 +41,35 @@
             }
         </div>
 
-        @if (Entry.IsInstallable)
+        @if (Selectable)
+        {
+            @* A version that doesn't fit never greys out the card: people wouldn't know why. *@
+            @if (Versions.Count > 0)
+            {
+                <label class="workload-card-version">
+                    <span>Version</span>
+                    <select value="@Version" @onchange="OnVersionPicked">
+                        @foreach (var tier in Versions)
+                        {
+                            <option value="@tier">@tier GB</option>
+                        }
+                    </select>
+                </label>
+            }
+            else
+            {
+                <p class="workload-card-one-version">One version only</p>
+            }
+            @if (Note is not null)
+            {
+                <p class="validation-error" data-role="too-large">@Note</p>
+            }
+            <label class="workload-card-include">
+                <input type="checkbox" data-role="include" checked="@Included" @onchange="OnIncludeChanged" />
+                <span>Include</span>
+            </label>
+        }
+        else if (Entry.IsInstallable)
         {
             <button class="workload-card-install" type="button" @onclick="() => OnInstall.InvokeAsync(Entry)">
                 @ActionLabel
@@ -62,6 +90,28 @@
 
     /// <summary>What the button says.</summary>
     [Parameter] public string ActionLabel { get; set; } = "Install";
+
+    /// <summary>Select multiple: an Include checkbox and a version instead of the button.</summary>
+    [Parameter] public bool Selectable { get; set; }
+
+    [Parameter] public bool Included { get; set; }
+
+    [Parameter] public EventCallback<bool> IncludedChanged { get; set; }
+
+    /// <summary>The workload's versions in GB. Empty for "One version only".</summary>
+    [Parameter] public IReadOnlyList<int> Versions { get; set; } = [];
+
+    [Parameter] public int Version { get; set; }
+
+    [Parameter] public EventCallback<int> VersionChanged { get; set; }
+
+    /// <summary>The red note under the version, when it's too large.</summary>
+    [Parameter] public string? Note { get; set; }
+
+    private Task OnVersionPicked(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), out var version) ? VersionChanged.InvokeAsync(version) : Task.CompletedTask;
+
+    private Task OnIncludeChanged(ChangeEventArgs e) => IncludedChanged.InvokeAsync(e.Value is true);
 
     /// <summary>The catalog's own description, or null when it has none worth showing.</summary>
     private string? Description => string.IsNullOrWhiteSpace(Entry.Workload.Description)

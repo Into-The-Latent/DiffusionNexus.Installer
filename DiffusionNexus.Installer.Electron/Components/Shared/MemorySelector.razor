@@ -1,0 +1,23 @@
+@* Large on purpose. The owner rejected a small dropdown: people wouldn't realise it applies once to everything. *@
+<section class="memory-selector">
+    <h2>How much memory does your graphics card have?</h2>
+    <p>This sets every workload below to the best version that fits. You can still change a single workload on its card.</p>
+    <select data-role="memory" value="@MemoryGb" @onchange="OnChanged">
+        @foreach (var size in Sizes)
+        {
+            <option value="@size">@size</option>
+        }
+    </select>
+    <span>GB</span>
+</section>
+
+@code {
+    private static readonly int[] Sizes = [8, 12, 16, 24, 32];
+
+    [Parameter] public int MemoryGb { get; set; }
+
+    [Parameter] public EventCallback<int> MemoryGbChanged { get; set; }
+
+    private Task OnChanged(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), out var memory) ? MemoryGbChanged.InvokeAsync(memory) : Task.CompletedTask;
+}

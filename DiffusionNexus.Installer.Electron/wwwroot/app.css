@@ -1939,8 +1939,73 @@ a.choice-card:hover {
     color: var(--muted);
 }
 
-.choice-card-disabled {
-    opacity: .6;
+.memory-selector {
+    margin: 12px 0 16px;
+    padding: 16px 18px;
+    border: 1px solid var(--accent, #35b8a4);
+    border-radius: 11px;
+    background: var(--panel);
+}
+
+.memory-selector h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+}
+
+.memory-selector p {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.memory-selector select {
+    min-width: 90px;
+    padding: 6px 8px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.workload-card-version {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.workload-card-one-version {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.workload-card-include {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.update-only-text {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.select-multiple-bar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--panel);
 }
 
 .choice-card .choice-soon {

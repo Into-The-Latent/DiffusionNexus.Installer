@@ -11,6 +11,7 @@
 @inject IWorkloadSource Workloads
 @inject NavigationManager Nav
 @inject ICatalogUpdateCoordinator CatalogUpdates
+@inject WorkloadPicks Picks
 
 <PageTitle>Easy Workload Installer - Into the Latent</PageTitle>
 
@@ -52,24 +53,26 @@
         }
         else
         {
-            @if (Mode == WizardMode.ModelsOnly)
+            @if (Mode == WizardMode.FreshInstall)
             {
-                <a class="workload-screen-back" href="/existing">&larr; Back</a>
-
-                <div class="workload-screen-head">
-                    <h1>Select workload</h1>
-                    <p>Choose which workload's models you want to download.</p>
-                </div>
+                <a class="workload-screen-back" href="/">&larr; All software</a>
             }
             else
             {
-                <a class="workload-screen-back" href="/">&larr; All software</a>
-
-                <div class="workload-screen-head">
-                    <h1>Select workload</h1>
-                    <p>Choose what you want @_entry.DisplayName set up for. You can install more later.</p>
-                </div>
+                <a class="workload-screen-back" href="/existing">&larr; Back</a>
             }
+
+            <div class="workload-screen-head">
+                <h1>Select workload</h1>
+                <p>
+                    @(Mode switch
+                    {
+                        WizardMode.ModelsOnly => "Choose which workload's models you want to download.",
+                        WizardMode.UpdateExisting => "Choose what to add to your ComfyUI, or just update it.",
+                        _ => $"Choose what you want {_entry.DisplayName} set up for. You can install more later.",
+                    })
+                </p>
+            </div>
 
             <div class="filters">
                 <button class="@TypeClass(null)" type="button" @onclick="() => _type = null">All</button>
@@ -92,15 +95,58 @@
                         <span class="switch-text">Show legacy workloads</span>
                     </label>
                 }
-            </div>
 
-            <div class="workload-grid">
-                @foreach (var workload in Filtered())
+                @if (Mode != WizardMode.FreshInstall)
                 {
-                    <WorkloadCard Entry="workload" OnInstall="Install"
-                                  ActionLabel="@(Mode == WizardMode.ModelsOnly ? "Download models" : "Install")" />
+                    <label class="switch filters-switch">
+                        <input type="checkbox" role="switch" data-role="select-multiple"
+                               checked="@_selectMultiple" @onchange="OnSelectMultipleChanged" />
+                        <span class="switch-track" aria-hidden="true"></span>
+                        <span class="switch-text">Select multiple</span>
+                    </label>
                 }
             </div>
+
+            @if (_selectMultiple)
+            {
+                <MemorySelector MemoryGb="_memoryGb" MemoryGbChanged="OnMemoryChanged" />
+            }
+
+            <div class="workload-grid">
+                @if (Mode == WizardMode.UpdateExisting && !_selectMultiple)
+                {
+                    <div class="workload-card update-only-tile" data-role="update-only">
+                        <div class="workload-card-meta">
+                            <p class="workload-card-name">Update only</p>
+                            <p class="update-only-text">Updates ComfyUI and adds no workload.</p>
+                            <button class="workload-card-install" type="button" @onclick="UpdateOnly">Continue</button>
+                        </div>
+                    </div>
+                }
+                @foreach (var workload in Filtered())
+                {
+                    var id = workload.Workload.Id;
+                    <WorkloadCard @key="id" Entry="workload" OnInstall="Install"
+                                  ActionLabel="@(Mode switch { WizardMode.ModelsOnly => "Download models", WizardMode.UpdateExisting => "Choose", _ => "Install" })"
+                                  Selectable="_selectMultiple"
+                                  Included="_included.Contains(id)"
+                                  IncludedChanged="on => OnIncluded(id, on)"
+                                  Versions="WorkloadVersions.Tiers(workload.Workload)"
+                                  Version="VersionOf(workload.Workload)"
+                                  VersionChanged="v => _versions[id] = v"
+                                  Note="@WorkloadVersions.TooLargeNote(VersionOf(workload.Workload), _memoryGb)" />
+                }
+            </div>
+
+            @if (_selectMultiple)
+            {
+                <div class="select-multiple-bar">
+                    <span data-role="selected-count">@(_included.Count == 0 ? "No workloads selected" : $"{_included.Count} selected")</span>
+                    <button class="btn-primary" type="button" data-role="continue" disabled="@(_included.Count == 0)" @onclick="Continue">
+                        @(_included.Count == 1 ? "Continue with 1 workload" : $"Continue with {_included.Count} workloads")
+                    </button>
+                </div>
+            }
         }
     </div>
 </ScreenShell>
@@ -113,8 +159,14 @@
     /// <summary>Which path this screen is on. The router never sets it: ModelsOnlyWorkloads does.</summary>
     [Parameter] public WizardMode Mode { get; set; } = WizardMode.FreshInstall;
 
+    private const int StartingMemoryGb = 32;
+
     private SoftwareEntry? _entry;
     private bool _loaded;
+    private bool _selectMultiple;
+    private int _memoryGb = StartingMemoryGb;
+    private readonly HashSet<Guid> _included = [];
+    private readonly Dictionary<Guid, int> _versions = [];
     private WorkflowType? _type;
     private bool _showLegacy;
     private IReadOnlyList<CatalogDiagnostic> _errors = [];
@@ -153,6 +205,9 @@
         // previous one's chosen type, nor its legacy switch.
         _type = null;
         _showLegacy = false;
+        _selectMultiple = false;
+        _included.Clear();
+        _versions.Clear();
         _entry = null;
         _loaded = false;
         _errors = [];
@@ -195,15 +250,61 @@
     /// <summary>
     /// What this path can offer. Models only leaves out a workload with nothing to download, and
     /// offers one a fresh install refuses: what blocks that is its torch pairing or a capability
-    /// the installer lacks, and a download touches neither.
+    /// the installer lacks, and a download touches neither. The update path leaves out what adds
+    /// nothing to an install, and offers the rest too: whether torch changes isn't known until the
+    /// folder is, and the wizard stops there if it can't.
     /// </summary>
-    private IReadOnlyList<GalleryEntry> OnThisPath(IReadOnlyList<GalleryEntry> entries) =>
-        Mode != WizardMode.ModelsOnly
-            ? entries
-            : entries
-                .Where(e => e.Workload.ModelDownloads.Any(m => m.Enabled))
-                .Select(e => e with { IsInstallable = true, Incompatibility = null })
-                .ToList();
+    private IReadOnlyList<GalleryEntry> OnThisPath(IReadOnlyList<GalleryEntry> entries) => Mode switch
+    {
+        WizardMode.ModelsOnly => entries
+            .Where(e => e.Workload.ModelDownloads.Any(m => m.Enabled))
+            .Select(e => e with { IsInstallable = true, Incompatibility = null })
+            .ToList(),
+        WizardMode.UpdateExisting => entries
+            .Where(e => e.Workload.ModelDownloads.Any(m => m.Enabled) || e.Workload.Workflows.Count > 0)
+            .Select(e => e with { IsInstallable = true, Incompatibility = null })
+            .ToList(),
+        _ => entries,
+    };
+
+    private int VersionOf(InstallationConfiguration workload) =>
+        _versions.TryGetValue(workload.Id, out var version)
+            ? version
+            : WorkloadVersions.ForMemory(WorkloadVersions.Tiers(workload), _memoryGb);
+
+    private void OnSelectMultipleChanged(ChangeEventArgs e)
+    {
+        _selectMultiple = e.Value is true;
+        if (!_selectMultiple) return;
+
+        _memoryGb = StartingMemoryGb;
+        _versions.Clear();
+        _included.Clear();
+    }
+
+    /// <summary>Resets every card, including ones changed by hand (the owner's decision).</summary>
+    private void OnMemoryChanged(int memoryGb)
+    {
+        _memoryGb = memoryGb;
+        _versions.Clear();
+    }
+
+    private void OnIncluded(Guid id, bool on)
+    {
+        if (on) _included.Add(id);
+        else _included.Remove(id);
+    }
+
+    private void UpdateOnly() => Nav.NavigateTo(WizardRoutes.UpdateOnly);
+
+    private void Continue()
+    {
+        Picks.Set(Mode, _entry!.Workloads
+            .Where(e => _included.Contains(e.Workload.Id))
+            .Select(e => new WorkloadPick(e.Workload.Id, VersionOf(e.Workload)))
+            .ToList());
+        Nav.NavigateTo(WizardRoutes.Selected(Mode));
+    }
 
     private IEnumerable<GalleryEntry> Filtered() => Visible()
         .Where(e => _type is null || e.Workload.WorkflowType == _type);
