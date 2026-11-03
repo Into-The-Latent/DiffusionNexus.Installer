@@ -561,7 +561,7 @@ Use a workload with a small model, such as Krea-2-Turbo with only 4x-UltraSharp 
 9. Start it. **Expect:** "Downloading", then "Download complete", the step summary and a row for each model. No "Start app" button. "Open folder" opens the folder.
 10. List the folder. **Expect:** `upscale_models\4x-UltraSharp.pth` and nothing else: no script, shortcut, yaml, custom node, workflow or log file.
 11. Run steps 4 to 9 again with subfolders off and a new folder. **Expect:** `4x-UltraSharp.pth` directly in the folder and nothing else.
-12. Run again into that same folder, subfolders off. **Expect:** the model is marked "already downloaded", and its row says "Model found at", with the file untouched.
+12. Run again into that same folder, subfolders off. **Expect:** the model is marked "already downloaded", and its row says "Model found at", with the file untouched. Then replace the file with a small text file of the same name and run again. **Expect:** no question about wrong sizes, and the text file is still there afterwards.
 13. Pick a folder named `ComfyUI`, such as `E:\Temp\ComfyUI`. **Expect:** the files land inside it and nothing lands in `E:\Temp`.
 14. Open a fresh ComfyUI wizard from the ComfyUI tile. **Expect:** today's stages and install folder, with its remembered folders unchanged, and the memory panel at the lowest size.
 15. Open Licences in the middle of step 7 and go Back. **Expect:** the same wizard with its answers.

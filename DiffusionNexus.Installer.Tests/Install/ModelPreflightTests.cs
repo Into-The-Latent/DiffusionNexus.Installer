@@ -16,7 +16,7 @@ public class ModelPreflightTests
 {
     private static readonly ModelDownload Vae = new() { Name = "VAE", Destination = @"models\vae", Url = "https://h.invalid/ae.safetensors" };
 
-    private static async Task<(WizardPlan Plan, ModelSelectionModule Module)> PlanAsync(bool vaePresent)
+    private static async Task<(WizardPlan Plan, ModelSelectionModule Module)> PlanAsync(bool vaePresent, WizardMode mode = WizardMode.FreshInstall)
     {
         var w = new InstallationConfiguration();
         w.Repository.Type = RepositoryType.ComfyUI;
@@ -32,12 +32,30 @@ public class ModelPreflightTests
         var module = new ModelSelectionModule(scanner.Object, Mock.Of<IDiskSpaceEstimator>()) { ScanWait = TimeSpan.FromSeconds(30) };
 
         var registry = new WizardModuleRegistry(() => [module]);
-        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = w, TargetFolder = @"C:\AI" });
+        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = w, TargetFolder = @"C:\AI", Mode = mode });
         return (plan, module);
     }
 
     private static ExistingModelMismatch Mismatch() =>
         new(Vae, @"C:\AI\ComfyUI\models\vae\ae.safetensors", 10, 20, Vae.Url);
+
+    [Fact]
+    public async Task Models_only_keeps_an_existing_file_without_asking()
+    {
+        // A same-named file of another size is usually partial on a fresh install. In a folder the
+        // user chose it is usually a different build they want to keep, and the prompt's default
+        // would overwrite it with one click on Continue.
+        var verifier = new Mock<IExistingModelVerifier>(MockBehavior.Strict);
+        var prompt = new Mock<IMismatchedFilePrompt>(MockBehavior.Strict);
+        var (plan, module) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        var result = await new ModelPreflight(verifier.Object, prompt.Object).RunAsync(plan);
+
+        result.Proceed.Should().BeTrue();
+        result.Warning.Should().BeNull();
+        plan.ToOptions().ForceRedownloadUrls.Should().BeEmpty("nothing may be overwritten");
+        module.Rows.Should().ContainSingle();
+    }
 
     [Fact]
     public async Task No_files_on_disk_means_no_verification_and_no_prompt()
