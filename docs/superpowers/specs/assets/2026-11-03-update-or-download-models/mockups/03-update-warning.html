@@ -228,7 +228,7 @@
 </style>
 
 <h2>The "Update ComfyUI" warning</h2>
-<p class="subtitle">The checkbox starts on, with a big red warning. Untick it: the warning changes to a calm message saying ComfyUI stays as it is.</p>
+<p class="subtitle">The checkbox starts on, with a big red warning. Untick it: the warning changes to a calm message saying ComfyUI and torch stay as they are. The red note appears only when a selected workload needs a newer torch than the one installed. The torch versions in it are an example.</p>
 
 <div>
   <div class="mockup">
@@ -249,7 +249,7 @@
             <p><b>Everything working?</b> Untick this. You still get the workload's custom nodes and models.</p>
             <div class="acts"><button class="bt">Open my ComfyUI folder to back it up</button></div>
           </div>
-          <div class="hide" id="a-s"><b style="color:#e6edf3">Good choice if it's working.</b> Your ComfyUI stays on its current version. We only add the workload's custom nodes and models.</div>
+          <div class="hide" id="a-s"><b style="color:#e6edf3">Good choice if it's working.</b> Your ComfyUI stays on its current version. We only add the workload's custom nodes and models.<div style="border:1px solid #e5484d;background:rgba(229,72,77,.14);color:#f6d5d6;border-radius:6px;padding:9px 12px;margin-top:10px;font-size:14px;line-height:1.5"><b style="color:#fff">Wan 2.2 - GGUF and Ideogram-4.0 need torch 2.11.0 with CUDA 13.0.</b> You have torch 2.8.0 with CUDA 12.8, and we won't change it, so these workloads may not run until you update.</div></div>
         </div>
       </div>
     </div>

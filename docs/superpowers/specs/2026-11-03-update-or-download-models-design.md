@@ -61,7 +61,7 @@ Steps on each path:
 | Select workload | Today's screen, plus Update only tile and Select multiple | Today's screen, plus Select multiple |
 | Location | ComfyUI folder + check result + today's output and model folder panels, filled in from that install | Any folder + subfolder switch |
 | Content | Update checkbox + today's VRAM, model and workflow lists | Today's VRAM and model lists |
-| System | Today's GPU and Visual C++ checks, no shortcuts | Skipped, nothing is installed |
+| System | Today's Visual C++ check, a warning instead of today's GPU check, no shortcuts | Skipped, nothing is installed |
 | Confirm | Today's summary + red warnings | Today's summary + folder + subfolder setting |
 | Install | Today's screen and report | Today's screen and report |
 
@@ -127,15 +127,29 @@ The checkbox **starts on**, with the big red warning below. The owner asked for 
 - Unticking replaces the red box with a calm message saying ComfyUI stays on its current version.
 - With the Update only tile, the checkbox is on and locked, as #28 planned.
 
+**Unticking also keeps torch as it is (owner's decision, 2026-11-03).** So the calm message is true: unticked means ComfyUI, torch, Triton and SageAttention are all left alone. There is one control, not two.
+
+When a selected workload needs a newer torch than the one installed, a red note joins the calm message and names the workloads, as the owner asked:
+
+![Unticked, workloads need a newer torch](assets/2026-11-03-update-or-download-models/screenshots/12-update-unticked-workload-needs-torch.png)
+
+The workload's custom nodes and models still install. The note also belongs on Confirm. Without a torch mismatch, only the calm message shows. New custom nodes still run `pip install -r requirements.txt` in the venv (`CloneAdditionalReposStepHandler`), which is what installing them means, so "we only add" refers to what the user is choosing between, not to an untouched venv.
+
+### Update path: no usable NVIDIA GPU
+
+**Warning only (owner's decision, 2026-11-03).** On this path the System step does not use today's `GpuPreflightModule` consent. Nothing blocks Next and no CPU-only install is offered, because that would replace torch and rewrite the launcher of a working AMD or CPU setup. Instead a red warning says no usable NVIDIA GPU was found, that torch and the launcher stay as they are, and that the workload may not run on this machine.
+
+So torch only ever changes when the Update checkbox is ticked **and** a usable NVIDIA GPU is found. Fresh installs keep today's check. Update only installs no workload, so it doesn't need this warning (assistant's call).
+
 ## 4. Kept from #28 and #70
 
 These owner decisions from 2026-09-24 still apply to the **update path**:
 
 1. Custom nodes install with their workloads.
-2. Torch upgrades to the biggest selected workload (highest torch and CUDA, Triton and SageAttention if any workload wants them), never downgrades. A workload that differs gets a red warning.
+2. When torch upgrades at all, it upgrades to the biggest selected workload (highest torch and CUDA, Triton and SageAttention if any workload wants them), never downgrades. A workload that differs gets a red warning. **Changed 2026-11-03:** this only happens with the Update checkbox ticked and a usable NVIDIA GPU, see section 3.
 3. Only our own old update script (no `dn-script-version: 2` marker) is replaced.
 4. Portable, ComfyUI Desktop and no-venv installs get "not supported yet, do a fresh install". Any venv folder name works.
-5. Warnings are red boxes and the user stays in charge. The only hard stop is when the venv's Python has no wheel for the target torch.
+5. Warnings are red boxes and the user stays in charge. The only hard stop is when the venv's Python has no wheel for the target torch, which can now only apply when torch is going to change.
 6. ComfyUI-Manager is installed if it's missing.
 7. The last chosen folder is remembered.
 
@@ -175,6 +189,10 @@ No single workload has two different URLs with the same file name (191 links che
 
 So Select multiple in flat mode can send two files to one path. Decision: keep the first and show the second as skipped in the result report, so nothing is overwritten silently. Two files with the same name in different type folders collide in flat mode the same way.
 
+### Holding torch
+
+Probably no new SDK rule is needed, though an earlier note in this conversation said otherwise. #70's `ExtendExistingOptions` already takes `RunUpdate` and `UpgradeTorchStack` separately, and its flow only adds the torch steps when `UpgradeTorchStack` is set. The installer passes `UpgradeTorchStack = RunUpdate && usable GPU && target.ChangesInstalledStack`. #70's resolver still supplies the target, which also gives the note its "needs torch X" text per workload. Check that the compatibility hard stop, `VcRuntimeModule` and the merger's `Torch` values follow `UpgradeTorchStack`, not the raw target. Not yet built or tested.
+
 ### Release
 
 The issues still say `2.0.0-preview.10`, which is out of date: the SDK no longer uses previews. `develop` is at 2.3.1 and new API means a minor, so this ships as the next minor, 2.4.0 if nothing else takes it first. The Installer currently pins 2.3.0. New interface members in a minor get a default implementation, per the SDK's rule.
@@ -213,8 +231,9 @@ Left to the builder: custom folder name overrides (`FolderPathOverrides`) do not
 | 2 | Tile label changes. New choice screen first. The folder step moves into the wizard's Location stage, because the workload now comes first. |
 | 3 | Reuses today's workload screen instead of a new `/existing/packs` page. Adds the memory panel and card dropdowns. **Torch badges and "incompatible pack not selectable" are removed.** |
 | 4 | Merge timing, see section 6. |
-| 6 | Update checkbox starts **on**, with the new warning. |
+| 6 | Update checkbox starts **on**, with the new warning. Unticking also keeps torch, with a red note naming workloads that need a newer one. The compatibility hard stop applies only when torch will change. |
 | New | The whole "Download models only" path. |
+| New | On the update path, `GpuPreflightModule`'s consent is replaced by a warning. |
 
 Tasks 5, 7, 8 and 9 stay, with the same adjustment for folder order. Smoke tests in task 9 need the models-only path added.
 
@@ -224,15 +243,10 @@ Add everything in section 5. Change the release target. The rest of the plan sta
 
 ## 9. Open questions for the owner
 
-A review of this design by a fresh reader found items 1 and 2. Their facts were checked against the code on 2026-11-03. Neither has been discussed with the owner, and the recommendations are the assistant's.
+A review of this design by a fresh reader raised two more questions, on torch when unticked and on machines with no usable GPU. The owner answered both on 2026-11-03, and section 3 has the answers.
 
-1. **If the user unticks "Update ComfyUI", does torch still upgrade?** The approved calm message says "Your ComfyUI stays on its current version. We only add the workload's custom nodes and models", and the red warning tells people with a working install to untick. But section 4 item 2 and #70 upgrade torch separately from the update: `UpgradeTorchStack` is independent of `RunUpdate`. 11 of the 12 current non-legacy Installer ComfyUI workloads want torch 2.11.0 with CUDA 13.0, so a user on an older stack who unticks could still get a torch swap under a message saying nothing is changing. New custom nodes also run `pip install -r requirements.txt` in the same venv (`CloneAdditionalReposStepHandler`), so "only add" isn't strictly true either.
-   - **(a) Torch still upgrades.** The calm message depends on the torch target, and a red torch warning replaces it when the stack would change. Recommended: the workload needs that torch to run, and the message then tells the truth.
-   - **(b) Unticking also holds torch.** Closest to what the message promises, but it needs a new SDK rule, and the workload may not run.
-   - **(c) Torch gets its own checkbox.** Most control, but it's a new control the owner hasn't seen, on a screen already carrying a big warning.
-2. **What happens on the update path on a machine with no usable NVIDIA GPU?** "Today's GPU check" was built for fresh installs. `GpuPreflightModule` blocks Next until the user accepts a CPU-only install. Accepting sets `CpuTorch`, which selects the CPU wheel and makes `PostInstallStepHandler` write a launcher with `--cpu`. On an existing install that could replace torch and rewrite the launcher of a working AMD or CPU setup. #70's resolver also doesn't count a CPU-only stack as a candidate, so a workload's CUDA target always counts as a change. An Update only user would have to accept a "CPU-only install" that installs nothing. It also conflicts with section 4 item 5, where the only hard stop is a missing wheel. Recommendation: on the update path this is a warning only, and torch and the launcher stay as they are.
-3. **Single-workload starting size.** The last question asked was whether a single workload on the new paths also starts at the highest size. The owner's answer was "Okay, that is great" while wrapping up, which this document reads as accepting the recommendation: highest on both new paths, fresh installs unchanged. Please confirm.
-4. **Issue size.** With Select multiple kept, #28 is large. The owner's rule is one issue, one PR, and to split the issue if it's too big. Recommendation: split out "Download models only" with the tile and choice screen as its own issue on each repo and build it first. It's useful on its own and far smaller, and the update path then follows as a second issue. Not done yet because it's the owner's call. A split also has to settle:
+1. **Single-workload starting size.** The last question asked was whether a single workload on the new paths also starts at the highest size. The owner's answer was "Okay, that is great" while wrapping up, which this document reads as accepting the recommendation: highest on both new paths, fresh installs unchanged. Please confirm.
+2. **Issue size.** With Select multiple kept, #28 is large. The owner's rule is one issue, one PR, and to split the issue if it's too big. Recommendation: split out "Download models only" with the tile and choice screen as its own issue on each repo and build it first. It's useful on its own and far smaller, and the update path then follows as a second issue. Not done yet because it's the owner's call. A split also has to settle:
    - **Where Select multiple goes.** If it's in the first issue, that issue also takes the memory selector, card dropdowns, per-workload VRAM in the SDK and the name-clash handling, and is no longer small. If it's out, models only first ships without a screen the owner approved. Recommendation: leave it out of the first issue and add it to both paths together.
    - **What the tile and Update card do until the second issue lands.** The tile says "Update ComfyUI or Download Models" with no update path behind it. Options are a one-card screen, a "coming soon" card, or not releasing until both are in. Recommendation: merge both before releasing, so users never see half of it.
 
