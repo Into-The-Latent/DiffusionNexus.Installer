@@ -280,6 +280,47 @@ public class ModelSelectionModuleTests
     }
 
     [Fact]
+    public async Task Models_only_scans_the_chosen_folder_in_the_chosen_layout()
+    {
+        ModelScanRequest? seen = null;
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>()))
+            .Callback<ModelScanRequest>(r => seen = r)
+            .Returns([]);
+        var module = Module(scanner, Mock.Of<IDiskSpaceEstimator>());
+        var selection = new WizardSelection
+        {
+            Workload = Selection(Vae).Workload,
+            Mode = WizardMode.ModelsOnly,
+            TargetFolder = @"E:\AI\ComfyUI",
+            SortModelsIntoSubfolders = false
+        };
+
+        await module.InitializeAsync(selection);
+
+        seen!.RepositoryPath.Should().Be(@"E:\AI\ComfyUI", "nothing is cloned, so no repository folder is added to it");
+        seen.DownloadOnly.Should().BeTrue();
+        seen.SortIntoSubfolders.Should().BeFalse();
+        module.LastScannedSort.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Models_only_estimate_says_so()
+    {
+        DiskSpaceRequest? seen = null;
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DiskSpaceRequest, CancellationToken>((r, _) => seen = r)
+            .ReturnsAsync(new DiskSpaceEstimate(10, 20, true, []));
+        var module = Module(Scanner(), estimator.Object);
+        await module.InitializeAsync(new WizardSelection { Workload = Selection(Vae).Workload, Mode = WizardMode.ModelsOnly, TargetFolder = @"E:\AI" });
+
+        await module.RefreshEstimateAsync();
+
+        seen!.ModelsOnly.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task The_estimate_excludes_unticked_models_and_does_not_count_files_already_on_disk()
     {
         var estimator = new Mock<IDiskSpaceEstimator>();

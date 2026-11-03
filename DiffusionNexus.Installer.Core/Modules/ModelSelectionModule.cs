@@ -72,6 +72,9 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     /// <summary>Install folder the last presence scan used; the panel rescans only when tier or folder moved.</summary>
     public string? LastScannedFolder { get; private set; }
 
+    /// <summary>Models only: the layout the last scan used. Flipping the switch moves every file without moving the folder.</summary>
+    public bool LastScannedSort { get; private set; } = true;
+
     /// <summary>Mirrors Detect (Count > 0), NOT Any(Enabled): the gate and the module must agree.</summary>
     public bool AppliesTo(WizardSelection selection) => selection.Workload.ModelDownloads.Count > 0;
 
@@ -138,15 +141,19 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         var run = Interlocked.Increment(ref _scanStarted);
         var tier = _selection.SelectedVramProfile;
         var folder = _selection.TargetFolder;
+        var sort = _selection.SortModelsIntoSubfolders;
+        var downloadOnly = _selection.Mode == WizardMode.ModelsOnly;
 
         IReadOnlyList<ModelPresence> presence = string.IsNullOrWhiteSpace(folder)
             ? []
             : scanner.Scan(new ModelScanRequest(
                 _selection.Workload,
-                RepositoryPaths.Resolve(_selection.Workload, folder),
+                downloadOnly ? folder : RepositoryPaths.Resolve(_selection.Workload, folder),
                 _selection.ModelBaseFolder,
                 _selection.FolderPathOverrides,
-                tier));
+                tier,
+                downloadOnly,
+                sort));
 
         lock (_presenceGate)
         {
@@ -154,6 +161,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
             _scanCommitted = run;
             LastScannedTier = tier;
             LastScannedFolder = folder;
+            LastScannedSort = sort;
             _presence = presence;
 
             // A repeated model id is a hand-authored catalog mistake, not an impossibility; the first
@@ -188,7 +196,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
                 _selection.SelectedVramProfile,
                 Rows.Where(r => !r.IsSelected).Select(r => r.Id).ToHashSet(),
                 Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet(),
-                _selection.ModelBaseFolder), ct).ConfigureAwait(false);
+                _selection.ModelBaseFolder,
+                _selection.Mode == WizardMode.ModelsOnly), ct).ConfigureAwait(false);
 
             // An estimator that ignores ct finishes anyway; only the newest request may show.
             if (!Latest()) return;

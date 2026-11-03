@@ -88,6 +88,42 @@ public class ModelSelectionPanelTests : BunitContext
         estimator.Invocations.Should().BeEmpty("nothing is scheduled on a disposed panel");
     }
 
+    private static WizardSelection ModelsOnlySelection() =>
+        new() { Workload = Selection().Workload, Mode = WizardMode.ModelsOnly, TargetFolder = @"E:\AI\models" };
+
+    [Fact]
+    public async Task Flipping_only_the_subfolder_switch_rescans()
+    {
+        // Same folder, same tier: without the layout in the comparison the marks would stay stale.
+        var selection = ModelsOnlySelection();
+        var scanner = Scanner(vaePresent: true);
+        var module = new ModelSelectionModule(scanner.Object, Estimator());
+        await module.InitializeAsync(selection);
+        var cut = RenderPanel(module, selection);
+        cut.WaitForAssertion(() => cut.FindAll(".tag").Should().NotBeEmpty());
+
+        selection.SortModelsIntoSubfolders = false;
+        cut.Render();
+
+        cut.WaitForAssertion(() =>
+            scanner.Verify(s => s.Scan(It.Is<ModelScanRequest>(r => r.DownloadOnly && !r.SortIntoSubfolders)), Times.AtLeastOnce()));
+    }
+
+    [Fact]
+    public async Task Models_only_speaks_of_the_download_drive()
+    {
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DiskSpaceEstimate(10, 0, true, [], AvailableKnown: false));
+        var selection = ModelsOnlySelection();
+        var module = new ModelSelectionModule(Scanner(vaePresent: false).Object, estimator.Object);
+        await module.InitializeAsync(selection);
+
+        var cut = RenderPanel(module, selection);
+
+        cut.WaitForAssertion(() => cut.Find(".disk-space").TextContent.Should().Contain("free space on the download drive"));
+    }
+
     [Fact]
     public async Task Lists_every_model_ticked_under_its_folder_and_marks_the_one_already_on_disk()
     {

@@ -8,14 +8,18 @@ using PipelineVram = DiffusionNexus.Installer.SDK.Services.Installation.Utilitie
 
 namespace DiffusionNexus.Installer.Core.Content;
 
-/// <param name="RepositoryPath">Where the main repository will be — see <see cref="RepositoryPaths"/>.</param>
+/// <param name="RepositoryPath">Where the main repository will be — see <see cref="RepositoryPaths"/>. With <paramref name="DownloadOnly"/>, the chosen folder itself.</param>
 /// <param name="SelectedVramGb">0 means no tier filtering, exactly as the SDK reads it.</param>
+/// <param name="DownloadOnly">A models-only run: destinations follow ModelDestinationResolver.ResolveDownloadOnly.</param>
+/// <param name="SortIntoSubfolders">With <paramref name="DownloadOnly"/>: false means every file goes directly into the folder.</param>
 public sealed record ModelScanRequest(
     InstallationConfiguration Workload,
     string RepositoryPath,
     string? ModelBaseFolder,
     IReadOnlyDictionary<string, string> FolderPathOverrides,
-    int SelectedVramGb);
+    int SelectedVramGb,
+    bool DownloadOnly = false,
+    bool SortIntoSubfolders = true);
 
 /// <summary>One file the install would write for a model, and whether it is already there.</summary>
 public sealed record ModelFileTarget(
@@ -86,8 +90,9 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
     private static (List<ModelFileTarget> Targets, int Unresolvable) TargetsFor(
         ModelScanRequest request, ModelDownload model, Dictionary<string, string> overrides, DirectoryListingCache directoryCache)
     {
-        var modelDestination = ModelDestinationResolver.Resolve(
-            request.Workload, model, request.RepositoryPath, request.ModelBaseFolder, overrides);
+        var modelDestination = request.DownloadOnly
+            ? ModelDestinationResolver.ResolveDownloadOnly(request.Workload, model, link: null, request.RepositoryPath, request.SortIntoSubfolders)
+            : ModelDestinationResolver.Resolve(request.Workload, model, request.RepositoryPath, request.ModelBaseFolder, overrides);
 
         var enabledLinks = model.DownloadLinks.Where(l => l.Enabled).ToList();
 
@@ -110,9 +115,11 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         {
             if (string.IsNullOrWhiteSpace(link.Url)) continue;
 
-            var destination = string.IsNullOrWhiteSpace(link.Destination)
-                ? modelDestination
-                : ResolveLinkDestination(link.Destination, request.RepositoryPath);
+            var destination = request.DownloadOnly
+                ? ModelDestinationResolver.ResolveDownloadOnly(request.Workload, model, link, request.RepositoryPath, request.SortIntoSubfolders)
+                : string.IsNullOrWhiteSpace(link.Destination)
+                    ? modelDestination
+                    : ResolveLinkDestination(link.Destination, request.RepositoryPath);
 
             if (Target(model, link.Url, destination, directoryCache) is { } target) targets.Add(target);
             else unresolvable++;

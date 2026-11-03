@@ -5,13 +5,15 @@ namespace DiffusionNexus.Installer.Core.Content;
 
 /// <param name="ExistingModelIds">Models already on disk; their downloads are not counted.</param>
 /// <param name="ModelBaseFolder">The custom model library, when set: models land there, on its drive, not on the install drive.</param>
+/// <param name="ModelsOnly">Nothing is installed, so no repository or environment is counted.</param>
 public sealed record DiskSpaceRequest(
     InstallationConfiguration Workload,
     string TargetFolder,
     int SelectedVramGb,
     HashSet<Guid> ExcludedModelIds,
     HashSet<Guid> ExistingModelIds,
-    string? ModelBaseFolder = null);
+    string? ModelBaseFolder = null,
+    bool ModelsOnly = false);
 
 /// <param name="AvailableBytes">Free space on the install drive; 0 when <paramref name="AvailableKnown"/> is false.</param>
 /// <param name="AvailableKnown">False when the INSTALL drive's free space could not be read (UNC share, disconnected mapped drive). Not a shortfall.</param>
@@ -50,7 +52,7 @@ public sealed class SdkDiskSpaceEstimator(UrlSizeResolver sizeResolver) : IDiskS
 
         var requirement = await _calculator.CalculateRequiredSpaceAsync(
             request.Workload,
-            onlyModelDownload: false,
+            onlyModelDownload: request.ModelsOnly,
             request.SelectedVramGb,
             request.ExcludedModelIds,
             progress: null,

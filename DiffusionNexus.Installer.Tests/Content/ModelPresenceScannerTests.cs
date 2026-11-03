@@ -44,6 +44,59 @@ public sealed class ModelPresenceScannerTests : IDisposable
     private ModelScanRequest Request(InstallationConfiguration workload, int tier = 0) =>
         new(workload, _repo, null, NoOverrides, tier);
 
+    private ModelScanRequest ModelsOnlyRequest(InstallationConfiguration workload, bool sort) =>
+        new(workload, _repo, null, NoOverrides, 0, DownloadOnly: true, SortIntoSubfolders: sort);
+
+    [Fact]
+    public void Models_only_sorted_looks_in_the_subfolder()
+    {
+        var workload = Workload(Model("Vae", "models/vae", Link("https://h.invalid/a.safetensors")));
+        var file = Touch(Path.Combine("vae", "a.safetensors"));
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(workload, sort: true)).Single();
+
+        presence.AllPartsPresent.Should().BeTrue();
+        presence.ExistingPath.Should().Be(file);
+        presence.Targets.Single().DestinationDirectory.Should().Be(Path.Combine(_repo, "vae"));
+    }
+
+    [Fact]
+    public void Models_only_flat_looks_in_the_folder()
+    {
+        var workload = Workload(Model("Vae", "models/vae", Link("https://h.invalid/a.safetensors")));
+        var file = Touch("a.safetensors");
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(workload, sort: false)).Single();
+
+        presence.AllPartsPresent.Should().BeTrue();
+        presence.ExistingPath.Should().Be(file);
+        presence.Targets.Single().DestinationDirectory.Should().Be(_repo);
+    }
+
+    [Fact]
+    public void Models_only_uses_the_rule_for_a_link_destination_too()
+    {
+        var link = Link("https://h.invalid/a.safetensors");
+        link.Destination = @"D:\Elsewhere";
+        var workload = Workload(Model("Vae", "models/vae", link));
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(workload, sort: true)).Single();
+
+        presence.Targets.Single().DestinationDirectory.Should().Be(Path.Combine(_repo, "vae"),
+            "a models-only run must not look, or write, outside the chosen folder");
+    }
+
+    [Fact]
+    public void Models_only_uses_the_rule_for_a_direct_url()
+    {
+        var model = Model("Vae", "models/vae");
+        model.Url = "https://h.invalid/a.safetensors";
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(Workload(model), sort: true)).Single();
+
+        presence.Targets.Single().DestinationDirectory.Should().Be(Path.Combine(_repo, "vae"));
+    }
+
     private string Touch(string relative)
     {
         var path = Path.Combine(_repo, relative);
