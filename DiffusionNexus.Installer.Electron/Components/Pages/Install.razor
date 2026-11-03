@@ -1,6 +1,7 @@
 @page "/install/{WorkloadId:guid}"
 @implements IDisposable
 @using DiffusionNexus.Installer.Core.Catalog
+@using DiffusionNexus.Installer.Core.Existing
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
@@ -22,6 +23,7 @@
 @inject NavigationManager Nav
 @inject ReturnTarget Return
 @inject ICatalogUpdateCoordinator CatalogUpdates
+@inject WorkloadPicks Picks
 
 <PageTitle>Easy Workload Installer - Into the Latent</PageTitle>
 
@@ -32,14 +34,14 @@
         @if (_busyWith is not null)
         {
             <section class="panel panel-warning">
-                <h1>Another @(_busyIsDownload ? "download" : "installation") is running</h1>
+                <h1>Another @_busyRun is running</h1>
                 <p>
-                    <strong>@_busyWith</strong> is still @(_busyIsDownload ? "downloading" : "installing"). Only one
+                    <strong>@_busyWith</strong> is still @(_busyRun switch { "download" => "downloading", "update" => "updating", _ => "installing" }). Only one
                     can run at a time, so this one cannot be started yet.
                 </p>
                 <div class="wizard-actions">
                     <button class="btn-secondary" @onclick="GoToGallery">Back to all software</button>
-                    <button class="btn-primary" @onclick="ResumeRunning">Show the running @(_busyIsDownload ? "download" : "install")</button>
+                    <button class="btn-primary" @onclick="ResumeRunning">Show the running @(_busyRun == "installation" ? "install" : _busyRun)</button>
                 </div>
             </section>
         }
@@ -77,7 +79,7 @@
             {
                 @if (ShowHero)
                 {
-                    <WorkloadHero Workload="_run.Plan.Selection.Workload" FromWorkloadScreen="!_onlyWorkloadOfItsSoftware"
+                    <WorkloadHero Workload="_run.Plan.Selection.Workload" FromWorkloadScreen="!_onlyWorkloadOfItsSoftware && !_run.Plan.Selection.IsMultiple && !_run.Plan.Selection.UpdateOnly"
                                   Compact="_run.CurrentStage == WizardStage.Confirm" />
                 }
 
@@ -152,9 +154,15 @@
     /// <summary>Which path this wizard is on. The router never sets it: ModelsOnlyInstall does.</summary>
     [Parameter] public WizardMode Mode { get; set; } = WizardMode.FreshInstall;
 
+    /// <summary>Opened on what Select multiple picked, not on one workload. Set by the selected pages.</summary>
+    [Parameter] public bool Selected { get; set; }
+
+    /// <summary>Opened on the tile that adds no workload. Set by UpdateOnlyInstall.</summary>
+    [Parameter] public bool UpdateOnly { get; set; }
+
     private WizardRun? _run;
     private string? _busyWith;
-    private bool _busyIsDownload;
+    private string _busyRun = "installation";
 
     /// <summary>
     /// True when this workload is the only current one its software offers
@@ -208,7 +216,12 @@
             // user to an Install stage that silently starts nothing and then reports the other
             // install's progress, log and success banner under this workload's name.
             _busyWith = running.Selection.Workload.Name;
-            _busyIsDownload = running.Selection.Mode == WizardMode.ModelsOnly;
+            _busyRun = running.Selection.Mode switch
+            {
+                WizardMode.ModelsOnly => "download",
+                WizardMode.UpdateExisting => "update",
+                _ => "installation",
+            };
             return;
         }
 
@@ -271,6 +284,24 @@
         // wizard is open, and the plan installs what was read here, not what is installed when
         // Install is pressed -- nor what an apply wrote between this read and the catalog's reload.
         var (workloads, catalog) = await CatalogProvenance.ReadWithAsync(ct => Workloads.GetInstallerWorkloadsAsync(ct));
+
+        // The picks stay out of the route, so a window refresh can land here with none.
+        if (Selected || UpdateOnly)
+        {
+            var merged = UpdateOnly
+                ? MergedSelections.ForUpdateOnly(workloads, catalog)
+                : MergedSelections.ForPicks(Mode, Picks.Get(Mode), workloads, catalog);
+
+            if (merged is null)
+            {
+                Nav.NavigateTo(WizardRoutes.Workloads(Mode));
+                return;
+            }
+
+            await OpenWizardAsync(merged);
+            return;
+        }
+
         var workload = workloads.FirstOrDefault(w => w.Id == WorkloadId);
 
         if (workload is null)
@@ -288,7 +319,14 @@
             .SingleOrDefault();
         _onlyWorkloadOfItsSoftware = Mode == WizardMode.FreshInstall && software?.SingleWorkload?.Workload.Id == workload.Id;
 
-        var plan = await Registry.BuildPlanAsync(new WizardSelection { Workload = workload, Catalog = catalog, Mode = Mode });
+        await OpenWizardAsync(Mode == WizardMode.UpdateExisting
+            ? MergedSelections.ForUpdate(workload, workloads, catalog)
+            : new WizardSelection { Workload = workload, Catalog = catalog, Mode = Mode });
+    }
+
+    private async Task OpenWizardAsync(WizardSelection selection)
+    {
+        var plan = await Registry.BuildPlanAsync(selection);
         WireShortcutPrompt(plan, Prompt, Session);
 
         _run = new WizardRun(plan);
@@ -300,8 +338,12 @@
     }
 
     // The same workload on the other path is another wizard, and must not rejoin this one's run.
-    private bool IsThisWizard(WizardPlan plan) =>
-        plan.Selection.Workload.Id == WorkloadId && plan.Selection.Mode == Mode;
+    private bool IsThisWizard(WizardPlan plan) => WizardRoutes.For(plan.Selection) == ThisRoute;
+
+    private string ThisRoute =>
+        UpdateOnly ? WizardRoutes.UpdateOnly
+        : Selected ? WizardRoutes.Selected(Mode)
+        : WizardRoutes.Install(WorkloadId, Mode);
 
     // What a side trip from here comes back to (#45). Cleared once the Install stage is reached,
     // where InstallOnScreen takes over, and by Done/Cancel.
@@ -464,14 +506,14 @@
         if (Session.Plan is not { } running) return;
 
         // The same kind of page is reused for the new route, without running its first-render setup.
-        if (running.Selection.Mode == Mode)
+        if (running.Selection.Mode == Mode && !Selected && !UpdateOnly && !running.Selection.IsMultiple && !running.Selection.UpdateOnly)
         {
             _busyWith = null;
             _run = new WizardRun(running, WizardStage.Install);
             Return.InstallOnScreen = running;
         }
 
-        Nav.NavigateTo(WizardRoutes.Install(running.Selection.Workload.Id, running.Selection.Mode));
+        Nav.NavigateTo(WizardRoutes.For(running.Selection));
     }
 
     private string AdvancedSubtitle() =>

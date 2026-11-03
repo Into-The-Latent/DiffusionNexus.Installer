@@ -1,0 +1,9 @@
+@page "/existing/update/{WorkloadId:guid}"
+@using DiffusionNexus.Installer.Core.Wizard
+
+@* Today's wizard on the update path, for one workload. *@
+<Install WorkloadId="WorkloadId" Mode="WizardMode.UpdateExisting" />
+
+@code {
+    [Parameter] public Guid WorkloadId { get; set; }
+}

@@ -87,6 +87,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(preflight.Object);
 
         Services.AddSingleton(Mock.Of<IUserPrompt>());
+        Services.AddSingleton(new WorkloadPicks());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
         Services.AddSingleton(Mock.Of<IPostInstallActions>());
         Services.AddSingleton(Mock.Of<IClipboard>());
@@ -612,6 +613,7 @@ public class InstallPageTests : BunitContext
         Services.AddSingleton(session.Object);
         Services.AddSingleton(preflight.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
+        Services.AddSingleton(new WorkloadPicks());
         Services.AddSingleton(Mock.Of<IFolderPicker>());
         Services.AddSingleton(Mock.Of<IPostInstallActions>());
         Services.AddSingleton(Mock.Of<IClipboard>());
