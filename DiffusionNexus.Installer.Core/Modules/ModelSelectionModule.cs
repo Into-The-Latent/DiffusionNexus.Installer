@@ -48,6 +48,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     public int Order => 10;
     public WorkloadCapability Satisfies => WorkloadCapability.ModelDownloads;
 
+    public bool UsedIn(WizardMode mode) => true;
+
     /// <summary>Models and workflows are all ticked by default; they live behind Advanced.</summary>
     public bool IsAdvanced => true;
 

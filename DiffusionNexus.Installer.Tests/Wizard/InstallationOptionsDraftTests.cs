@@ -12,10 +12,21 @@ public class InstallationOptionsDraftTests
         var options = new InstallationOptionsDraft().ToOptions();
 
         options.OnlyModelDownload.Should().BeFalse();
+        options.DownloadModelsOnly.Should().BeFalse();
+        options.SortModelsIntoSubfolders.Should().BeTrue();
         options.CreateDesktopShortcut.Should().BeTrue();
         options.CreateStartMenuShortcut.Should().BeTrue();
         options.SkipVcRuntimeProvisioning.Should().BeFalse();
         options.ExcludedModelIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Models_only_values_survive_conversion()
+    {
+        var options = new InstallationOptionsDraft { DownloadModelsOnly = true, SortModelsIntoSubfolders = false }.ToOptions();
+
+        options.DownloadModelsOnly.Should().BeTrue();
+        options.SortModelsIntoSubfolders.Should().BeFalse();
     }
 
     [Fact]

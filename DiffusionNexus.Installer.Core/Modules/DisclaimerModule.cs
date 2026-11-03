@@ -27,6 +27,8 @@ public sealed class DisclaimerModule : IWizardModule
     public int Order => 0;
     public WorkloadCapability Satisfies => WorkloadCapability.None;
 
+    public bool UsedIn(WizardMode mode) => true;
+
     public bool Accepted { get; set; }
 
     public bool AppliesTo(WizardSelection selection) => true;

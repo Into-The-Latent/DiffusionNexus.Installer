@@ -31,6 +31,29 @@ public class VramProfileModuleTests
     }
 
     [Fact]
+    public async Task Starts_at_the_highest_tier_on_models_only()
+    {
+        var module = new VramProfileModule();
+        var workload = Selection("8,16,24").Workload;
+        var selection = new WizardSelection { Workload = workload, Mode = WizardMode.ModelsOnly };
+
+        await module.InitializeAsync(selection);
+
+        module.SelectedTier.Should().Be(24);
+        selection.SelectedVramProfile.Should().Be(24);
+    }
+
+    [Fact]
+    public async Task Starts_at_the_lowest_tier_on_a_fresh_install()
+    {
+        var module = new VramProfileModule();
+
+        await module.InitializeAsync(Selection("8,16,24"));
+
+        module.SelectedTier.Should().Be(8);
+    }
+
+    [Fact]
     public async Task Changing_the_tier_updates_the_selection_and_the_draft()
     {
         var module = new VramProfileModule();
