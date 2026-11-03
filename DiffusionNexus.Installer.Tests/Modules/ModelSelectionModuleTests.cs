@@ -228,6 +228,41 @@ public class ModelSelectionModuleTests
     }
 
     [Fact]
+    public async Task Models_only_with_every_model_unticked_has_nothing_to_start()
+    {
+        // Nothing else happens on this path, so the run would end in a green "Download complete".
+        var module = Module();
+        await module.InitializeAsync(new WizardSelection { Workload = Selection(Vae, Unet).Workload, Mode = WizardMode.ModelsOnly });
+
+        module.SetSelected(Vae.Id, false);
+        module.Validate().IsValid.Should().BeTrue();
+
+        module.SetSelected(Unet.Id, false);
+        module.Validate().IsValid.Should().BeFalse();
+        module.Validate().ErrorMessage.Should().Be("Tick at least one model to download.");
+    }
+
+    [Fact]
+    public async Task A_fresh_install_can_leave_out_every_model()
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(Vae));
+
+        module.SetSelected(Vae.Id, false);
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Models_only_with_no_rows_is_not_stopped()
+    {
+        var module = Module();
+        await module.InitializeAsync(new WizardSelection { Workload = Selection().Workload, Mode = WizardMode.ModelsOnly });
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Unticked_rows_become_excluded_ids_and_nothing_else_does()
     {
         var module = Module();

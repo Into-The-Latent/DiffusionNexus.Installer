@@ -17,13 +17,13 @@ namespace DiffusionNexus.Installer.Tests.Install;
 
 public class InstallSessionTests
 {
-    private static async Task<WizardPlan> PlanAsync()
+    private static async Task<WizardPlan> PlanAsync(WizardMode mode = WizardMode.FreshInstall)
     {
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
         var registry = new WizardModuleRegistry(() => []);
-        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload });
+        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = workload, Mode = mode });
         plan.Selection.TargetFolder = @"C:\Installs\Fooocus";
         return plan;
     }
@@ -376,6 +376,26 @@ public class InstallSessionTests
 
         session.Phase.Should().Be(InstallPhase.Failed);
         session.Result!.Message.Should().Contain("disk full");
+    }
+
+    [Fact]
+    public async Task A_models_only_run_that_throws_is_a_failed_download()
+    {
+        var orchestrator = new Mock<IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("disk full"));
+
+        var plan = await PlanAsync(WizardMode.ModelsOnly);
+        var session = new InstallSession(orchestrator.Object);
+
+        await session.StartAsync(plan);
+
+        session.Result!.Message.Should().Be("Download failed: disk full");
     }
 
     [Fact]

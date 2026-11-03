@@ -87,7 +87,7 @@ public class DiskSpaceEstimatorTests
         var fresh = await estimator.EstimateAsync(new DiskSpaceRequest(workload, Path.GetTempPath(), 0, [], []));
         var modelsOnly = await estimator.EstimateAsync(new DiskSpaceRequest(workload, Path.GetTempPath(), 0, [], [], ModelsOnly: true));
 
-        modelsOnly.RequiredBytes.Should().Be(1024L * 1024 * 1024, "only the SDK's safety buffer is left with no models");
+        modelsOnly.RequiredBytes.Should().Be(0, "a run that writes nothing needs no room, and a buffer would report a false shortage");
         fresh.RequiredBytes.Should().BeGreaterThan(modelsOnly.RequiredBytes);
     }
 

@@ -247,5 +247,9 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         draft.TrustedUrls.UnionWith(_trustedUrls);
     }
 
-    public ModuleValidation Validate() => ModuleValidation.Ok();
+    /// <summary>A fresh install without models is a real choice. A models-only run without one has nothing to do.</summary>
+    public ModuleValidation Validate() =>
+        _selection?.Mode == WizardMode.ModelsOnly && Rows.Count > 0 && SelectedCount == 0
+            ? ModuleValidation.Error("Tick at least one model to download.")
+            : ModuleValidation.Ok();
 }

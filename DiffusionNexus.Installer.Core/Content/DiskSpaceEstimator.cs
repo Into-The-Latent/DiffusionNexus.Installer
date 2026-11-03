@@ -59,7 +59,10 @@ public sealed class SdkDiskSpaceEstimator(UrlSizeResolver sizeResolver) : IDiskS
             ct,
             request.ExistingModelIds).ConfigureAwait(false);
 
-        var installBytes = requirement.GitRepositoryBytes + requirement.VirtualEnvironmentBytes + requirement.BufferBytes;
+        // A models-only run writes its models and nothing else, so it asks for no room around them.
+        var installBytes = request.ModelsOnly
+            ? 0
+            : requirement.GitRepositoryBytes + requirement.VirtualEnvironmentBytes + requirement.BufferBytes;
         var hasLibrary = !string.IsNullOrWhiteSpace(request.ModelBaseFolder);
         var sameDrive = hasLibrary && SharesDrive(request.TargetFolder, request.ModelBaseFolder!);
 

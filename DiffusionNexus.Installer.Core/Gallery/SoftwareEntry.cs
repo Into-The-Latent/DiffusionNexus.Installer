@@ -37,9 +37,6 @@ public sealed record SoftwareEntry(
     public IReadOnlyList<GalleryEntry> CurrentWorkloads =>
         Workloads.Where(e => !e.Workload.IsLegacy).ToList();
 
-    /// <summary>Whether the workload screen has anything for its "Show legacy workloads" switch to reveal.</summary>
-    public bool HasLegacyWorkloads => Workloads.Any(e => e.Workload.IsLegacy);
-
     public int WorkloadCount => CurrentWorkloads.Count;
 
     /// <summary>The only current workload, when there is exactly one. Null otherwise.</summary>

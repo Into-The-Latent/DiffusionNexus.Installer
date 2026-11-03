@@ -65,15 +65,15 @@ public class InstallPageModesTests : BunitContext
     }
 
     [Theory]
-    [InlineData(WizardMode.FreshInstall)]
-    [InlineData(WizardMode.ModelsOnly)]
-    public async Task A_running_install_on_the_other_path_blocks_this_one(WizardMode opened)
+    [InlineData(WizardMode.ModelsOnly, "Another installation is running")]
+    [InlineData(WizardMode.FreshInstall, "Another download is running")]
+    public async Task A_running_install_on_the_other_path_blocks_this_one(WizardMode opened, string heading)
     {
         await RunningInstallOf(opened == WizardMode.ModelsOnly ? WizardMode.FreshInstall : WizardMode.ModelsOnly);
 
         var cut = RenderInstall(opened);
 
-        cut.WaitForAssertion(() => cut.Find(".panel-warning h1").TextContent.Should().Be("Another installation is running"));
+        cut.WaitForAssertion(() => cut.Find(".panel-warning h1").TextContent.Should().Be(heading));
     }
 
     [Fact]

@@ -180,14 +180,14 @@ public sealed class InstallSession : IInstallSession, IDisposable
         }
         catch (OperationCanceledException)
         {
-            Result = InstallationResult.Cancelled("Installation cancelled.");
+            Result = InstallationResult.Cancelled($"{RunName(plan)} cancelled.");
             Phase = InstallPhase.Cancelled;
         }
         catch (Exception ex)
         {
             // The UI must always end with a truthful outcome; an escaping exception would leave
             // the Install screen stuck on "Running" forever.
-            Result = InstallationResult.Failure($"Installation failed: {ex.Message}");
+            Result = InstallationResult.Failure($"{RunName(plan)} failed: {ex.Message}");
             Phase = InstallPhase.Failed;
         }
         finally
@@ -213,6 +213,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
     /// held the file then (the switch's apply writing it, an AV scan) has usually let go by now
     /// (PR #43 review). A catalog that cannot be read is a warning row, never a reason not to install.
     /// </summary>
+    private static string RunName(WizardPlan plan) =>
+        plan.Selection.Mode == WizardMode.ModelsOnly ? "Download" : "Installation";
+
     private void RecordCatalog(WizardPlan plan)
     {
         var captured = plan.Selection.Catalog;
@@ -225,7 +228,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             PlannedOperation = text,
             Category = InstallReportCategory.Step,
             Outcome = warning ? InstallReportOutcome.Skipped : InstallReportOutcome.Success,
-            Comment = "The catalog this install reads.",
+            Comment = plan.Selection.Mode == WizardMode.ModelsOnly ? "The catalog this download reads." : "The catalog this install reads.",
             IsWarning = warning,
         };
         Append(new InstallLogLine(DateTimeOffset.Now, text, warning ? SdkLogLevel.Warning : SdkLogLevel.Info));

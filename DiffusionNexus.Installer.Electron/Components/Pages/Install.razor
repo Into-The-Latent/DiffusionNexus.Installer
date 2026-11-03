@@ -32,14 +32,14 @@
         @if (_busyWith is not null)
         {
             <section class="panel panel-warning">
-                <h1>Another installation is running</h1>
+                <h1>Another @(_busyIsDownload ? "download" : "installation") is running</h1>
                 <p>
-                    <strong>@_busyWith</strong> is still installing. Only one installation can run at a
-                    time, so this one cannot be started yet.
+                    <strong>@_busyWith</strong> is still @(_busyIsDownload ? "downloading" : "installing"). Only one
+                    can run at a time, so this one cannot be started yet.
                 </p>
                 <div class="wizard-actions">
                     <button class="btn-secondary" @onclick="GoToGallery">Back to all software</button>
-                    <button class="btn-primary" @onclick="ResumeRunning">Show the running install</button>
+                    <button class="btn-primary" @onclick="ResumeRunning">Show the running @(_busyIsDownload ? "download" : "install")</button>
                 </div>
             </section>
         }
@@ -154,6 +154,7 @@
 
     private WizardRun? _run;
     private string? _busyWith;
+    private bool _busyIsDownload;
 
     /// <summary>
     /// True when this workload is the only current one its software offers
@@ -207,6 +208,7 @@
             // user to an Install stage that silently starts nothing and then reports the other
             // install's progress, log and success banner under this workload's name.
             _busyWith = running.Selection.Workload.Name;
+            _busyIsDownload = running.Selection.Mode == WizardMode.ModelsOnly;
             return;
         }
 
