@@ -84,7 +84,7 @@
 
         <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !SomeDownloadsWarned(rows) && !result.NothingDelivered && !SomethingFailedOnUpdate(rows) ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : SomeDownloadsWarned(rows) ? "Download finished with warnings" : ModelsOnly ? "Download complete" : !Update ? "Installation complete" : SomethingFailedOnUpdate(rows) ? "Finished with problems" : Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete")
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : SomethingFailedOnUpdate(rows) ? "Finished with problems" : SomeDownloadsWarned(rows) ? (ModelsOnly ? "Download finished with warnings" : "Finished with warnings") : ModelsOnly ? "Download complete" : !Update ? "Installation complete" : Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete")
               : result.IsCancelled ? "Cancelled"
               : ModelsOnly ? "Download failed"
               : Update ? "Update failed"
@@ -188,7 +188,7 @@
 
     /// <summary>A kept file of another size or a name clash: a model may be missing, and "complete" would claim it isn't.</summary>
     private bool SomeDownloadsWarned(IReadOnlyList<InstallReportEntry> rows) =>
-        ModelsOnly && rows.Any(r => r.IsWarning && r.Category == InstallReportCategory.Model);
+        (ModelsOnly || Update) && rows.Any(r => r.IsWarning && r.Category == InstallReportCategory.Model);
 
     private string? _startError;
     private string? _actionError;

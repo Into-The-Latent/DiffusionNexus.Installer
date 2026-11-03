@@ -215,12 +215,10 @@ public class UpdatePathCoreTests
         run.Profile = null;
         run.RunUpdate = false;
         run.GpuUsable = false;
-        run.SetFolderChanges(["late"]);
 
         selection.Workload.Should().BeSameAs(workload);
         selection.TargetFolder.Should().Be(@"E:\ComfyUI");
         run.UpgradeTorch.Should().BeTrue();
-        run.FolderChangeLines.Should().BeEmpty();
         announced.Should().Be(0);
     }
 

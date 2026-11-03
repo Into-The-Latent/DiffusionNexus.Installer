@@ -2,6 +2,7 @@ using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
+using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 
 namespace DiffusionNexus.Installer.Core.Existing;
 
@@ -23,6 +24,7 @@ public sealed class ExistingRun
     private bool _gpuUsable = true;
     private bool _frozen;
     private Task _check = Task.CompletedTask;
+    private readonly Lock _gate = new();
 
     /// <param name="selection">The selection this run writes to.</param>
     /// <param name="union">The chosen workloads, merged.</param>
@@ -101,17 +103,17 @@ public sealed class ExistingRun
         _ = check.ContinueWith(_ => CheckAnswered?.Invoke(), TaskScheduler.Default);
     }
 
+    /// <summary>Asks the folder panels what they will change, from the answers as they are at that moment.</summary>
+    public Func<IReadOnlyList<string>>? FolderChanges { private get; set; }
+
     /// <summary>What the folder panels will change in this install, as Confirm lists it.</summary>
-    public IReadOnlyList<string> FolderChangeLines { get; private set; } = [];
+    public IReadOnlyList<string> FolderChangeLines => FolderChanges?.Invoke() ?? [];
 
-    /// <summary>A different list is a changed answer, so Confirm asks again.</summary>
-    public void SetFolderChanges(IReadOnlyList<string> lines)
-    {
-        if (_frozen || lines.SequenceEqual(FolderChangeLines)) return;
+    /// <summary>The nodes this run clones. Read once per answer: the folder can be on a share that takes 21 seconds to reply.</summary>
+    public IReadOnlyList<GitRepository> NewNodes { get; private set; } = [];
 
-        FolderChangeLines = lines;
-        Changed?.Invoke();
-    }
+    /// <summary>The install has an extra_model_paths.yaml, whatever its blocks are called.</summary>
+    public bool HasModelPathsFile { get; private set; }
 
     /// <summary>
     /// The install has started on what the selection says now. A check that answers later, like the
@@ -121,17 +123,27 @@ public sealed class ExistingRun
 
     private void Follow()
     {
-        if (_profile is { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository })
+        // The folder check answers off the page's thread, and Target and Workload must describe one answer.
+        lock (_gate)
         {
-            Target = ExtendTargetResolver.Resolve(_profile, _packs);
-            _selection.TargetFolder = repository;
-            _selection.Workload = ExtendConfigurationMerger.ForExistingInstall(_union, _profile, Target, UpgradeTorch, _manager);
-        }
-        else
-        {
-            Target = null;
-            _selection.TargetFolder = string.Empty;
-            _selection.Workload = _union.Configuration;
+            if (_profile is { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository })
+            {
+                Target = ExtendTargetResolver.Resolve(_profile, _packs);
+                _selection.TargetFolder = repository;
+                _selection.Workload = ExtendConfigurationMerger.ForExistingInstall(_union, _profile, Target, UpgradeTorch, _manager);
+                NewNodes = _selection.Workload.GitRepositories
+                    .Where(r => !Directory.Exists(Path.Combine(repository, "custom_nodes", PathNormalizer.GetRepositoryName(r.Url))))
+                    .ToList();
+                HasModelPathsFile = File.Exists(Path.Combine(repository, "extra_model_paths.yaml"));
+            }
+            else
+            {
+                Target = null;
+                _selection.TargetFolder = string.Empty;
+                _selection.Workload = _union.Configuration;
+                NewNodes = [];
+                HasModelPathsFile = false;
+            }
         }
 
         Changed?.Invoke();

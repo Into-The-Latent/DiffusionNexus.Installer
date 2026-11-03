@@ -141,6 +141,56 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task A_torch_change_that_cannot_work_stops_the_start_even_when_it_appeared_on_this_screen()
+    {
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+        var existing = run.Plan.Selection.Existing!;
+        existing.GpuUsable = false;
+        existing.Profile = Profile() with { PythonVersion = "3.9.1" };
+        Review(run).Understood = true;
+
+        existing.GpuUsable = true;
+        Review(run).Understood = true;
+
+        Review(run).Validate().IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_new_manager_is_named_among_the_nodes_to_add()
+    {
+        var a = Workload("A");
+        a.GitRepositories.Add(new GitRepository { Name = "ComfyUI-Manager", Url = "https://github.com/ltdrdata/ComfyUI-Manager.git" });
+        var run = await UpdateRunAsync(false, new WorkloadChoice(a, 16));
+
+        run.Plan.Selection.Existing!.Profile = Profile() with { ManagerInstalled = false };
+
+        Review(run).Lines.Should().Contain("Custom nodes: 1 to add, including ComfyUI-Manager.");
+    }
+
+    [Fact]
+    public async Task A_warned_model_row_on_an_update_is_not_green()
+    {
+        Finished(InstallationResult.Success("ok", _repo));
+        _session.SetupGet(s => s.ReportRows).Returns(
+        [
+            new SDK.Models.Installation.InstallReportEntry
+            {
+                PlannedOperation = "Model: Second",
+                Category = SDK.Models.Installation.InstallReportCategory.Model,
+                Outcome = SDK.Models.Installation.InstallReportOutcome.Skipped,
+                Comment = "Skipped: another model in this run has the same file name.",
+                IsWarning = true,
+            },
+        ]);
+        var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
+
+        var heading = Render<InstallStage>(p => p.Add(x => x.Run, run)).Find(".install-result h2");
+
+        heading.TextContent.Trim().Should().Be("Finished with warnings");
+        heading.ClassList.Should().Contain("result-bad");
+    }
+
+    [Fact]
     public async Task Only_a_new_accelerator_does_not_claim_torch_changes()
     {
         var a = Workload("A", torch: "2.8.0");
@@ -208,7 +258,7 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
         var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
         Review(run).Understood = true;
 
-        run.Plan.Selection.Existing!.SetFolderChanges(["Output folder: changes."]);
+        run.Plan.Selection.Existing!.FolderChanges = () => ["Output folder: changes."];
 
         Review(run).Lines.Should().Contain("Output folder: changes.");
         Review(run).Understood.Should().BeFalse();
@@ -218,10 +268,10 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
     public async Task The_same_folder_answer_does_not_ask_again()
     {
         var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
-        run.Plan.Selection.Existing!.SetFolderChanges(["Output folder: changes."]);
+        run.Plan.Selection.Existing!.FolderChanges = () => ["Output folder: changes."];
         Review(run).Understood = true;
 
-        run.Plan.Selection.Existing.SetFolderChanges(["Output folder: changes."]);
+        run.Plan.Selection.Existing.FolderChanges = () => ["Output folder: changes."];
 
         Review(run).Understood.Should().BeTrue();
     }

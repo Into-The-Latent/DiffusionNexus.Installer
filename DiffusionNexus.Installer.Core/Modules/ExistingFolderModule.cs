@@ -20,6 +20,9 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
     private readonly Lock _gate = new();
     private string? _checkFailure;
 
+    /// <summary>Lets typing finish first: a check that has reached a sleeping share can't be called back.</summary>
+    public TimeSpan CheckDelay { get; init; } = TimeSpan.FromMilliseconds(300);
+
     public string Id => "existing-folder";
     public WizardStage Stage => WizardStage.Location;
     public int Order => 0;
@@ -134,6 +137,7 @@ public sealed class ExistingFolderModule(IExistingComfyUIInspector inspector, IU
             string? failure = null;
             try
             {
+                if (!keepAnswer) await Task.Delay(CheckDelay, token).ConfigureAwait(false);
                 profile = await inspector.InspectAsync(folder, token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)

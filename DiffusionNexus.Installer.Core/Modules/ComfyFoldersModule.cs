@@ -86,7 +86,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     private bool _useModelLibraryFolder;
     private string _modelBaseFolder = string.Empty;
     private readonly List<FolderTypeRow> _folderTypes = [];
-    private readonly List<AdditionalFolderRow> _additionalFolders = [];
+    private List<AdditionalFolderRow> _additionalFolders = [];
 
     // What the advanced section held when it was loaded. Persist only rewrites the per-type and
     // additional folders when they differ from this: a user who never opened Advanced must not
@@ -264,8 +264,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     }
 
     /// <summary>Whether the install has a yaml at all, which a switch that was off doesn't tell.</summary>
-    public bool HasModelPathsFile =>
-        _selection is not null && File.Exists(Path.Combine(_selection.TargetFolder, "extra_model_paths.yaml"));
+    public bool HasModelPathsFile => _existing?.HasModelPathsFile == true;
 
     private static bool SameFolder(string? a, string? b)
     {
@@ -310,7 +309,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         foreach (var row in _folderTypes)
             row.Value = (profile.ModelFolderMappings is { } mappings ? Listed(mappings, row.Key) : null) ?? row.Standard;
         _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
-        _additionalFolders.Clear();
+        // A new list, not Clear: this runs on the folder check's thread, and a render may be walking the old one.
+        _additionalFolders = [];
         _loadedAdditional = [];
 
         SyncSelection();
@@ -342,6 +342,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             _loadedAdditional = [];
             _seededFrom = null;
             _existing.Changed += SeedFromInstall;
+            _existing.FolderChanges = FolderChangeLines;
             SeedFromInstall();
             SyncSelection();
             return;
@@ -426,11 +427,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         if (_selection is null || !AppliesTo(_selection)) return;
 
         // An update's folders belong to that install: the next fresh install must not start from them.
-        if (_existing is not null)
-        {
-            _existing.SetFolderChanges(FolderChangeLines());
-            return;
-        }
+        if (_existing is not null) return;
 
         // Re-read, never the copy from InitializeAsync: the install-folder module saves just
         // before this one, and writing a stale object back would undo it.

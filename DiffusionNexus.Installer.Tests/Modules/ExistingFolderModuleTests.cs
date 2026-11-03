@@ -41,6 +41,20 @@ public class ExistingFolderModuleTests
         return selection;
     }
 
+    [Fact]
+    public async Task Typing_a_path_starts_one_check_not_one_per_keystroke()
+    {
+        var (module, _) = await ModuleAsync();
+
+        module.Folder = @"E:\C";
+        module.Folder = @"E:\Co";
+        module.Folder = @"E:\Com";
+        await module.WhenAnswered;
+
+        _inspector.Verify(i => i.InspectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _inspector.Verify(i => i.InspectAsync(@"E:\Com", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private async Task<(ExistingFolderModule Module, WizardSelection Selection)> ModuleAsync()
     {
         var module = new ExistingFolderModule(_inspector.Object, _settings.Object);

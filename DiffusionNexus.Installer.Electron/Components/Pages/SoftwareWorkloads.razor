@@ -142,9 +142,9 @@
             @if (_selectMultiple)
             {
                 <div class="select-multiple-bar">
-                    <span data-role="selected-count">@(_included.Count == 0 ? "No workloads selected" : $"{_included.Count} selected")</span>
-                    <button class="btn-primary" type="button" data-role="continue" disabled="@(_included.Count == 0)" @onclick="Continue">
-                        @(_included.Count == 1 ? "Continue with 1 workload" : $"Continue with {_included.Count} workloads")
+                    <span data-role="selected-count">@(Chosen().Count == 0 ? "No workloads selected" : $"{Chosen().Count} selected")</span>
+                    <button class="btn-primary" type="button" data-role="continue" disabled="@(Chosen().Count == 0)" @onclick="Continue">
+                        @(Chosen().Count == 1 ? "Continue with 1 workload" : $"Continue with {Chosen().Count} workloads")
                     </button>
                 </div>
             }
@@ -304,12 +304,14 @@
 
     private void Continue()
     {
-        Picks.Set(Mode, _entry!.Workloads
-            .Where(e => _included.Contains(e.Workload.Id))
+        Picks.Set(Mode, Chosen()
             .Select(e => new WorkloadPick(e.Workload.Id, VersionOf(e.Workload)))
             .ToList());
         Nav.NavigateTo(WizardRoutes.Selected(Mode));
     }
+
+    /// <summary>The ticked cards. A type filter keeps them, but a legacy pack hidden again is out: nothing on screen says it's in.</summary>
+    private List<GalleryEntry> Chosen() => Visible().Where(e => _included.Contains(e.Workload.Id)).ToList();
 
     private IEnumerable<GalleryEntry> Filtered() => Visible()
         .Where(e => _type is null || e.Workload.WorkflowType == _type);

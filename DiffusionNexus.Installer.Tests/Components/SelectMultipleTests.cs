@@ -306,6 +306,26 @@ public class SelectMultipleTests : BunitContext
     }
 
     [Fact]
+    public void A_legacy_pack_hidden_again_is_not_in_the_run()
+    {
+        var legacy = Workload("Old");
+        legacy.IsLegacy = true;
+        var current = Workload("A");
+        Arrange(current, legacy);
+        var cut = RenderPath(WizardMode.ModelsOnly);
+        TurnOn(cut);
+        cut.Find("[data-role=show-legacy]").Change(true);
+        Include(cut, "Old");
+        cut.Find("[data-role=show-legacy]").Change(false);
+        Include(cut, "A");
+
+        cut.Find("[data-role=selected-count]").TextContent.Should().Be("1 selected");
+        cut.Find("[data-role=continue]").Click();
+
+        _picks.Get(WizardMode.ModelsOnly).Should().ContainSingle().Which.WorkloadId.Should().Be(current.Id);
+    }
+
+    [Fact]
     public void A_filter_keeps_what_was_picked()
     {
         Arrange(Workload("A"), Workload("Clip", type: WorkflowType.Video));

@@ -1,7 +1,6 @@
 using DiffusionNexus.Installer.Core.Existing;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Services;
-using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
 
 namespace DiffusionNexus.Installer.Core.Modules;
@@ -26,7 +25,17 @@ public sealed class ExistingReviewModule : IWizardModule
 
     public bool AppliesTo(WizardSelection selection) => true;
 
-    public bool Understood { get; set; }
+    /// <summary>
+    /// Ticked for the list that was on screen. Another list is something else to understand, however
+    /// it came to change: a check that answered late, or a driver installed during a side trip.
+    /// </summary>
+    public bool Understood
+    {
+        get => _ticked is { } ticked && ticked.SequenceEqual(Lines);
+        set => _ticked = value ? Lines : null;
+    }
+
+    private IReadOnlyList<string>? _ticked;
 
     /// <summary>The run this confirms, whose checks the panel follows.</summary>
     public ExistingRun? Run => _selection?.Existing;
@@ -65,11 +74,13 @@ public sealed class ExistingReviewModule : IWizardModule
                     : $"Torch: stays at {ComfyUpdateModule.Installed(profile)}, and {ComfyUpdateModule.NewAccelerators(Run)} {(ComfyUpdateModule.NewAccelerators(Run).Contains(" and ") ? "are" : "is")} added.",
             };
 
-            var newNodes = _selection!.Workload.GitRepositories.Count(r =>
-                !Directory.Exists(Path.Combine(profile.RepositoryPath!, "custom_nodes", PathNormalizer.GetRepositoryName(r.Url))));
-            if (newNodes > 0) lines.Add($"Custom nodes: {newNodes} to add.");
+            // By name when it's the Manager: the update panel says only the workload's nodes get added.
+            if (Run.NewNodes is { Count: > 0 } newNodes)
+                lines.Add(ExtendConfigurationMerger.HasManagerRepository(new SDK.Models.Configuration.InstallationConfiguration { GitRepositories = [.. newNodes] })
+                    ? $"Custom nodes: {newNodes.Count} to add, including ComfyUI-Manager."
+                    : $"Custom nodes: {newNodes.Count} to add.");
 
-            if (_selection.Workload.SelectedLamaCppWheelId.HasValue)
+            if (_selection!.Workload.SelectedLamaCppWheelId.HasValue)
                 lines.Add("llama.cpp: its package is installed, which also sets the versions of numpy and pillow.");
 
             lines.Add(profile.UpdateScript switch
@@ -102,6 +113,10 @@ public sealed class ExistingReviewModule : IWizardModule
         // Checked again here: coming back from a side trip looks at the install again.
         if (Run is { Profile: not { Support: ExistingInstallSupport.Supported } })
             return ModuleValidation.Error("This ComfyUI folder can't be used any more. Go back to Location and check it.");
+
+        // Checked on Content, and again here: a side trip can make torch change after that.
+        if (Run is { TorchHardStop: { Count: > 0 } errors })
+            return ModuleValidation.Error($"{string.Join(" ", errors)} Go back to Content and untick Update ComfyUI to keep torch as it is, or do a fresh install.");
 
         return Understood ? ModuleValidation.Ok() : ModuleValidation.Error("Tick \"I understand what will change\" to continue.");
     }

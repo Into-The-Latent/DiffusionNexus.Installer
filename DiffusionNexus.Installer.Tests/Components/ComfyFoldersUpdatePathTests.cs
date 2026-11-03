@@ -246,8 +246,9 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     [Fact]
     public async Task A_yaml_with_no_comfyui_block_is_not_said_to_be_added()
     {
-        var (module, _) = await ModuleAsync(Profile(models: null, folder: Directory.CreateTempSubdirectory("dn-yaml-").FullName));
-        File.WriteAllText(Path.Combine(module.InstallFolder, "extra_model_paths.yaml"), "a111:\n  base_path: x\n");
+        var folder = Directory.CreateTempSubdirectory("dn-yaml-").FullName;
+        File.WriteAllText(Path.Combine(folder, "extra_model_paths.yaml"), "a111:\n  base_path: x\n");
+        var (module, _) = await ModuleAsync(Profile(models: null, folder: folder));
         module.UseModelLibraryFolder = true;
         module.ModelBaseFolder = @"E:\NewLib";
 
@@ -476,13 +477,11 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     }
 
     [Fact]
-    public async Task Leaving_the_page_tells_the_run_what_will_change()
+    public async Task The_run_knows_what_this_page_will_change()
     {
         var (module, selection) = await ModuleAsync();
         module.OutputFolder = @"E:\NewOut";
         module.ModelBaseFolder = @"E:\NewLib";
-
-        await module.PersistAsync();
 
         selection.Existing!.FolderChangeLines.Should().HaveCount(2);
         selection.Existing.FolderChangeLines.Should().Contain(l => l.Contains(@"E:\NewOut") && l.Contains("run_nvidia.bat"));
@@ -496,8 +495,6 @@ public class ComfyFoldersUpdatePathTests : BunitContext
         module.UseOwnOutputFolder = false;
         module.UseModelLibraryFolder = false;
 
-        await module.PersistAsync();
-
         // The yaml stays when the library goes off, so nothing in the install changes for it.
         selection.Existing!.FolderChangeLines.Should().ContainSingle().Which.Should().Contain("ComfyUI's own");
     }
@@ -505,11 +502,19 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     [Fact]
     public async Task Unchanged_folders_are_not_listed()
     {
-        var (module, selection) = await ModuleAsync();
-
-        await module.PersistAsync();
+        var (_, selection) = await ModuleAsync();
 
         selection.Existing!.FolderChangeLines.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_launcher_edited_during_a_side_trip_is_listed_too()
+    {
+        var (_, selection) = await ModuleAsync(Profile(output: null));
+
+        selection.Existing!.Profile = Profile(output: @"E:\AddedByHand");
+
+        selection.Existing.FolderChangeLines.Should().ContainSingle().Which.Should().Contain("ComfyUI's own");
     }
 
     [Fact]
