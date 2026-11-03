@@ -1,5 +1,7 @@
+using DiffusionNexus.Installer.Core.Existing;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
 
 namespace DiffusionNexus.Installer.Core.Wizard;
 
@@ -10,7 +12,26 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 /// </summary>
 public sealed class WizardSelection
 {
-    public required InstallationConfiguration Workload { get; init; }
+    /// <summary>
+    /// Settable for the update path only, where <see cref="ExistingRun"/> rewrites it as answers come
+    /// in. Torch and the Manager depend on a folder that is chosen after the workload.
+    /// </summary>
+    public required InstallationConfiguration Workload { get; set; }
+
+    /// <summary>What Select multiple picked, each at its own version. Empty for a single workload.</summary>
+    public IReadOnlyList<WorkloadChoice> Choices { get; init; } = [];
+
+    /// <summary>Several workloads merged into <see cref="Workload"/>.</summary>
+    public bool IsMultiple => Choices.Count > 0;
+
+    /// <summary>The update path's tile that adds no workload.</summary>
+    public bool UpdateOnly { get; init; }
+
+    /// <summary>The update path's answers. Null on the other paths.</summary>
+    public ExistingRun? Existing { get; set; }
+
+    /// <summary>Which workload brought each model, for the labels on a merged list.</summary>
+    public IReadOnlyDictionary<Guid, string> PackNameByModelId { get; init; } = new Dictionary<Guid, string>();
 
     /// <summary>
     /// The catalog <see cref="Workload"/> was read from, taken right after reading it (spec 7.2).

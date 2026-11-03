@@ -57,17 +57,6 @@ public sealed class WizardModuleRegistry
         foreach (var module in modules.OrderBy(m => (int)m.Stage).ThenBy(m => m.Order))
             await module.InitializeAsync(selection, ct).ConfigureAwait(false);
 
-        var byStage = modules
-            .Where(m => m.AppliesTo(selection))
-            .GroupBy(m => m.Stage)
-            .ToDictionary(
-                g => g.Key,
-                g => (IReadOnlyList<IWizardModule>)g.OrderBy(m => m.Order).ToList());
-
-        // Confirm and Install always run. TryAdd so a module targeting one of them is kept.
-        byStage.TryAdd(WizardStage.Confirm, []);
-        byStage.TryAdd(WizardStage.Install, []);
-
-        return new WizardPlan(selection, byStage);
+        return new WizardPlan(selection, modules);
     }
 }

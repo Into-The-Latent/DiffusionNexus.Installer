@@ -45,6 +45,16 @@ public sealed class WizardRun
     public bool TryNext()
     {
         if (!CanGoNext) return false;
+
+        if (_plan.Selection.Mode == WizardMode.UpdateExisting)
+        {
+            // By stage, not by position: the list may have just lost or gained a stage, even this one.
+            var current = CurrentStage;
+            _plan.RefreshStages();
+            _index = _plan.Stages.TakeWhile(s => s <= current).Count();
+            return true;
+        }
+
         _index++;
         return true;
     }

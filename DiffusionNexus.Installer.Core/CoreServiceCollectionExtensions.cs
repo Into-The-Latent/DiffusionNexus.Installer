@@ -89,6 +89,7 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IDiskSpaceEstimator, SdkDiskSpaceEstimator>();
         services.AddSingleton<IExistingModelVerifier, SdkExistingModelVerifier>();
         services.AddSingleton<IModelPresenceScanner, ModelPresenceScanner>();
+        services.AddSingleton<WorkloadPicks>();
 
         services.AddSingleton<DevTools.LauncherScriptPreview>();
         services.AddSingleton<Gallery.GalleryBuilder>();
