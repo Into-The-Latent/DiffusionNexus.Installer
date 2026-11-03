@@ -568,3 +568,20 @@ Use a workload with a small model, such as Krea-2-Turbo with only 4x-UltraSharp 
 16. Start a large model, and click **Cancel download** while it runs. **Expect:** a `.part` file while it runs, then no file of that name afterwards.
 17. Start it again and end the installer from Task Manager while it runs, then run the same folder again. **Expect:** only the `.part` is left, the model isn't marked "already downloaded", and the new run replaces the `.part` with the finished file.
 18. Untick every model on Content. **Expect:** **Next** is disabled and says to tick at least one model.
+
+## 12. Update existing ComfyUI and Select multiple (#28, SDK #70)
+
+Use a throwaway ComfyUI: updating changes it, and there is no undo. A clone of ComfyUI with its own venv will do.
+
+1. Open **Update ComfyUI or Download Models**, then **Update existing ComfyUI**. **Expect:** the workload screen with an **Update only** tile first, and no workload without models or workflows.
+2. Open **Update only**, and try an empty folder, a portable package and a folder with no venv. **Expect:** each says why, with a **Fresh install** link, and **Next** stays off.
+3. Choose the throwaway. **Expect:** what we found (venv under its real name, Python, torch, update script, Manager) and **Next** on. Go on. **Expect:** the checkbox on and locked, and the red warning.
+4. Confirm and start. **Expect:** no key press needed; the code on the channel the warning named; `Update-ComfyUI.bat` carries the version marker; `run_nvidia.bat` is byte for byte what it was; the report names the channel; a log file in the ComfyUI folder; `Update complete`.
+5. Turn on **Select multiple**. **Expect:** the tile goes, and the memory panel starts at 32 with every card on its largest version.
+6. Set 16 and include Ideogram. **Expect:** Ideogram stays on 24 GB with the red note, and is not greyed out. Change another card to 8, then set 24. **Expect:** that card follows the panel again.
+7. Continue with two workloads and choose the folder. **Expect:** Content has no memory panel. Untick **Update ComfyUI**. **Expect:** the calm message, and a red note naming the workloads that need a newer torch, with versions.
+8. Go on to Confirm. **Expect:** each workload's version, `ComfyUI: stays on its current version`, the note again, and **Start update** off until both boxes are ticked.
+9. Go back to Location and choose another ComfyUI. **Expect:** the output and model panels fill in from that one, the ticks in the model list stay, and the torch note follows the new install.
+10. Change the output folder on a ComfyUI whose `run_nvidia.bat` has `--cpu`, and run. **Expect:** only the flag changed, and `--cpu` is still there.
+11. On a machine with no NVIDIA GPU: **Expect:** a red warning on System, **Next** on, no CPU question, and torch and the launcher untouched.
+12. On **Download models only**, turn on **Select multiple**, pick two workloads at 16, tick one small model, and run. **Expect:** the file in its subfolder, each row labelled with its workload, and each version on Confirm.
