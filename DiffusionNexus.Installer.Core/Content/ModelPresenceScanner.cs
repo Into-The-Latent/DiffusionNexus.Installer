@@ -90,9 +90,6 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
     private static (List<ModelFileTarget> Targets, int Unresolvable) TargetsFor(
         ModelScanRequest request, ModelDownload model, Dictionary<string, string> overrides, DirectoryListingCache directoryCache)
     {
-        // As ModelDownloadStepHandler.SearchesSubfolders: a flat run wants the file directly in the folder.
-        var searchSubfolders = !request.DownloadOnly || request.SortIntoSubfolders;
-
         var modelDestination = request.DownloadOnly
             ? ModelDestinationResolver.ResolveDownloadOnly(request.Workload, model, link: null, request.RepositoryPath, request.SortIntoSubfolders)
             : ModelDestinationResolver.Resolve(request.Workload, model, request.RepositoryPath, request.ModelBaseFolder, overrides);
@@ -107,7 +104,7 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
             if (request.SelectedVramGb > 0 && !PipelineVram.VramProfileFitsSelection(model.VramProfile, request.SelectedVramGb))
                 return ([], 0);
 
-            return Target(model, model.Url, modelDestination, directoryCache, searchSubfolders) is { } single ? ([single], 0) : ([], 1);
+            return Target(request, model, model.Url, modelDestination, directoryCache) is { } single ? ([single], 0) : ([], 1);
         }
 
         var links = PipelineVram.SelectBestMatchingLinks(enabledLinks, request.SelectedVramGb, null, model.Name);
@@ -124,7 +121,7 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
                     ? modelDestination
                     : ResolveLinkDestination(link.Destination, request.RepositoryPath);
 
-            if (Target(model, link.Url, destination, directoryCache, searchSubfolders) is { } target) targets.Add(target);
+            if (Target(request, model, link.Url, destination, directoryCache) is { } target) targets.Add(target);
             else unresolvable++;
         }
 
@@ -143,10 +140,12 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         return Path.IsPathRooted(resolved) ? resolved : Path.Combine(repositoryPath, resolved);
     }
 
-    private static ModelFileTarget? Target(ModelDownload model, string url, string destinationDirectory, DirectoryListingCache directoryCache, bool searchSubfolders)
+    private static ModelFileTarget? Target(ModelScanRequest request, ModelDownload model, string url, string destinationDirectory, DirectoryListingCache directoryCache)
     {
         var fileName = FileNameFromUrl(url);
         if (fileName is null) return null;
+
+        var searchSubfolders = !request.DownloadOnly || ModelDestinationResolver.DownloadOnlySearchesBelow(destinationDirectory, request.RepositoryPath);
 
         return new ModelFileTarget(model, url, destinationDirectory, fileName, directoryCache.FindFile(destinationDirectory, fileName, searchSubfolders));
     }

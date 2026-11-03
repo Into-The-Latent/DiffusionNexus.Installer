@@ -61,6 +61,17 @@ public sealed class ModelPresenceScannerTests : IDisposable
     }
 
     [Fact]
+    public void Models_only_sorted_landing_in_the_folder_itself_does_not_count_a_file_further_down()
+    {
+        var workload = Workload(Model("Vae", "models", Link("https://h.invalid/a.safetensors")));
+        Touch(Path.Combine("backup", "a.safetensors"));
+
+        var presence = _scanner.Scan(ModelsOnlyRequest(workload, sort: true)).Single();
+
+        presence.AllPartsPresent.Should().BeFalse();
+    }
+
+    [Fact]
     public void Models_only_sorted_counts_a_file_filed_below_its_subfolder()
     {
         var workload = Workload(Model("Vae", "models/vae", Link("https://h.invalid/a.safetensors")));
