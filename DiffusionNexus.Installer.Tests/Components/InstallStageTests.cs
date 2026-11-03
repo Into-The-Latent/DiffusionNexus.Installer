@@ -64,13 +64,13 @@ public class InstallStageTests : BunitContext, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private async Task<WizardRun> RunAsync()
+    private async Task<WizardRun> RunAsync(WizardMode mode = WizardMode.FreshInstall)
     {
         var workload = new InstallationConfiguration { Name = "Fooocus" };
         workload.Repository.Type = RepositoryType.Fooocus;
 
         var plan = await new WizardModuleRegistry(() => [])
-            .BuildPlanAsync(new WizardSelection { Workload = workload });
+            .BuildPlanAsync(new WizardSelection { Workload = workload, Mode = mode });
         plan.Selection.TargetFolder = _folder;
 
         // The session is already carrying this plan, so rendering rejoins the run instead of
@@ -94,6 +94,75 @@ public class InstallStageTests : BunitContext, IDisposable
         var launcher = Path.Combine(_folder, OperatingSystem.IsWindows() ? "run_nvidia.bat" : "run_nvidia.sh");
         File.WriteAllText(launcher, string.Empty);
         return launcher;
+    }
+
+    [Fact]
+    public async Task Models_only_says_downloading_while_it_runs()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.Find(".panel-head h2").TextContent.Should().Be("Downloading");
+        stage.Find(".wizard-actions button").TextContent.Should().Be("Cancel download");
+    }
+
+    [Fact]
+    public async Task Models_only_all_ok_says_download_complete()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("Downloaded 2 models", _folder));
+        _session.SetupGet(s => s.ReportRows).Returns([Row("Downloading a", InstallReportOutcome.Downloaded)]);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        var heading = stage.Find(".install-result h2");
+        heading.TextContent.Trim().Should().Be("Download complete");
+        heading.ClassList.Should().Contain("result-ok");
+        stage.Markup.Should().Contain("Downloaded 2 models");
+    }
+
+    [Fact]
+    public async Task Models_only_with_a_failed_row_says_some_failed()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("Downloaded 1 models, 0 already present, 0 skipped, 1 failed.", _folder));
+        _session.SetupGet(s => s.ReportRows).Returns(
+            [Row("Downloading a", InstallReportOutcome.Downloaded), Row("Downloading b", InstallReportOutcome.Failed)]);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        var heading = stage.Find(".install-result h2");
+        heading.TextContent.Trim().Should().Be("Some downloads failed");
+        heading.ClassList.Should().Contain("result-bad");
+    }
+
+    [Fact]
+    public async Task Models_only_failed_says_download_failed()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Failed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Failure("Failed to download all 2 models."));
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.Find(".install-result h2").TextContent.Trim().Should().Be("Download failed");
+    }
+
+    [Fact]
+    public async Task A_fresh_install_with_a_failed_row_keeps_its_heading()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("All done", _folder));
+        _session.SetupGet(s => s.ReportRows).Returns([Row("Downloading b", InstallReportOutcome.Failed)]);
+        var run = await RunAsync();
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        stage.Find(".install-result h2").TextContent.Trim().Should().Be("Installation complete");
     }
 
     [Fact]

@@ -519,6 +519,34 @@ public class InstallSessionTests
     }
 
     [Fact]
+    public async Task Models_only_writes_no_log_file_in_the_folder_or_above_it()
+    {
+        var parent = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var chosen = Directory.CreateDirectory(Path.Combine(parent, "ComfyUI")).FullName;
+        try
+        {
+            var workload = new InstallationConfiguration { Name = "Test" };
+            workload.Repository.Type = RepositoryType.ComfyUI;
+            workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var plan = await new WizardModuleRegistry(() => [])
+                .BuildPlanAsync(new WizardSelection { Workload = workload, Mode = WizardMode.ModelsOnly });
+            plan.Selection.TargetFolder = chosen;
+            var session = new InstallSession(LoggingOrchestrator(1));
+
+            await session.StartAsync(plan);
+
+            Directory.EnumerateFileSystemEntries(chosen).Should().BeEmpty();
+            Directory.GetFiles(parent).Should().BeEmpty();
+            session.LogFilePath.Should().BeNull();
+            session.LogLines.Should().NotBeEmpty("Copy log still has it");
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task A_folder_named_after_the_repository_gets_the_log_beside_the_install_not_in_it()
     {
         // "E:\AI\ComfyUI" installs into E:\AI\ComfyUI, and the install-folder check wants that

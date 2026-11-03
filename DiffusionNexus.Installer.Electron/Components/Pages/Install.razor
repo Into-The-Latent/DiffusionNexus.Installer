@@ -125,7 +125,9 @@
                     <button class="btn-secondary" @onclick="GoToGallery">Cancel</button>
                     <button class="btn-secondary" disabled="@(!_run.CanGoBack || _preflightBusy || _savingSettings)" @onclick="Back">Back</button>
                     <button class="btn-primary" disabled="@(!_run.CanGoNext || _preflightBusy || _savingSettings)" @onclick="Next">
-                        @(_run.CurrentStage == WizardStage.Confirm ? "Start installation" : "Next")
+                        @(_run.CurrentStage != WizardStage.Confirm ? "Next"
+                          : Mode == WizardMode.ModelsOnly ? "Start download"
+                          : "Start installation")
                     </button>
                 </div>
 

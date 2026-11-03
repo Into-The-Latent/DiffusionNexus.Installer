@@ -1,6 +1,7 @@
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.SDK.Models.Installation
 @using DiffusionNexus.Installer.SDK.Services
 @implements IAsyncDisposable
 @inject IInstallSession Session
@@ -17,7 +18,7 @@
            into an issue needs what came before it. Hidden where there is no clipboard, for the
            same reason "Close installer" is hidden outside Electron (issue #14). *@
         <div class="panel-head">
-            <h2>Installing</h2>
+            <h2>@(ModelsOnly ? "Downloading" : "Installing")</h2>
             @if (Clipboard.IsAvailable)
             {
                 <span class="panel-head-actions">
@@ -66,10 +67,11 @@
             var rows = Session.ReportRows;
         }
 
-        <h2 class="@(result is null ? null : result.IsSuccess ? "result-ok" : "result-bad")">
+        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? "Installation complete"
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : ModelsOnly ? "Download complete" : "Installation complete")
               : result.IsCancelled ? "Cancelled"
+              : ModelsOnly ? "Download failed"
               : "Installation failed")
         </h2>
 
@@ -116,7 +118,7 @@
 <div class="wizard-actions">
     @if (Session.Phase == InstallPhase.Running)
     {
-        <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
+        <button class="btn-secondary" @onclick="() => Session.Cancel()">@(ModelsOnly ? "Cancel download" : "Cancel installation")</button>
     }
     else
     {
@@ -152,6 +154,15 @@
     /// enough that a render stays cheap; the completion report is what matters afterwards.
     /// </summary>
     private const int VisibleLogLines = 300;
+
+    private bool ModelsOnly => Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
+
+    /// <summary>
+    /// A models-only run is only its downloads, so "complete" over a failed one would be a false
+    /// claim. A fresh install keeps its heading: the failed row sits beside the install that worked.
+    /// </summary>
+    private bool SomeDownloadsFailed(IReadOnlyList<InstallReportEntry> rows) =>
+        ModelsOnly && rows.Any(r => r.Outcome == InstallReportOutcome.Failed);
 
     private string? _startError;
     private string? _actionError;

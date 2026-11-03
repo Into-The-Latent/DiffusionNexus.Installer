@@ -84,6 +84,16 @@ public class InstallPageModesTests : BunitContext
         Services.GetRequiredService<NavigationManager>().Uri.Should().EndWith($"/existing/models/{Workload.Id}");
     }
 
+    [Theory]
+    [InlineData(WizardMode.FreshInstall, "Start installation")]
+    [InlineData(WizardMode.ModelsOnly, "Start download")]
+    public void The_confirm_button_says_what_it_starts(WizardMode mode, string label)
+    {
+        var cut = RenderInstall(mode);
+
+        cut.WaitForAssertion(() => cut.Find(".wizard-actions .btn-primary").TextContent.Trim().Should().Be(label));
+    }
+
     [Fact]
     public void The_selection_carries_the_mode_the_page_was_opened_with()
     {

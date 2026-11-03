@@ -8,23 +8,35 @@
     var options = Run.Plan.ToOptions();
     var models = Run.Plan.AllModules.OfType<ModelSelectionModule>().FirstOrDefault();
     var workflows = Run.Plan.AllModules.OfType<WorkflowSelectionModule>().FirstOrDefault();
+    var modelsOnly = Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
 }
 
 <section class="panel">
-    <h2>Ready to install</h2>
+    <h2>@(modelsOnly ? "Ready to download" : "Ready to install")</h2>
 
     <dl class="summary">
         <dt>Workload</dt>
         <dd>@Run.Plan.Selection.Workload.Name</dd>
 
-        <dt>Software</dt>
-        <dd>@Run.Plan.Selection.Workload.Repository.Type</dd>
+        @if (modelsOnly)
+        {
+            <dt>Download folder</dt>
+            <dd>@Run.Plan.Selection.TargetFolder</dd>
 
-        <dt>Install folder</dt>
-        <dd>@Run.Plan.Selection.TargetFolder</dd>
+            <dt>Subfolders</dt>
+            <dd data-role="subfolders">@(Run.Plan.Selection.SortModelsIntoSubfolders ? "On: models are sorted into subfolders" : "Off: every file goes directly into the folder")</dd>
+        }
+        else
+        {
+            <dt>Software</dt>
+            <dd>@Run.Plan.Selection.Workload.Repository.Type</dd>
 
-        <dt>Python</dt>
-        <dd>@Run.Plan.Selection.Workload.Python.PythonVersion</dd>
+            <dt>Install folder</dt>
+            <dd>@Run.Plan.Selection.TargetFolder</dd>
+
+            <dt>Python</dt>
+            <dd>@Run.Plan.Selection.Workload.Python.PythonVersion</dd>
+        }
 
         @if (options.SelectedVramProfile > 0)
         {
@@ -62,13 +74,16 @@
             <dd>CPU-only build</dd>
         }
 
-        <dt>Shortcuts</dt>
-        <dd>
-            @(options.CreateDesktopShortcut ? "Desktop" : null)
-            @(options.CreateDesktopShortcut && options.CreateStartMenuShortcut ? " + " : null)
-            @(options.CreateStartMenuShortcut ? "Start Menu" : null)
-            @(!options.CreateDesktopShortcut && !options.CreateStartMenuShortcut ? "None" : null)
-        </dd>
+        @if (!modelsOnly)
+        {
+            <dt>Shortcuts</dt>
+            <dd>
+                @(options.CreateDesktopShortcut ? "Desktop" : null)
+                @(options.CreateDesktopShortcut && options.CreateStartMenuShortcut ? " + " : null)
+                @(options.CreateStartMenuShortcut ? "Start Menu" : null)
+                @(!options.CreateDesktopShortcut && !options.CreateStartMenuShortcut ? "None" : null)
+            </dd>
+        }
     </dl>
 </section>
 

@@ -275,6 +275,10 @@ public sealed class InstallSession : IInstallSession, IDisposable
         {
             if (string.IsNullOrWhiteSpace(chosen)) return null;
 
+            // None on models only: the run writes only models, and the rule below would put a log
+            // above a folder named ComfyUI, outside the folder the user chose. Copy log still works.
+            if (selection.Mode == WizardMode.ModelsOnly) return null;
+
             var install = RepositoryPaths.Resolve(selection.Workload, chosen);
             var chosenIsTheInstall = string.Equals(
                 Path.TrimEndingDirectorySeparator(Path.GetFullPath(install)),

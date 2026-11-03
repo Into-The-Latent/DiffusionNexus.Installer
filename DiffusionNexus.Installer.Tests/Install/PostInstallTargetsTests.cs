@@ -27,6 +27,32 @@ public class PostInstallTargetsTests
     }
 
     [Fact]
+    public async Task No_launcher_on_models_only_even_when_the_folder_holds_one()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "dn-launcher-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, OperatingSystem.IsWindows() ? "run_nvidia.bat" : "run_nvidia.sh"), string.Empty);
+
+        try
+        {
+            var workload = new InstallationConfiguration { Name = "Test" };
+            workload.Repository.Type = RepositoryType.ComfyUI;
+            var plan = await new WizardModuleRegistry(() => [])
+                .BuildPlanAsync(new WizardSelection { Workload = workload, Mode = WizardMode.ModelsOnly });
+            plan.Selection.TargetFolder = folder;
+
+            var targets = PostInstallTargets.From(plan, InstallationResult.Success("done", folder));
+
+            targets.LauncherScript.Should().BeNull("the user asked for models, not to start whatever is in that folder");
+            targets.Folder.Should().Be(folder);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task The_folder_is_the_one_the_user_picked_not_the_repository_path()
     {
         var plan = await PlanAsync(RepositoryType.ComfyUI, @"C:\Installs\Comfy");
