@@ -33,6 +33,38 @@ public sealed class ScannerPipelineAgreementTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Models_only_scan_looks_where_the_run_downloads_for_every_workload_and_tier(bool sort)
+    {
+        const string folder = @"E:\dn-agreement\models";
+        var scanner = new ModelPresenceScanner();
+        var noOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var withModels = _workloads
+            .Where(w => w.WorkloadTarget == WorkloadTargetType.Installer && w.ModelDownloads.Count > 0)
+            .ToList();
+        withModels.Should().NotBeEmpty();
+
+        foreach (var workload in withModels)
+        foreach (var tier in VramTiers.Parse(workload.Vram.VramProfiles).Prepend(0).Distinct())
+        {
+            var request = new ModelScanRequest(workload, folder, null, noOverrides, tier, DownloadOnly: true, SortIntoSubfolders: sort);
+
+            foreach (var presence in scanner.Scan(request))
+            foreach (var target in presence.Targets)
+            {
+                var link = target.Model.DownloadLinks.FirstOrDefault(l => l.Enabled && l.Url == target.Url);
+                target.DestinationDirectory.Should().Be(
+                    ModelDestinationResolver.ResolveDownloadOnly(workload, target.Model, link, folder, sort),
+                    $"'{workload.Name}' / '{target.Model.Name}' at {tier} GB");
+                target.DestinationDirectory.Should().StartWith(folder);
+                if (!sort) target.DestinationDirectory.Should().Be(folder);
+            }
+        }
+    }
+
     [Fact]
     public void Scanner_targets_equal_the_pipelines_link_selection_for_every_workload_and_tier()
     {

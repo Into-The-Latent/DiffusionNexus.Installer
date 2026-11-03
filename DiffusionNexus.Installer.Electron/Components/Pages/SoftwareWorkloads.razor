@@ -2,6 +2,7 @@
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Core.Updates
+@using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @using DiffusionNexus.Installer.SDK.Catalog
 @using DiffusionNexus.Installer.SDK.Models.Configuration
@@ -51,12 +52,24 @@
         }
         else
         {
-            <a class="workload-screen-back" href="/">&larr; All software</a>
+            @if (Mode == WizardMode.ModelsOnly)
+            {
+                <a class="workload-screen-back" href="/existing">&larr; Back</a>
 
-            <div class="workload-screen-head">
-                <h1>Select workload</h1>
-                <p>Choose what you want @_entry.DisplayName set up for. You can install more later.</p>
-            </div>
+                <div class="workload-screen-head">
+                    <h1>Select workload</h1>
+                    <p>Choose which workload's models you want to download.</p>
+                </div>
+            }
+            else
+            {
+                <a class="workload-screen-back" href="/">&larr; All software</a>
+
+                <div class="workload-screen-head">
+                    <h1>Select workload</h1>
+                    <p>Choose what you want @_entry.DisplayName set up for. You can install more later.</p>
+                </div>
+            }
 
             <div class="filters">
                 <button class="@TypeClass(null)" type="button" @onclick="() => _type = null">All</button>
@@ -70,7 +83,7 @@
                 @* Off whenever the screen opens, like the 1.x classic list's checkbox it replaces:
                    superseded packs stay installable without crowding the current ones. Only where
                    there is something to reveal -- a switch that changes nothing is a dead control. *@
-                @if (_entry.HasLegacyWorkloads)
+                @if (OnThisPath(_entry.Workloads).Any(e => e.Workload.IsLegacy))
                 {
                     <label class="switch filters-switch">
                         <input type="checkbox" role="switch" data-role="show-legacy"
@@ -84,7 +97,8 @@
             <div class="workload-grid">
                 @foreach (var workload in Filtered())
                 {
-                    <WorkloadCard Entry="workload" OnInstall="Install" />
+                    <WorkloadCard Entry="workload" OnInstall="Install"
+                                  ActionLabel="@(Mode == WizardMode.ModelsOnly ? "Download models" : "Install")" />
                 }
             </div>
         }
@@ -95,6 +109,9 @@
     /// <summary>The RepositoryType name from the route. Not parsed into the enum by the router:
     /// an unrecognised value must render the not-found state, not a 404 or an exception.</summary>
     [Parameter] public string? Software { get; set; }
+
+    /// <summary>Which path this screen is on. The router never sets it: ModelsOnlyWorkloads does.</summary>
+    [Parameter] public WizardMode Mode { get; set; } = WizardMode.FreshInstall;
 
     private SoftwareEntry? _entry;
     private bool _loaded;
@@ -173,7 +190,20 @@
     /// packs follow the current ones: GalleryBuilder sorts them last, so the current packs keep
     /// their places.
     /// </summary>
-    private IReadOnlyList<GalleryEntry> Visible() => _showLegacy ? _entry!.Workloads : _entry!.CurrentWorkloads;
+    private IReadOnlyList<GalleryEntry> Visible() => OnThisPath(_showLegacy ? _entry!.Workloads : _entry!.CurrentWorkloads);
+
+    /// <summary>
+    /// What this path can offer. Models only leaves out a workload with nothing to download, and
+    /// offers one a fresh install refuses: what blocks that is its torch pairing or a capability
+    /// the installer lacks, and a download touches neither.
+    /// </summary>
+    private IReadOnlyList<GalleryEntry> OnThisPath(IReadOnlyList<GalleryEntry> entries) =>
+        Mode != WizardMode.ModelsOnly
+            ? entries
+            : entries
+                .Where(e => e.Workload.ModelDownloads.Any(m => m.Enabled))
+                .Select(e => e with { IsInstallable = true, Incompatibility = null })
+                .ToList();
 
     private IEnumerable<GalleryEntry> Filtered() => Visible()
         .Where(e => _type is null || e.Workload.WorkflowType == _type);
@@ -202,5 +232,5 @@
 
     private string TypeClass(WorkflowType? type) => _type == type ? "filter-active" : "filter";
 
-    private void Install(GalleryEntry entry) => Nav.NavigateTo($"/install/{entry.Workload.Id}");
+    private void Install(GalleryEntry entry) => Nav.NavigateTo(WizardRoutes.Install(entry.Workload.Id, Mode));
 }

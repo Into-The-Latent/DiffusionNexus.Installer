@@ -37,6 +37,7 @@ public sealed class WizardPlan
         // would be overwritten by this line if it ran last, silently reinstating the exact wrong
         // install (every tier's variant at no tier) that the VramProfile gate exists to prevent.
         draft.SelectedVramProfile = Selection.SelectedVramProfile;
+        draft.DownloadModelsOnly = Selection.Mode == WizardMode.ModelsOnly;
 
         foreach (var module in AllModules.OrderBy(m => (int)m.Stage).ThenBy(m => m.Order))
             module.Contribute(draft);

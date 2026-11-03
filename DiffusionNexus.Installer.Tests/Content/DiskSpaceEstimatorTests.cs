@@ -78,6 +78,20 @@ public class DiskSpaceEstimatorTests
         => SdkDiskSpaceEstimator.TryGetFreeSpace(@"\\nas-that-does-not-exist-" + Guid.NewGuid().ToString("N") + @"\ai").Should().BeNull();
 
     [Fact]
+    public async Task Models_only_counts_no_repository_or_environment()
+    {
+        var estimator = new SdkDiskSpaceEstimator(new UrlSizeResolver(new HttpClient { Timeout = TimeSpan.FromSeconds(1) }));
+        var workload = new InstallationConfiguration();
+        workload.Repository.Type = RepositoryType.ComfyUI;
+
+        var fresh = await estimator.EstimateAsync(new DiskSpaceRequest(workload, Path.GetTempPath(), 0, [], []));
+        var modelsOnly = await estimator.EstimateAsync(new DiskSpaceRequest(workload, Path.GetTempPath(), 0, [], [], ModelsOnly: true));
+
+        modelsOnly.RequiredBytes.Should().Be(0, "a run that writes nothing needs no room, and a buffer would report a false shortage");
+        fresh.RequiredBytes.Should().BeGreaterThan(modelsOnly.RequiredBytes);
+    }
+
+    [Fact]
     public async Task A_workload_without_models_is_estimated_offline_from_the_sdk_constants()
     {
         // No models means no HEAD requests, so this runs without network. The SDK charges a fixed

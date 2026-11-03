@@ -68,7 +68,7 @@ public class WelcomeScriptFailureTests : BunitContext
 
         // The screen is still a screen: the cards render, and the track is an ordinary scroll
         // container, so a wheel and a trackpad still move it.
-        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(2));
+        cut.WaitForAssertion(() => cut.FindAll(".software-card").Should().HaveCount(3));
         cut.Find(".jukebox-track").Should().NotBeNull();
 
         // Only the buttons are lost -- and they say so rather than sitting there looking live.

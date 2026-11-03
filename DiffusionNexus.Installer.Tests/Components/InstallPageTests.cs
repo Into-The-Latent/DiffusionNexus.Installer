@@ -438,6 +438,27 @@ public class InstallPageTests : BunitContext
     }
 
     [Fact]
+    public async Task Show_the_running_install_brings_it_up_even_on_the_same_kind_of_page()
+    {
+        // /install/{B} to /install/{A} reuses this page, so its first-render setup doesn't run again.
+        var other = new InstallationConfiguration { Id = Guid.NewGuid(), Name = "Workload A" };
+        other.Repository.Type = RepositoryType.Fooocus;
+
+        var session = Register(Workload("Workload B"));
+        var runningPlan = await new WizardModuleRegistry(() => [])
+            .BuildPlanAsync(new WizardSelection { Workload = other });
+
+        session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        session.SetupGet(s => s.Plan).Returns(runningPlan);
+
+        var page = Render<InstallPage>(p => p.Add(x => x.WorkloadId, WorkloadId));
+        page.FindAll("button").Single(b => b.TextContent == "Show the running install").Click();
+
+        page.Markup.Should().NotContain("Another installation is running");
+        page.Markup.Should().Contain("Installing");
+    }
+
+    [Fact]
     public async Task An_install_of_another_workload_refuses_rather_than_reporting_its_progress()
     {
         // Previously this page built a whole wizard for workload B, walked the user to the Install

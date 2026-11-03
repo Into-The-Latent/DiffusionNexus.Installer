@@ -50,7 +50,7 @@ public sealed class WizardModuleRegistry
     {
         ArgumentNullException.ThrowIfNull(selection);
 
-        var modules = _modules().ToList();
+        var modules = _modules().Where(m => m.UsedIn(selection.Mode)).ToList();
 
         // Same Stage-then-Order sequence WizardPlan.ToOptions uses for Contribute: a downstream
         // module's InitializeAsync can depend on an upstream module's answer.

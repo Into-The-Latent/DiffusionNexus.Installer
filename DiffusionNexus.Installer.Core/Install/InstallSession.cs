@@ -113,7 +113,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
         lock (_gate)
         {
             if (Phase == InstallPhase.Running)
-                throw new InvalidOperationException("An installation is already running.");
+                throw new InvalidOperationException("Another installation or download is already running.");
 
             Phase = InstallPhase.Running;
             Plan = plan;
@@ -180,14 +180,14 @@ public sealed class InstallSession : IInstallSession, IDisposable
         }
         catch (OperationCanceledException)
         {
-            Result = InstallationResult.Cancelled("Installation cancelled.");
+            Result = InstallationResult.Cancelled($"{RunName(plan)} cancelled.");
             Phase = InstallPhase.Cancelled;
         }
         catch (Exception ex)
         {
             // The UI must always end with a truthful outcome; an escaping exception would leave
             // the Install screen stuck on "Running" forever.
-            Result = InstallationResult.Failure($"Installation failed: {ex.Message}");
+            Result = InstallationResult.Failure($"{RunName(plan)} failed: {ex.Message}");
             Phase = InstallPhase.Failed;
         }
         finally
@@ -205,6 +205,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
             NotifyNow();
         }
     }
+
+    private static string RunName(WizardPlan plan) =>
+        plan.Selection.Mode == WizardMode.ModelsOnly ? "Download" : "Installation";
 
     /// <summary>
     /// Spec 7.2: one log line and one report row naming the catalog this run's workload came from
@@ -225,7 +228,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             PlannedOperation = text,
             Category = InstallReportCategory.Step,
             Outcome = warning ? InstallReportOutcome.Skipped : InstallReportOutcome.Success,
-            Comment = "The catalog this install reads.",
+            Comment = plan.Selection.Mode == WizardMode.ModelsOnly ? "The catalog this download reads." : "The catalog this install reads.",
             IsWarning = warning,
         };
         Append(new InstallLogLine(DateTimeOffset.Now, text, warning ? SdkLogLevel.Warning : SdkLogLevel.Info));
@@ -274,6 +277,10 @@ public sealed class InstallSession : IInstallSession, IDisposable
         try
         {
             if (string.IsNullOrWhiteSpace(chosen)) return null;
+
+            // None on models only: the run writes only models, and the rule below would put a log
+            // above a folder named ComfyUI, outside the folder the user chose. Copy log still works.
+            if (selection.Mode == WizardMode.ModelsOnly) return null;
 
             var install = RepositoryPaths.Resolve(selection.Workload, chosen);
             var chosenIsTheInstall = string.Equals(

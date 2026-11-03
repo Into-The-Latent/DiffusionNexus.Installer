@@ -1,0 +1,6 @@
+@page "/existing/models"
+@using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.SDK.Models.Configuration
+
+@* Today's workload screen on the models-only path. Models only is for ComfyUI users. *@
+<SoftwareWorkloads Software="@nameof(RepositoryType.ComfyUI)" Mode="WizardMode.ModelsOnly" />

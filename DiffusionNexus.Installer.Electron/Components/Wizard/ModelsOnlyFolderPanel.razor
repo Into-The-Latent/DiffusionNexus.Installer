@@ -1,0 +1,80 @@
+@using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.Core.Modules
+@inject IFolderPicker FolderPicker
+
+<section class="panel">
+    <h2>Download folder</h2>
+    <p class="panel-hint">
+        Models are downloaded here. We don't check this folder, so make sure it's the right one. For an
+        existing ComfyUI, choose its <code>models</code> folder.
+    </p>
+    @if (Module.Validate() is { IsValid: false, ErrorMessage: { } problem })
+    {
+        @* Shown here, next to the box it is about; the page skips this module in its own list. *@
+        <p class="validation-error" data-role="folder-problem">@problem</p>
+    }
+    <div class="path-row">
+        @* @bind, not value + @oninput: a render that falls behind the typing must not write the older text back. *@
+        <input type="text" @bind:get="Module.Folder" @bind:set="OnFolderTyped" @bind:event="oninput" />
+        <button class="btn-secondary" @onclick="Browse">Browse...</button>
+    </div>
+</section>
+
+<section class="panel">
+    <FolderSwitch Role="sort-subfolders" Checked="@Module.SortIntoSubfolders" OnChange="OnSortChanged"
+                  Label="Sort models into subfolders"
+                  OnText="On: each model goes into the subfolder ComfyUI expects for its type."
+                  OffText="Off: every file goes directly into this folder." />
+
+    @if (!Module.SortIntoSubfolders)
+    {
+        <p class="validation-error" data-role="flat-warning">ComfyUI won't find these models until you move them into the right folders yourself.</p>
+    }
+
+    @if (Module.Preview is { Count: > 0 } preview)
+    {
+        <ul class="models-preview">
+            @foreach (var row in preview)
+            {
+                <li>
+                    @if (row.Subfolder.Length > 0)
+                    {
+                        <code>@row.Subfolder\</code>
+                    }
+                    <span>@row.ModelName</span>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ModelsOnlyFolderModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnFolderTyped(string? folder)
+    {
+        Module.Folder = folder ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnSortChanged(bool sort)
+    {
+        Module.SortIntoSubfolders = sort;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Browse()
+    {
+        var chosen = await FolderPicker.PickFolderAsync("Select the download folder", Module.Folder);
+        if (chosen is null) return;          // dismissed -- leave the field untouched
+
+        Module.Folder = chosen;
+        await Changed.InvokeAsync();
+    }
+}

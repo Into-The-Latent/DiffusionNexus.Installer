@@ -136,7 +136,7 @@ public sealed class ReturnTarget
     // user leaves a report by the top bar, and must not shield the screen they went on to.
     private bool IsInstallOnScreen(string path) => InstallOnScreen is { } plan && SamePath(path, InstallPath(plan));
 
-    private static string InstallPath(WizardPlan plan) => Normalize($"install/{plan.Selection.Workload.Id}");
+    private static string InstallPath(WizardPlan plan) => Normalize(WizardRoutes.Install(plan.Selection.Workload.Id, plan.Selection.Mode));
 
     private static bool SamePath(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 

@@ -48,7 +48,7 @@
             }
             @if (!estimate.AvailableKnown)
             {
-                <text>. We could not read the free space on the install drive.</text>
+                <text>. We could not read the free space on the @(Selection.Mode == WizardMode.ModelsOnly ? "download" : "install") drive.</text>
             }
             else if (estimate.LibraryAvailableBytes is not null)
             {
@@ -131,7 +131,8 @@
 
     private bool ScanIsStale() =>
         Module.LastScannedTier != Selection.SelectedVramProfile
-        || !string.Equals(Module.LastScannedFolder, Selection.TargetFolder, StringComparison.Ordinal);
+        || !string.Equals(Module.LastScannedFolder, Selection.TargetFolder, StringComparison.Ordinal)
+        || Module.LastScannedSort != Selection.SortModelsIntoSubfolders;
 
     /// <summary>
     /// The scan walks every destination directory. Off the render thread, or a large library on a

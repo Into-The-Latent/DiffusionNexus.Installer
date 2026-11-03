@@ -26,8 +26,9 @@ public sealed record PostInstallTargets(string? Folder, string? LauncherScript)
             ? null
             : plan.Selection.TargetFolder;
 
+        // Never on models only: the chosen folder may hold a real ComfyUI, and starting it isn't what was asked for.
         var repositoryPath = result?.RepositoryPath;
-        var launcher = string.IsNullOrWhiteSpace(repositoryPath)
+        var launcher = string.IsNullOrWhiteSpace(repositoryPath) || plan.Selection.Mode == WizardMode.ModelsOnly
             ? null
             : PostInstallLaunchHelper.DetermineLauncherScriptPath(
                 repositoryPath, plan.Selection.Workload.Repository.Type);

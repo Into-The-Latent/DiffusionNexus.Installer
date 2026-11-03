@@ -28,20 +28,20 @@ Inputs:           <project>/obj/project.assets.json          (restore graph, pac
 1. .NET COMPONENT INVENTORY
 --------------------------------------------------------------------------------
 
-  MIT            CommunityToolkit.Mvvm 8.4.0
+  MIT            CommunityToolkit.Mvvm 8.4.2
   MIT            ElectronNET.Core 0.5.2
   MIT            ElectronNET.Core.API 0.5.2
   MIT            ElectronNET.Core.AspNet 0.5.2
   MIT            Microsoft.Win32.SystemEvents 8.0.0
-  Apache-2.0     Serilog 4.3.0
+  Apache-2.0     Serilog 4.4.0
   Apache-2.0     Serilog.Sinks.File 7.0.0
   MIT            SocketIO.Core 3.1.2
   MIT            SocketIO.Serializer.Core 3.1.2
   MIT            SocketIO.Serializer.SystemTextJson 3.1.2
   MIT            SocketIOClient 3.1.2
-  MIT            System.CodeDom 10.0.10
+  MIT            System.CodeDom 10.0.13
   MIT            System.Drawing.Common 8.0.22
-  MIT            System.Management 10.0.10
+  MIT            System.Management 10.0.13
 
 --------------------------------------------------------------------------------
 2. LICENSE TEXTS (.NET COMPONENTS)
@@ -50,7 +50,7 @@ Inputs:           <project>/obj/project.assets.json          (restore graph, pac
 ### Apache-2.0
 
 Applies to the following components:
-  - Serilog 4.3.0
+  - Serilog 4.4.0
       Copyright © Serilog Contributors
   - Serilog.Sinks.File 7.0.0
       Copyright (c) Serilog Contributors
@@ -263,7 +263,7 @@ Applies to the following components:
 ### MIT
 
 Applies to the following components:
-  - CommunityToolkit.Mvvm 8.4.0
+  - CommunityToolkit.Mvvm 8.4.2
       (c) .NET Foundation and Contributors. All rights reserved.
   - ElectronNET.Core 0.5.2
       Copyright (c) Gregor Biswanger, Florian Rappl, softworkz
@@ -281,11 +281,11 @@ Applies to the following components:
       Copyright (c) doghappy
   - SocketIOClient 3.1.2
       Copyright (c) doghappy
-  - System.CodeDom 10.0.10
+  - System.CodeDom 10.0.13
       © Microsoft Corporation. All rights reserved.
   - System.Drawing.Common 8.0.22
       © Microsoft Corporation. All rights reserved.
-  - System.Management 10.0.10
+  - System.Management 10.0.13
       © Microsoft Corporation. All rights reserved.
 
 MIT License

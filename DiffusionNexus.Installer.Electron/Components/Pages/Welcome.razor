@@ -1,5 +1,6 @@
 @page "/"
 @implements IAsyncDisposable
+@using DiffusionNexus.Installer.Core.Wizard
 @using DiffusionNexus.Installer.Core.Catalog
 @using DiffusionNexus.Installer.Core.Gallery
 @using DiffusionNexus.Installer.Electron.Components.Shared
@@ -7,6 +8,7 @@
 @using DiffusionNexus.Installer.SDK.Catalog
 @using DiffusionNexus.Installer.Core.Updates
 @using DiffusionNexus.Installer.SDK.Catalog.Updates
+@using DiffusionNexus.Installer.SDK.Models.Configuration
 @inject SoftwareGalleryBuilder Builder
 @inject IWorkloadSource Workloads
 @inject IJSRuntime JS
@@ -108,6 +110,25 @@
                                succeed. app.css gates the accent hover on `.software-card:has(> a)`,
                                so dropping the anchor also stops this card advertising a target. *@
                             <div class="software-card software-card-disabled">@Card(software)</div>
+                        }
+
+                        @* Next to ComfyUI rather than at the end, where the strip could scroll it out of
+                           sight: the people it is for are looking at that tile. *@
+                        @if (software.Type == RepositoryType.ComfyUI)
+                        {
+                            <div class="software-card">
+                                <a href="/existing">
+                                    @* Words, not the logo: at the usual window height the names sit below the
+                                       fold, and two identical ComfyUI pictures in a row read as a duplicate. *@
+                                    <div class="card-art software-card-art">
+                                        <span class="software-card-art-text">Update or Download</span>
+                                    </div>
+                                    <div class="software-card-meta">
+                                        <p class="software-card-name">Update ComfyUI or Download Models</p>
+                                        <p class="software-card-count">For existing ComfyUI users</p>
+                                    </div>
+                                </a>
+                            </div>
                         }
                     }
                 </div>
@@ -334,7 +355,7 @@
     private static string? CardHref(SoftwareEntry software) => software.SingleWorkload switch
     {
         null => $"/software/{software.Type}",
-        { IsInstallable: true } only => $"/install/{only.Workload.Id}",
+        { IsInstallable: true } only => WizardRoutes.Install(only.Workload.Id, WizardMode.FreshInstall),
         _ => null
     };
 

@@ -228,6 +228,41 @@ public class ModelSelectionModuleTests
     }
 
     [Fact]
+    public async Task Models_only_with_every_model_unticked_has_nothing_to_start()
+    {
+        // Nothing else happens on this path, so the run would end in a green "Download complete".
+        var module = Module();
+        await module.InitializeAsync(new WizardSelection { Workload = Selection(Vae, Unet).Workload, Mode = WizardMode.ModelsOnly });
+
+        module.SetSelected(Vae.Id, false);
+        module.Validate().IsValid.Should().BeTrue();
+
+        module.SetSelected(Unet.Id, false);
+        module.Validate().IsValid.Should().BeFalse();
+        module.Validate().ErrorMessage.Should().Be("Tick at least one model to download.");
+    }
+
+    [Fact]
+    public async Task A_fresh_install_can_leave_out_every_model()
+    {
+        var module = Module();
+        await module.InitializeAsync(Selection(Vae));
+
+        module.SetSelected(Vae.Id, false);
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Models_only_with_no_rows_is_not_stopped()
+    {
+        var module = Module();
+        await module.InitializeAsync(new WizardSelection { Workload = Selection().Workload, Mode = WizardMode.ModelsOnly });
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Unticked_rows_become_excluded_ids_and_nothing_else_does()
     {
         var module = Module();
@@ -277,6 +312,47 @@ public class ModelSelectionModuleTests
 
         scanner.Verify(s => s.Scan(It.IsAny<ModelScanRequest>()), Times.Never);
         module.Rows.Single().IsExisting.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Models_only_scans_the_chosen_folder_in_the_chosen_layout()
+    {
+        ModelScanRequest? seen = null;
+        var scanner = new Mock<IModelPresenceScanner>();
+        scanner.Setup(s => s.Scan(It.IsAny<ModelScanRequest>()))
+            .Callback<ModelScanRequest>(r => seen = r)
+            .Returns([]);
+        var module = Module(scanner, Mock.Of<IDiskSpaceEstimator>());
+        var selection = new WizardSelection
+        {
+            Workload = Selection(Vae).Workload,
+            Mode = WizardMode.ModelsOnly,
+            TargetFolder = @"E:\AI\ComfyUI",
+            SortModelsIntoSubfolders = false
+        };
+
+        await module.InitializeAsync(selection);
+
+        seen!.RepositoryPath.Should().Be(@"E:\AI\ComfyUI", "nothing is cloned, so no repository folder is added to it");
+        seen.DownloadOnly.Should().BeTrue();
+        seen.SortIntoSubfolders.Should().BeFalse();
+        module.LastScannedSort.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Models_only_estimate_says_so()
+    {
+        DiskSpaceRequest? seen = null;
+        var estimator = new Mock<IDiskSpaceEstimator>();
+        estimator.Setup(e => e.EstimateAsync(It.IsAny<DiskSpaceRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DiskSpaceRequest, CancellationToken>((r, _) => seen = r)
+            .ReturnsAsync(new DiskSpaceEstimate(10, 20, true, []));
+        var module = Module(Scanner(), estimator.Object);
+        await module.InitializeAsync(new WizardSelection { Workload = Selection(Vae).Workload, Mode = WizardMode.ModelsOnly, TargetFolder = @"E:\AI" });
+
+        await module.RefreshEstimateAsync();
+
+        seen!.ModelsOnly.Should().BeTrue();
     }
 
     [Fact]

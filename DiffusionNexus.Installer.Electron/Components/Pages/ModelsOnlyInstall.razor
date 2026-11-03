@@ -1,0 +1,9 @@
+@page "/existing/models/{WorkloadId:guid}"
+@using DiffusionNexus.Installer.Core.Wizard
+
+@* Today's wizard on the models-only path. *@
+<Install WorkloadId="WorkloadId" Mode="WizardMode.ModelsOnly" />
+
+@code {
+    [Parameter] public Guid WorkloadId { get; set; }
+}

@@ -19,6 +19,9 @@ public sealed class WizardSelection
     /// </summary>
     public InstalledCatalogReading? Catalog { get; init; }
 
+    /// <summary>Which of the app's paths this run is on. It decides which modules run at all (<see cref="IWizardModule.UsedIn"/>).</summary>
+    public WizardMode Mode { get; init; } = WizardMode.FreshInstall;
+
     /// <summary>Where the workload gets installed. Set by the InstallFolder module.</summary>
     public string TargetFolder { get; set; } = string.Empty;
 
@@ -31,6 +34,12 @@ public sealed class WizardSelection
     /// <summary>Per-type folder overrides in effect — empty when the user opted out. Written by ComfyFoldersModule.</summary>
     public IReadOnlyDictionary<string, string> FolderPathOverrides { get; set; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Models only: false puts every file directly into <see cref="TargetFolder"/>. On the selection
+    /// because the Content stage's scan needs it before Confirm. Written by ModelsOnlyFolderModule.
+    /// </summary>
+    public bool SortModelsIntoSubfolders { get; set; } = true;
 
     public WorkloadCapability Capabilities => WorkloadCapabilities.Detect(Workload);
 }

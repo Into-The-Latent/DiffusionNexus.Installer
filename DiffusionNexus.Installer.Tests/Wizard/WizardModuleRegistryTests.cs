@@ -1,3 +1,4 @@
+using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
@@ -36,6 +37,59 @@ public class WizardModuleRegistryTests
 
     private static WizardSelection Selection(InstallationConfiguration? workload = null) =>
         new() { Workload = workload ?? new InstallationConfiguration { Name = "x" } };
+
+    private static InstallationConfiguration WorkloadWithTiers()
+    {
+        var workload = new InstallationConfiguration { Name = "x" };
+        workload.Vram.VramProfiles = "8,16,24";
+        return workload;
+    }
+
+    [Fact]
+    public async Task Models_only_plan_has_only_its_stages()
+    {
+        // The stub stands for a fresh-install module such as GpuPreflight on the System stage.
+        var system = new StubModule("system", WizardStage.System, 0, WorkloadCapability.None, applies: true);
+        var registry = new WizardModuleRegistry(() => [system, new VramProfileModule(), new DisclaimerModule()]);
+
+        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = WorkloadWithTiers(), Mode = WizardMode.ModelsOnly });
+
+        plan.Stages.Should().Equal(WizardStage.Content, WizardStage.Confirm, WizardStage.Install);
+    }
+
+    [Fact]
+    public async Task Models_only_never_initializes_other_modules()
+    {
+        var other = new StubModule("other", WizardStage.Location, 0, WorkloadCapability.None, applies: true);
+        var registry = new WizardModuleRegistry(() => [other]);
+
+        await registry.BuildPlanAsync(new WizardSelection { Workload = WorkloadWithTiers(), Mode = WizardMode.ModelsOnly });
+
+        other.InitializeCount.Should().Be(0, "a fresh-install module may write the selection, probe hardware or read settings when initialized");
+    }
+
+    [Fact]
+    public async Task Fresh_plan_keeps_every_applicable_module()
+    {
+        var system = new StubModule("system", WizardStage.System, 0, WorkloadCapability.None, applies: true);
+        var registry = new WizardModuleRegistry(() => [system, new VramProfileModule(), new DisclaimerModule()]);
+
+        var plan = await registry.BuildPlanAsync(new WizardSelection { Workload = WorkloadWithTiers() });
+
+        plan.Stages.Should().Equal(WizardStage.Content, WizardStage.System, WizardStage.Confirm, WizardStage.Install);
+    }
+
+    [Fact]
+    public async Task ToOptions_says_models_only()
+    {
+        var registry = new WizardModuleRegistry(() => [new DisclaimerModule()]);
+
+        var modelsOnly = await registry.BuildPlanAsync(new WizardSelection { Workload = WorkloadWithTiers(), Mode = WizardMode.ModelsOnly });
+        var fresh = await registry.BuildPlanAsync(new WizardSelection { Workload = WorkloadWithTiers() });
+
+        modelsOnly.ToOptions().DownloadModelsOnly.Should().BeTrue();
+        fresh.ToOptions().DownloadModelsOnly.Should().BeFalse();
+    }
 
     [Fact]
     public async Task Only_applicable_modules_land_in_the_plan()

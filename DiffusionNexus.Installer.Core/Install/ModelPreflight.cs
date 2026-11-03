@@ -21,6 +21,11 @@ public interface IModelPreflight
 /// against the server, mismatches go into ONE dialog, and the answers land on the model module so
 /// ToOptions carries them as ForceRedownloadUrls / TrustedUrls. Never a prompt per file, never
 /// mid-install. Dismissing the dialog refuses to proceed; a failing check warns and proceeds.
+/// <para>
+/// No dialog on models only. It redownloads by default, which suits an install's own folder, where a
+/// wrong size usually means a partial file. In a folder the user chose it usually means a different
+/// file of that name, and that path overwrites nothing: the file stays and its report row warns.
+/// </para>
 /// </summary>
 public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedFilePrompt prompt) : IModelPreflight
 {
@@ -61,6 +66,12 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         }
 
         if (mismatches.Count == 0) return new PreflightResult(true, null);
+
+        if (plan.Selection.Mode == WizardMode.ModelsOnly)
+        {
+            module.ApplyVerification([], mismatches.Select(m => m.Url));
+            return new PreflightResult(true, null);
+        }
 
         var resolution = await prompt.ResolveAsync(mismatches, ct).ConfigureAwait(false);
         if (resolution is null) return new PreflightResult(false, null);

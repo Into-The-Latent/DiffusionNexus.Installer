@@ -10,6 +10,8 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 public sealed class InstallationOptionsDraft
 {
     public int SelectedVramProfile { get; set; }
+    public bool DownloadModelsOnly { get; set; }
+    public bool SortModelsIntoSubfolders { get; set; } = true;
     public bool VerboseLogging { get; set; }
 
     /// <summary>
@@ -45,6 +47,8 @@ public sealed class InstallationOptionsDraft
     public SDK.Services.InstallationOptions ToOptions() => new()
     {
         OnlyModelDownload = false,
+        DownloadModelsOnly = DownloadModelsOnly,
+        SortModelsIntoSubfolders = SortModelsIntoSubfolders,
         SelectedVramProfile = SelectedVramProfile,
         VerboseLogging = VerboseLogging,
         UseUvPackageManager = UseUvPackageManager,

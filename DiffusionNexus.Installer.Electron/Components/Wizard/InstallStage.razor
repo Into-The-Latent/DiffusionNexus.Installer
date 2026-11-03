@@ -1,6 +1,7 @@
 @using DiffusionNexus.Installer.Core.Host
 @using DiffusionNexus.Installer.Core.Install
 @using DiffusionNexus.Installer.Core.Wizard
+@using DiffusionNexus.Installer.SDK.Models.Installation
 @using DiffusionNexus.Installer.SDK.Services
 @implements IAsyncDisposable
 @inject IInstallSession Session
@@ -17,7 +18,7 @@
            into an issue needs what came before it. Hidden where there is no clipboard, for the
            same reason "Close installer" is hidden outside Electron (issue #14). *@
         <div class="panel-head">
-            <h2>Installing</h2>
+            <h2>@(ModelsOnly ? "Downloading" : "Installing")</h2>
             @if (Clipboard.IsAvailable)
             {
                 <span class="panel-head-actions">
@@ -32,10 +33,11 @@
 
         @if (_startError is not null)
         {
-            <p class="validation-error">This installation could not be started: @_startError</p>
+            <p class="validation-error">This @(ModelsOnly ? "download" : "installation") could not be started: @_startError</p>
         }
 
-        @if (Session.Progress is { } progress)
+        @* A models-only run is one step: the counter would say "Step 1 of 1" over an empty bar for hours. *@
+        @if (!ModelsOnly && Session.Progress is { } progress)
         {
             <p>Step @DisplayedStepNumber(progress) of @progress.TotalSteps — @StepLabel(progress)</p>
             @* Invariant, not the default: Blazor formats attributes with the current culture, and a
@@ -46,6 +48,14 @@
 
         @if (Session.CurrentDownload is { IsActive: true } download)
         {
+            @if (ModelsOnly)
+            {
+                <p>@download.FileName</p>
+                @if (download.TotalBytes is > 0 and var total)
+                {
+                    <progress max="100" value="@((download.BytesDownloaded * 100 / total).ToString(System.Globalization.CultureInfo.InvariantCulture))"></progress>
+                }
+            }
             <p class="download">
                 @download.DownloadedSizeText of @download.TotalSizeText at @download.SpeedText
                 <button class="btn-secondary" @onclick="() => Session.SkipCurrentDownload()">Skip this file</button>
@@ -66,10 +76,11 @@
             var rows = Session.ReportRows;
         }
 
-        <h2 class="@(result is null ? null : result.IsSuccess ? "result-ok" : "result-bad")">
+        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? "Installation complete"
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : "Installation complete")
               : result.IsCancelled ? "Cancelled"
+              : ModelsOnly ? "Download failed"
               : "Installation failed")
         </h2>
 
@@ -116,7 +127,7 @@
 <div class="wizard-actions">
     @if (Session.Phase == InstallPhase.Running)
     {
-        <button class="btn-secondary" @onclick="() => Session.Cancel()">Cancel installation</button>
+        <button class="btn-secondary" @onclick="() => Session.Cancel()">@(ModelsOnly ? "Cancel download" : "Cancel installation")</button>
     }
     else
     {
@@ -152,6 +163,15 @@
     /// enough that a render stays cheap; the completion report is what matters afterwards.
     /// </summary>
     private const int VisibleLogLines = 300;
+
+    private bool ModelsOnly => Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
+
+    /// <summary>
+    /// A models-only run is only its downloads, so "complete" over a failed one would be a false
+    /// claim. A fresh install keeps its heading: the failed row sits beside the install that worked.
+    /// </summary>
+    private bool SomeDownloadsFailed(IReadOnlyList<InstallReportEntry> rows) =>
+        ModelsOnly && rows.Any(r => r.Outcome == InstallReportOutcome.Failed);
 
     private string? _startError;
     private string? _actionError;
@@ -233,7 +253,7 @@
 
     private bool CanLaunch => Targets.LauncherScript is { } script && File.Exists(script);
 
-    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), "open the installation folder");
+    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), ModelsOnly ? "open the download folder" : "open the installation folder");
 
     /// <summary>
     /// The same rendering the log file uses, so what lands in an issue is what is on disk. A

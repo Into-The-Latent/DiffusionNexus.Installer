@@ -8,14 +8,18 @@ using PipelineVram = DiffusionNexus.Installer.SDK.Services.Installation.Utilitie
 
 namespace DiffusionNexus.Installer.Core.Content;
 
-/// <param name="RepositoryPath">Where the main repository will be — see <see cref="RepositoryPaths"/>.</param>
+/// <param name="RepositoryPath">Where the main repository will be — see <see cref="RepositoryPaths"/>. With <paramref name="DownloadOnly"/>, the chosen folder itself.</param>
 /// <param name="SelectedVramGb">0 means no tier filtering, exactly as the SDK reads it.</param>
+/// <param name="DownloadOnly">A models-only run: destinations follow ModelDestinationResolver.ResolveDownloadOnly.</param>
+/// <param name="SortIntoSubfolders">With <paramref name="DownloadOnly"/>: false means every file goes directly into the folder.</param>
 public sealed record ModelScanRequest(
     InstallationConfiguration Workload,
     string RepositoryPath,
     string? ModelBaseFolder,
     IReadOnlyDictionary<string, string> FolderPathOverrides,
-    int SelectedVramGb);
+    int SelectedVramGb,
+    bool DownloadOnly = false,
+    bool SortIntoSubfolders = true);
 
 /// <summary>One file the install would write for a model, and whether it is already there.</summary>
 public sealed record ModelFileTarget(
@@ -86,8 +90,9 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
     private static (List<ModelFileTarget> Targets, int Unresolvable) TargetsFor(
         ModelScanRequest request, ModelDownload model, Dictionary<string, string> overrides, DirectoryListingCache directoryCache)
     {
-        var modelDestination = ModelDestinationResolver.Resolve(
-            request.Workload, model, request.RepositoryPath, request.ModelBaseFolder, overrides);
+        var modelDestination = request.DownloadOnly
+            ? ModelDestinationResolver.ResolveDownloadOnly(request.Workload, model, link: null, request.RepositoryPath, request.SortIntoSubfolders)
+            : ModelDestinationResolver.Resolve(request.Workload, model, request.RepositoryPath, request.ModelBaseFolder, overrides);
 
         var enabledLinks = model.DownloadLinks.Where(l => l.Enabled).ToList();
 
@@ -99,7 +104,7 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
             if (request.SelectedVramGb > 0 && !PipelineVram.VramProfileFitsSelection(model.VramProfile, request.SelectedVramGb))
                 return ([], 0);
 
-            return Target(model, model.Url, modelDestination, directoryCache) is { } single ? ([single], 0) : ([], 1);
+            return Target(request, model, model.Url, modelDestination, directoryCache) is { } single ? ([single], 0) : ([], 1);
         }
 
         var links = PipelineVram.SelectBestMatchingLinks(enabledLinks, request.SelectedVramGb, null, model.Name);
@@ -110,11 +115,13 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         {
             if (string.IsNullOrWhiteSpace(link.Url)) continue;
 
-            var destination = string.IsNullOrWhiteSpace(link.Destination)
-                ? modelDestination
-                : ResolveLinkDestination(link.Destination, request.RepositoryPath);
+            var destination = request.DownloadOnly
+                ? ModelDestinationResolver.ResolveDownloadOnly(request.Workload, model, link, request.RepositoryPath, request.SortIntoSubfolders)
+                : string.IsNullOrWhiteSpace(link.Destination)
+                    ? modelDestination
+                    : ResolveLinkDestination(link.Destination, request.RepositoryPath);
 
-            if (Target(model, link.Url, destination, directoryCache) is { } target) targets.Add(target);
+            if (Target(request, model, link.Url, destination, directoryCache) is { } target) targets.Add(target);
             else unresolvable++;
         }
 
@@ -133,12 +140,14 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
         return Path.IsPathRooted(resolved) ? resolved : Path.Combine(repositoryPath, resolved);
     }
 
-    private static ModelFileTarget? Target(ModelDownload model, string url, string destinationDirectory, DirectoryListingCache directoryCache)
+    private static ModelFileTarget? Target(ModelScanRequest request, ModelDownload model, string url, string destinationDirectory, DirectoryListingCache directoryCache)
     {
         var fileName = FileNameFromUrl(url);
         if (fileName is null) return null;
 
-        return new ModelFileTarget(model, url, destinationDirectory, fileName, directoryCache.FindFile(destinationDirectory, fileName));
+        var searchSubfolders = !request.DownloadOnly || ModelDestinationResolver.DownloadOnlySearchesBelow(destinationDirectory, request.RepositoryPath);
+
+        return new ModelFileTarget(model, url, destinationDirectory, fileName, directoryCache.FindFile(destinationDirectory, fileName, searchSubfolders));
     }
 
     private static string? FileNameFromUrl(string url)
@@ -184,7 +193,7 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
     {
         private readonly Dictionary<string, string[]> _listings = new(StringComparer.OrdinalIgnoreCase);
 
-        public string? FindFile(string directory, string fileName)
+        public string? FindFile(string directory, string fileName, bool searchSubfolders)
         {
             try
             {
@@ -195,6 +204,8 @@ public sealed class ModelPresenceScanner : IModelPresenceScanner
             {
                 return null;
             }
+
+            if (!searchSubfolders) return null;
 
             var files = ListDirectory(directory);
             return files.FirstOrDefault(f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase));

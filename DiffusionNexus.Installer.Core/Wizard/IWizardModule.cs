@@ -33,6 +33,14 @@ public interface IWizardModule
     ModuleValidation Validate();
 
     /// <summary>
+    /// Whether this module exists at all on a path. The registry asks before it initializes anything,
+    /// because initializing has effects even on a module that then doesn't apply: InstallFolderModule
+    /// writes the remembered install folder into the selection, and GpuPreflightModule probes the
+    /// hardware. Fresh install only by default, so a new module never appears on another path unasked.
+    /// </summary>
+    bool UsedIn(WizardMode mode) => mode == WizardMode.FreshInstall;
+
+    /// <summary>
     /// Whether the page renders this module behind the stage's "Advanced settings" bar rather
     /// than in first view. Declared by the module so the page needs no per-type knowledge and a
     /// new question is shown, not hidden, unless it says otherwise.

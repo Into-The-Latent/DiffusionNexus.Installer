@@ -1013,6 +1013,25 @@ progress {
     color: var(--text);
 }
 
+/* Where each model will go, under the "Sort models into subfolders" switch. */
+.models-preview {
+    list-style: none;
+    margin: .75rem 0 0;
+    padding: 0;
+    font-size: .85rem;
+    color: var(--text);
+}
+
+.models-preview li {
+    display: flex;
+    gap: .75rem;
+    padding: .1rem 0;
+}
+
+.models-preview code {
+    color: var(--muted);
+}
+
 .folder-retry {
     margin-bottom: .5rem;
 }
@@ -1653,6 +1672,14 @@ progress {
     opacity: 0.55;
 }
 
+.software-card-art-text {
+    padding: 0 16px;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--text);
+}
+
 .software-card-art-fallback {
     padding: 12px;
     text-align: center;
@@ -1877,6 +1904,48 @@ progress {
     margin: 4px 0 0;
     font-size: 13px;
     color: var(--muted);
+}
+
+/* "What do you want to do?": the two large cards behind the Update or Download tile. */
+.choice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.choice-card {
+    display: block;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    text-decoration: none;
+}
+
+a.choice-card:hover {
+    border-color: var(--accent);
+}
+
+.choice-card h2 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.choice-card p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.choice-card-disabled {
+    opacity: .6;
+}
+
+.choice-card .choice-soon {
+    margin-top: 10px;
+    font-weight: 600;
 }
 
 .software-not-found {
