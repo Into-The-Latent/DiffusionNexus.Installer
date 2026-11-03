@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03
 **Status:** Design agreed with the owner in chat. No product code exists yet.
-**Issues:** Into-The-Latent/DiffusionNexus.Installer#28 (UI), Little-God1983/DiffusionNexus.Installer.SDK#70 (SDK)
+**Issues, build in this order:** (1) "Download models only" with the tile and choice screen: Into-The-Latent/DiffusionNexus.Installer#63 and Little-God1983/DiffusionNexus.Installer.SDK#85. (2) Update path and Select multiple: Installer#28 and SDK#70.
 **Branch:** `feature/existing-comfyui` in the Installer repo. It holds only this document and its assets so far.
 
 This design replaces the flow in those two issues where the two disagree. Section 8 lists exactly what changes.
@@ -246,13 +246,19 @@ Add everything in section 5. Change the release target. The rest of the plan sta
 A review of this design by a fresh reader raised two more questions, on torch when unticked and on machines with no usable GPU. The owner answered both on 2026-11-03, and section 3 has the answers.
 
 1. **Single-workload starting size.** The last question asked was whether a single workload on the new paths also starts at the highest size. The owner's answer was "Okay, that is great" while wrapping up, which this document reads as accepting the recommendation: highest on both new paths, fresh installs unchanged. Please confirm.
-2. **Issue size.** With Select multiple kept, #28 is large. The owner's rule is one issue, one PR, and to split the issue if it's too big. Recommendation: split out "Download models only" with the tile and choice screen as its own issue on each repo and build it first. It's useful on its own and far smaller, and the update path then follows as a second issue. Not done yet because it's the owner's call. A split also has to settle:
-   - **Where Select multiple goes.** If it's in the first issue, that issue also takes the memory selector, card dropdowns, per-workload VRAM in the SDK and the name-clash handling, and is no longer small. If it's out, models only first ships without a screen the owner approved. Recommendation: leave it out of the first issue and add it to both paths together.
-   - **What the tile and Update card do until the second issue lands.** The tile says "Update ComfyUI or Download Models" with no update path behind it. Options are a one-card screen, a "coming soon" card, or not releasing until both are in. Recommendation: merge both before releasing, so users never see half of it.
+## 9a. The split (owner's decision, 2026-11-03)
+
+Split into two issues per repo, so that one PR can deliver each.
+
+- **First: Installer #63 and SDK #85.** The tile, the choice screen and "Download models only" for a single workload, with the subfolder switch. The Update card is shown disabled with "Coming soon" (assistant's call for this interim state).
+- **Second: Installer #28 and SDK #70.** The update path, Update only, and Select multiple with the memory selector and card dropdowns on **both** paths. This is where the merger, per-workload VRAM and name clashes within one run belong.
+- **Release:** both merge before any release, so users never see half of it.
+
+In SDK #85, a same-named file can still already be in a flat folder from an earlier run, so that case is in scope there. Section 5 is otherwise unchanged and reads across both SDK issues.
 
 ## 10. How to continue
 
 1. Answer section 9.
-2. Rewrite #28 and #70 into final task lists (superpowers:writing-plans), settling section 6 first.
+2. Plan and build SDK #85 and Installer #63 first (superpowers:writing-plans). Then plan #70 and #28, settling section 6 first.
 3. Build the SDK side first. In the Installer use `-p:UseLocalSDK=true` until the SDK is tagged.
 4. Do GUI tests on the BenQ monitor only, per the owner's global rule.
