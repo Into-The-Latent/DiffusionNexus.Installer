@@ -1,5 +1,7 @@
 using DiffusionNexus.Installer.Core.Content;
+using DiffusionNexus.Installer.Core.Existing;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -78,6 +80,8 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     public bool ShowsOwnValidation => true;
 
     private WizardSelection? _selection;
+    private ExistingRun? _existing;
+    private ExistingComfyUIProfile? _seededFrom;
     private UserSettings? _user;
     private bool _useModelLibraryFolder;
     private string _modelBaseFolder = string.Empty;
@@ -185,7 +189,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         _selection is not null
         && FolderInput.Clean(_selection.TargetFolder) is { } target
         && FolderInput.InstallFolderProblem(target) is null
-            ? RepositoryPaths.Resolve(_selection.Workload, target)
+            ? _existing is not null ? target : RepositoryPaths.Resolve(_selection.Workload, target)
             : null;
 
     /// <summary>
@@ -204,8 +208,53 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// mechanism exists. Putting AI-Toolkit back means teaching the generated start script to
     /// export MODELS_PATH -- an SDK change, tracked separately.
     /// </summary>
+    public bool UsedIn(WizardMode mode) => mode is WizardMode.FreshInstall or WizardMode.UpdateExisting;
+
     public bool AppliesTo(WizardSelection selection) =>
         selection.Workload.Repository.Type is RepositoryType.ComfyUI;
+
+    /// <summary>What the install's run script says now. Null means ComfyUI's own output folder.</summary>
+    public string? CurrentOutputFolder => _existing?.Profile?.OutputFolder;
+
+    /// <summary>What the install's extra_model_paths.yaml says now. Null means no library.</summary>
+    public string? CurrentModelFolder => _existing?.Profile?.ModelBaseFolder;
+
+    /// <summary>Update path: continuing changes where this ComfyUI sends its output.</summary>
+    public bool OutputFolderDiffers => _existing?.Profile is not null && !SameFolder(EffectiveOutputFolder, CurrentOutputFolder);
+
+    /// <summary>Update path: continuing changes where this ComfyUI loads its models from.</summary>
+    public bool ModelFolderDiffers => _existing?.Profile is not null && !SameFolder(EffectiveModelBaseFolder, CurrentModelFolder);
+
+    private static bool SameFolder(string? a, string? b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+        return string.Equals(Comparable(a), Comparable(b), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Comparable(string folder)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return folder;
+        }
+    }
+
+    /// <summary>The panels start filled in from the install, each time another install is found there.</summary>
+    private void SeedFromInstall()
+    {
+        if (_existing?.Profile is not { } profile || ReferenceEquals(profile, _seededFrom)) return;
+
+        _seededFrom = profile;
+        _useModelLibraryFolder = profile.ModelBaseFolder is not null;
+        _modelBaseFolder = profile.ModelBaseFolder ?? string.Empty;
+        UseOwnOutputFolder = profile.OutputFolder is not null;
+        OutputFolder = profile.OutputFolder ?? string.Empty;
+        SyncSelection();
+    }
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
@@ -217,6 +266,27 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         _user = user;
+
+        _existing = selection.Existing;
+        if (_existing is not null)
+        {
+            // This install's own folders count here, not what the next fresh install starts from.
+            _folderTypes.Clear();
+            foreach (var type in UserModelFolderMap.FolderTypes) _folderTypes.Add(new FolderTypeRow(type));
+            _additionalFolders.Clear();
+            _useModelLibraryFolder = false;
+            _modelBaseFolder = string.Empty;
+            UseOwnOutputFolder = false;
+            OutputFolder = string.Empty;
+            _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+            _loadedAdditional = [];
+            _seededFrom = null;
+            _existing.Changed += SeedFromInstall;
+            SeedFromInstall();
+            SyncSelection();
+            return;
+        }
+
         _useModelLibraryFolder = !string.IsNullOrWhiteSpace(user.DefaultModelBaseFolder);
         // ?? as for the additional folders below: System.Text.Json loads "OutputFolder": null as
         // null despite the non-nullable property, and the text boxes and setters expect a string.
@@ -294,6 +364,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     public async Task PersistAsync(CancellationToken ct = default)
     {
         if (_selection is null || !AppliesTo(_selection)) return;
+
+        // An update's folders belong to that install: the next fresh install must not start from them.
+        if (_existing is not null) return;
 
         // Re-read, never the copy from InitializeAsync: the install-folder module saves just
         // before this one, and writing a stale object back would undo it.
@@ -394,6 +467,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// </summary>
     private string? InstallContaining(string folder)
     {
+        // An update doesn't delete anything, and an output folder inside ComfyUI is its own default.
+        if (_existing is not null) return null;
+
         if (InstallRoot is not { } root) return null;
 
         var install = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
@@ -414,6 +490,14 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // travel together. With the switch off there is no base folder, so no YAML.
         draft.GenerateExtraModelPaths = model is not null;
         draft.OverwriteExtraModelPaths = model is not null && OverwriteExtraModelPaths;
+
+        if (_existing is not null)
+        {
+            // An unchanged folder leaves this install's files exactly as they are.
+            draft.GenerateExtraModelPaths = model is not null && ModelFolderDiffers;
+            draft.OverwriteExtraModelPaths = draft.GenerateExtraModelPaths;
+            draft.ChangeOutputFolder = OutputFolderDiffers;
+        }
 
         draft.FolderPathOverrides.Clear();
         draft.AdditionalFolders.Clear();

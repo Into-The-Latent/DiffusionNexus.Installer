@@ -69,6 +69,7 @@ public static class CoreServiceCollectionExtensions
         // fresh set for every plan, so a workload never sees another workload's answers.
         services.AddTransient<IWizardModule, InstallFolderModule>();
         services.AddTransient<IWizardModule, ModelsOnlyFolderModule>();
+        services.AddTransient<IWizardModule, ExistingFolderModule>();
         services.AddTransient<IWizardModule, ComfyFoldersModule>();
         services.AddTransient<IWizardModule, VramProfileModule>();
         services.AddTransient<IWizardModule, ModelSelectionModule>();

@@ -18,6 +18,11 @@
                   OffText="@OutputOffText"
                   Folder="@Module.OutputFolder" FolderNoun="output folder" />
 
+    @if (Module.OutputFolderDiffers)
+    {
+        <p class="validation-error" data-role="output-differs">@OutputDiffersText</p>
+    }
+
     @if (Module.UseOwnOutputFolder)
     {
         <div class="path-row switch-body">
@@ -48,6 +53,11 @@
                   OnText="On: models are read from your library through an extra_model_paths.yaml written into the install."
                   OffText="@ModelOffText"
                   Folder="@Module.ModelBaseFolder" FolderNoun="library folder" />
+
+    @if (Module.ModelFolderDiffers)
+    {
+        <p class="validation-error" data-role="model-differs">@ModelDiffersText</p>
+    }
 
     @if (Module.UseModelLibraryFolder)
     {
@@ -117,6 +127,17 @@
 
 @code {
     [Parameter, EditorRequired] public ComfyFoldersModule Module { get; set; } = default!;
+
+    private string OutputDiffersText => Module.CurrentOutputFolder is { } current
+        ? $"Your ComfyUI currently sends output to {current}. Continuing changes that in run_nvidia.bat."
+        : "Your ComfyUI currently saves output to its own folder. Continuing changes that in run_nvidia.bat.";
+
+    private string ModelDiffersText => (Module.CurrentModelFolder, Module.UseModelLibraryFolder) switch
+    {
+        ({ } current, true) => $"Your ComfyUI currently loads models from {current} (extra_model_paths.yaml). Continuing rewrites that file; a backup is kept.",
+        ({ } current, false) => $"Your ComfyUI also loads models from {current} (extra_model_paths.yaml). That file stays, and new models go to ComfyUI's own models folder.",
+        _ => "Your ComfyUI loads models from its own folder today. Continuing adds an extra_model_paths.yaml.",
+    };
 
     /// <summary>
     /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the

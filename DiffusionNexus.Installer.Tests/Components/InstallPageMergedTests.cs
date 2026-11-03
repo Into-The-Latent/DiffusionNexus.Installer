@@ -80,6 +80,7 @@ public class InstallPageMergedTests : BunitContext
         Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
+        JSInterop.Mode = JSRuntimeMode.Loose;
 
         var registry = new WizardModuleRegistry(() => [_capture]);
         var source = new Mock<IWorkloadSource>();
@@ -219,6 +220,8 @@ public class InstallPageMergedTests : BunitContext
         var plan = await new WizardModuleRegistry(() => []).BuildPlanAsync(selection);
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
         _session.SetupGet(s => s.Plan).Returns(plan);
+        _session.SetupGet(s => s.ReportRows).Returns([]);
+        _session.Setup(s => s.Tail(It.IsAny<int>())).Returns([]);
     }
 
     [Fact]

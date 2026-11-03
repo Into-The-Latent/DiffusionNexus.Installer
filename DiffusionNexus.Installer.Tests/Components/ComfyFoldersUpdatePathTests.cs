@@ -1,0 +1,255 @@
+using Bunit;
+using DiffusionNexus.Installer.Core.Existing;
+using DiffusionNexus.Installer.Core.Host;
+using DiffusionNexus.Installer.Core.Modules;
+using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.Electron.Components.Wizard;
+using DiffusionNexus.Installer.SDK.Models.Configuration;
+using DiffusionNexus.Installer.SDK.Models.Installation;
+using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
+using DiffusionNexus.Installer.SDK.Services.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Xunit;
+
+namespace DiffusionNexus.Installer.Tests.Components;
+
+/// <summary>The output and model folder panels, filled in from an installed ComfyUI.</summary>
+public class ComfyFoldersUpdatePathTests : BunitContext
+{
+    private readonly Mock<IUserSettingsRepository> _settings = new();
+    private readonly UserSettings _user = new() { DefaultModelBaseFolder = @"E:\FreshLibrary", OutputFolder = @"E:\FreshOutput" };
+
+    public ComfyFoldersUpdatePathTests()
+    {
+        Services.AddSingleton(Mock.Of<IFolderPicker>());
+        _settings.Setup(s => s.GetOrCreateForCurrentUserAsync(It.IsAny<CancellationToken>())).ReturnsAsync(_user);
+    }
+
+    private static ExistingComfyUIProfile Profile(string? output = @"E:\Out", string? models = @"E:\Lib", string folder = @"E:\ComfyUI") =>
+        new(folder, ExistingInstallSupport.Supported, folder, folder + @"\venv", "3.12.7", OutputFolder: output, ModelBaseFolder: models);
+
+    private async Task<(ComfyFoldersModule Module, WizardSelection Selection)> ModuleAsync(ExistingComfyUIProfile? profile = null)
+    {
+        var workload = new InstallationConfiguration { Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI } };
+        var union = ExtendConfigurationMerger.Union([new WorkloadChoice(workload, 0)]);
+        var selection = new WizardSelection { Workload = union.Configuration, Mode = WizardMode.UpdateExisting };
+        selection.Existing = new ExistingRun(selection, union, [workload], null);
+        var module = new ComfyFoldersModule(_settings.Object);
+        await module.InitializeAsync(selection);
+        selection.Existing.Profile = profile ?? Profile();
+        return (module, selection);
+    }
+
+    [Fact]
+    public async Task The_panels_start_from_the_install_not_from_a_fresh_installs_defaults()
+    {
+        var (module, selection) = await ModuleAsync();
+
+        module.UseOwnOutputFolder.Should().BeTrue();
+        module.OutputFolder.Should().Be(@"E:\Out");
+        module.UseModelLibraryFolder.Should().BeTrue();
+        module.ModelBaseFolder.Should().Be(@"E:\Lib");
+        selection.ModelBaseFolder.Should().Be(@"E:\Lib");
+    }
+
+    [Fact]
+    public async Task An_install_with_neither_starts_with_both_switches_off()
+    {
+        var (module, selection) = await ModuleAsync(Profile(output: null, models: null));
+
+        module.UseOwnOutputFolder.Should().BeFalse();
+        module.UseModelLibraryFolder.Should().BeFalse();
+        selection.ModelBaseFolder.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Before_a_folder_is_chosen_nothing_is_on()
+    {
+        var workload = new InstallationConfiguration { Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI } };
+        var union = ExtendConfigurationMerger.Union([new WorkloadChoice(workload, 0)]);
+        var selection = new WizardSelection { Workload = union.Configuration, Mode = WizardMode.UpdateExisting };
+        selection.Existing = new ExistingRun(selection, union, [workload], null);
+        var module = new ComfyFoldersModule(_settings.Object);
+
+        await module.InitializeAsync(selection);
+
+        module.UseModelLibraryFolder.Should().BeFalse();
+        selection.ModelBaseFolder.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Another_install_fills_them_in_again()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\Typed";
+
+        selection.Existing!.Profile = Profile(output: @"E:\Other", models: null, folder: @"E:\Second");
+
+        module.OutputFolder.Should().Be(@"E:\Other");
+        module.UseModelLibraryFolder.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Unticking_the_update_does_not_undo_what_was_typed()
+    {
+        var (module, selection) = await ModuleAsync();
+        module.OutputFolder = @"E:\Typed";
+
+        selection.Existing!.RunUpdate = false;
+
+        module.OutputFolder.Should().Be(@"E:\Typed");
+    }
+
+    [Theory]
+    [InlineData(@"E:\Out")]
+    [InlineData(@"e:\out\")]
+    [InlineData(@"E:\Out\")]
+    public async Task The_same_folder_written_another_way_does_not_differ(string typed)
+    {
+        var (module, _) = await ModuleAsync();
+
+        module.OutputFolder = typed;
+
+        module.OutputFolderDiffers.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Unchanged_folders_write_nothing()
+    {
+        var (module, _) = await ModuleAsync();
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        draft.GenerateExtraModelPaths.Should().BeFalse();
+        draft.OverwriteExtraModelPaths.Should().BeFalse();
+        draft.ChangeOutputFolder.Should().BeFalse();
+        draft.ModelBaseFolder.Should().Be(@"E:\Lib", "models still have to land in the library");
+    }
+
+    [Fact]
+    public async Task A_changed_model_folder_rewrites_the_yaml()
+    {
+        var (module, _) = await ModuleAsync();
+        module.ModelBaseFolder = @"E:\NewLib";
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        draft.GenerateExtraModelPaths.Should().BeTrue();
+        draft.OverwriteExtraModelPaths.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_changed_output_folder_edits_the_launcher()
+    {
+        var (module, _) = await ModuleAsync();
+        module.OutputFolder = @"E:\NewOut";
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        draft.ChangeOutputFolder.Should().BeTrue();
+        draft.OutputFolder.Should().Be(@"E:\NewOut");
+    }
+
+    [Fact]
+    public async Task Turning_the_output_switch_off_takes_the_flag_out()
+    {
+        var (module, _) = await ModuleAsync();
+        module.UseOwnOutputFolder = false;
+        var draft = new InstallationOptionsDraft();
+
+        module.Contribute(draft);
+
+        draft.ChangeOutputFolder.Should().BeTrue();
+        draft.OutputFolder.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_output_folder_inside_comfyui_is_fine_here()
+    {
+        var (module, _) = await ModuleAsync(Profile(output: @"E:\ComfyUI\my-output"));
+
+        module.Validate().IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Nothing_is_remembered_for_a_fresh_install()
+    {
+        var (module, _) = await ModuleAsync();
+        module.OutputFolder = @"E:\Typed";
+
+        await module.PersistAsync();
+
+        _settings.Verify(s => s.SaveAsync(It.IsAny<UserSettings>(), It.IsAny<CancellationToken>()), Times.Never);
+        _user.OutputFolder.Should().Be(@"E:\FreshOutput");
+    }
+
+    [Fact]
+    public async Task The_default_folders_are_the_installs_own()
+    {
+        var (module, _) = await ModuleAsync(Profile(folder: @"E:\MyComfy"));
+
+        module.DefaultOutputFolder.Should().Be(@"E:\MyComfy\output");
+    }
+
+    private IRenderedComponent<ComfyFoldersPanel> Panel(ComfyFoldersModule module) =>
+        Render<ComfyFoldersPanel>(p => p.Add(x => x.Module, module));
+
+    [Fact]
+    public async Task No_red_box_while_the_folders_are_the_installs()
+    {
+        var (module, _) = await ModuleAsync();
+
+        var cut = Panel(module);
+
+        cut.FindAll("[data-role=output-differs]").Should().BeEmpty();
+        cut.FindAll("[data-role=model-differs]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_changed_output_folder_says_what_it_replaces()
+    {
+        var (module, _) = await ModuleAsync();
+        module.OutputFolder = @"E:\NewOut";
+
+        Panel(module).Find("[data-role=output-differs]").TextContent
+            .Should().Be(@"Your ComfyUI currently sends output to E:\Out. Continuing changes that in run_nvidia.bat.");
+    }
+
+    [Fact]
+    public async Task A_changed_model_folder_says_what_it_replaces()
+    {
+        var (module, _) = await ModuleAsync();
+        module.ModelBaseFolder = @"E:\NewLib";
+
+        Panel(module).Find("[data-role=model-differs]").TextContent
+            .Should().Be(@"Your ComfyUI currently loads models from E:\Lib (extra_model_paths.yaml). Continuing rewrites that file; a backup is kept.");
+    }
+
+    [Fact]
+    public async Task Turning_the_library_off_says_the_file_stays()
+    {
+        var (module, _) = await ModuleAsync();
+        module.UseModelLibraryFolder = false;
+
+        Panel(module).Find("[data-role=model-differs]").TextContent
+            .Should().Contain("That file stays");
+    }
+
+    [Fact]
+    public async Task A_fresh_install_has_no_red_boxes()
+    {
+        var workload = new InstallationConfiguration { Repository = new MainRepositorySettings { Type = RepositoryType.ComfyUI } };
+        var module = new ComfyFoldersModule(_settings.Object);
+        await module.InitializeAsync(new WizardSelection { Workload = workload, TargetFolder = @"E:\Fresh" });
+
+        var cut = Panel(module);
+
+        cut.FindAll("[data-role=output-differs]").Should().BeEmpty();
+        cut.FindAll("[data-role=model-differs]").Should().BeEmpty();
+    }
+}

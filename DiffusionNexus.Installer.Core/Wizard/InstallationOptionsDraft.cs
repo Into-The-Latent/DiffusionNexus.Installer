@@ -40,6 +40,12 @@ public sealed class InstallationOptionsDraft
     public string? OutputFolder { get; set; }
     public bool CpuTorch { get; set; }
 
+    /// <summary>Update path: the output folder differs from what the install has. Read by ComfyUpdateModule.</summary>
+    public bool ChangeOutputFolder { get; set; }
+
+    /// <summary>Set on the update path, by ComfyUpdateModule.</summary>
+    public SDK.Services.Installation.Existing.ExtendExistingOptions? Extend { get; set; }
+
     /// <summary>Resolved from SelectedLamaCppWheelId by LlamaCppModule; the step fails on null.</summary>
     public string? ResolvedLlamaCppWheelUrl { get; set; }
     public string? ResolvedLlamaCppWheelName { get; set; }
@@ -47,6 +53,7 @@ public sealed class InstallationOptionsDraft
     public SDK.Services.InstallationOptions ToOptions() => new()
     {
         OnlyModelDownload = false,
+        Extend = Extend,
         DownloadModelsOnly = DownloadModelsOnly,
         SortModelsIntoSubfolders = SortModelsIntoSubfolders,
         SelectedVramProfile = SelectedVramProfile,
