@@ -463,6 +463,14 @@
     {
         if (Session.Plan is not { } running) return;
 
+        // The same kind of page is reused for the new route, without running its first-render setup.
+        if (running.Selection.Mode == Mode)
+        {
+            _busyWith = null;
+            _run = new WizardRun(running, WizardStage.Install);
+            Return.InstallOnScreen = running;
+        }
+
         Nav.NavigateTo(WizardRoutes.Install(running.Selection.Workload.Id, running.Selection.Mode));
     }
 

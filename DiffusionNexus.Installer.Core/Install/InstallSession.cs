@@ -113,7 +113,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
         lock (_gate)
         {
             if (Phase == InstallPhase.Running)
-                throw new InvalidOperationException("An installation is already running.");
+                throw new InvalidOperationException("Another installation or download is already running.");
 
             Phase = InstallPhase.Running;
             Plan = plan;
@@ -206,6 +206,9 @@ public sealed class InstallSession : IInstallSession, IDisposable
         }
     }
 
+    private static string RunName(WizardPlan plan) =>
+        plan.Selection.Mode == WizardMode.ModelsOnly ? "Download" : "Installation";
+
     /// <summary>
     /// Spec 7.2: one log line and one report row naming the catalog this run's workload came from
     /// -- captured by the wizard when it read the workload, else read now -- so a support question
@@ -213,9 +216,6 @@ public sealed class InstallSession : IInstallSession, IDisposable
     /// held the file then (the switch's apply writing it, an AV scan) has usually let go by now
     /// (PR #43 review). A catalog that cannot be read is a warning row, never a reason not to install.
     /// </summary>
-    private static string RunName(WizardPlan plan) =>
-        plan.Selection.Mode == WizardMode.ModelsOnly ? "Download" : "Installation";
-
     private void RecordCatalog(WizardPlan plan)
     {
         var captured = plan.Selection.Catalog;

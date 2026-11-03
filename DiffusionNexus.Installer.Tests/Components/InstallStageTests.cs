@@ -109,6 +109,21 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task Models_only_with_no_file_at_the_end_does_not_say_complete()
+    {
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.SetupGet(s => s.Result).Returns(InstallationResult.Success("Downloaded 0 models, 0 already present, 1 skipped, 0 failed.", _folder, nothingDelivered: true));
+        _session.SetupGet(s => s.ReportRows).Returns([Row("Downloading a", InstallReportOutcome.Skipped)]);
+        var run = await RunAsync(WizardMode.ModelsOnly);
+
+        var stage = Render<InstallStage>(p => p.Add(x => x.Run, run));
+
+        var heading = stage.Find(".install-result h2");
+        heading.TextContent.Trim().Should().Be("Nothing was downloaded");
+        heading.ClassList.Should().Contain("result-bad");
+    }
+
+    [Fact]
     public async Task Models_only_all_ok_says_download_complete()
     {
         _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);

@@ -194,8 +194,8 @@
 
     /// <summary>
     /// What this path can offer. Models only leaves out a workload with nothing to download, and
-    /// offers one a fresh install refuses: what blocks that is its torch pairing, which a download
-    /// never touches.
+    /// offers one a fresh install refuses: what blocks that is its torch pairing or a capability
+    /// the installer lacks, and a download touches neither.
     /// </summary>
     private IReadOnlyList<GalleryEntry> OnThisPath(IReadOnlyList<GalleryEntry> entries) =>
         Mode != WizardMode.ModelsOnly

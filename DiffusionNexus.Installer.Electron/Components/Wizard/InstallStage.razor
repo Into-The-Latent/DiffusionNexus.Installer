@@ -33,7 +33,7 @@
 
         @if (_startError is not null)
         {
-            <p class="validation-error">This installation could not be started: @_startError</p>
+            <p class="validation-error">This @(ModelsOnly ? "download" : "installation") could not be started: @_startError</p>
         }
 
         @if (Session.Progress is { } progress)
@@ -67,9 +67,9 @@
             var rows = Session.ReportRows;
         }
 
-        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) ? "result-ok" : "result-bad")">
+        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : ModelsOnly ? "Download complete" : "Installation complete")
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : "Installation complete")
               : result.IsCancelled ? "Cancelled"
               : ModelsOnly ? "Download failed"
               : "Installation failed")
@@ -244,7 +244,7 @@
 
     private bool CanLaunch => Targets.LauncherScript is { } script && File.Exists(script);
 
-    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), "open the installation folder");
+    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), ModelsOnly ? "open the download folder" : "open the installation folder");
 
     /// <summary>
     /// The same rendering the log file uses, so what lands in an issue is what is on disk. A
