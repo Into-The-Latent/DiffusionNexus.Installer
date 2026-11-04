@@ -83,6 +83,21 @@ public class WizardRunTests
     }
 
     [Fact]
+    public async Task A_module_that_starts_to_apply_on_the_current_stage_is_shown_before_moving_on()
+    {
+        var runtime = new ToggleModule(WizardStage.System);
+        var run = await UpdateRunAsync(new GateModule(WizardStage.System, valid: true), runtime);
+        run.CurrentStage.Should().Be(WizardStage.System);
+
+        runtime.Applies = true;
+        run.TryNext().Should().BeTrue();
+
+        run.CurrentStage.Should().Be(WizardStage.System, "this page was never drawn with that module on it");
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+    }
+
+    [Fact]
     public async Task A_stage_that_was_there_all_along_does_not_send_the_run_back()
     {
         var system = new ToggleModule(WizardStage.System) { Applies = true };

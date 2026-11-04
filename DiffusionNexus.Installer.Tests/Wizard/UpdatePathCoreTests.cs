@@ -254,6 +254,30 @@ public class UpdatePathCoreTests
     }
 
     [Fact]
+    public void An_empty_node_folder_is_not_a_node_because_the_run_clones_into_it()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "UpdatePathFacts_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(repo, "custom_nodes", "Empty"));
+        Directory.CreateDirectory(Path.Combine(repo, "custom_nodes", "Full"));
+        File.WriteAllText(Path.Combine(repo, "custom_nodes", "Full", "__init__.py"), "");
+        try
+        {
+            var workload = Workload("A");
+            workload.GitRepositories.Add(new GitRepository { Name = "Empty", Url = "https://github.com/x/Empty" });
+            workload.GitRepositories.Add(new GitRepository { Name = "Full", Url = "https://github.com/x/Full" });
+            var (_, run, _) = UpdateRun(workload);
+
+            run.Profile = Profile() with { RepositoryPath = repo };
+
+            run.NewNodes.Select(n => n.Name).Should().Equal("Empty");
+        }
+        finally
+        {
+            Directory.Delete(repo, recursive: true);
+        }
+    }
+
+    [Fact]
     public void An_unreadable_custom_nodes_does_not_hide_the_yaml()
     {
         if (!OperatingSystem.IsWindows()) return;

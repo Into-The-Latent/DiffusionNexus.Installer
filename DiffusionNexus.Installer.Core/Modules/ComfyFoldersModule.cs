@@ -238,7 +238,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
             : _selection.Workload.ModelDownloads
                 .Where(m => m.Enabled)
                 .Select(m => ModelDestinationType(m.Destination))
-                .Where(type => type is not null && _folderTypes.Any(r => r.Key.Equals(type, StringComparison.OrdinalIgnoreCase)) && Listed(mappings, type) is null)
+                .Where(type => type is not null && Listed(mappings, type) is null)
                 .Select(type => type!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();

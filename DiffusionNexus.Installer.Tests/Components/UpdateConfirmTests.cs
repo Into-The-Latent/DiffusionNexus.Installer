@@ -179,6 +179,7 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
         existing.Profile = Profile();
         Review(run).Lines.Should().Contain("Custom nodes: 1 to add.");
         Directory.CreateDirectory(Path.Combine(_repo, "custom_nodes", "node"));
+        File.WriteAllText(Path.Combine(_repo, "custom_nodes", "node", "__init__.py"), "");
 
         existing.CheckedAgain();
 
@@ -312,6 +313,7 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
         var a = Workload("A");
         a.GitRepositories = [new GitRepository { Url = "https://github.com/x/NodeA" }, new GitRepository { Url = "https://github.com/x/Present" }];
         Directory.CreateDirectory(Path.Combine(_repo, "custom_nodes", "Present"));
+        File.WriteAllText(Path.Combine(_repo, "custom_nodes", "Present", "__init__.py"), "");
         var run = await UpdateRunAsync(false, new WorkloadChoice(a, 16), new WorkloadChoice(Workload("B"), 8));
 
         Review(run).Lines.Should().Contain("ComfyUI: updates to the newest stable release, following your ComfyUI-Manager setting.");
@@ -437,6 +439,29 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
 
         heading.TextContent.Trim().Should().Be("Finished with problems");
         heading.ClassList.Should().Contain("result-bad");
+    }
+
+    [Theory]
+    [InlineData(SDK.Models.Installation.InstallReportOutcome.Failed, false)]
+    [InlineData(SDK.Models.Installation.InstallReportOutcome.Success, true)]
+    public async Task Start_app_is_only_offered_when_the_update_had_no_problem(SDK.Models.Installation.InstallReportOutcome outcome, bool offered)
+    {
+        File.WriteAllText(Path.Combine(_repo, "run_nvidia.bat"), "");
+        Finished(InstallationResult.Success("ok", _repo));
+        _session.SetupGet(s => s.ReportRows).Returns(
+        [
+            new SDK.Models.Installation.InstallReportEntry
+            {
+                PlannedOperation = "Updating ComfyUI",
+                Category = SDK.Models.Installation.InstallReportCategory.Step,
+                Outcome = outcome,
+            },
+        ]);
+        var run = await UpdateRunAsync(updateOnly: true);
+
+        var buttons = Render<InstallStage>(p => p.Add(x => x.Run, run)).FindAll("button").Select(b => b.TextContent.Trim());
+
+        buttons.Contains("Start app & close").Should().Be(offered);
     }
 
     [Fact]

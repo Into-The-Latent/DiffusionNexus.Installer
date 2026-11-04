@@ -53,10 +53,10 @@ public sealed class WizardRun
             var before = _plan.AllModules.ToList();
             _plan.RefreshStages();
 
-            // A module that began to apply behind this stage still has to be seen, even in a stage
-            // already visited: it contributes either way, and the Visual C++ page exists to announce
-            // a UAC prompt before it comes.
-            var missed = _plan.AllModules.Except(before).Where(m => m.Stage < current).Select(m => m.Stage).ToList();
+            // A module that began to apply here or behind this stage still has to be seen, even in a
+            // stage already visited: it contributes either way, and the Visual C++ page exists to
+            // announce a UAC prompt before it comes.
+            var missed = _plan.AllModules.Except(before).Where(m => m.Stage <= current).Select(m => m.Stage).ToList();
             _index = missed.Count > 0
                 ? _plan.Stages.TakeWhile(s => s < missed.Min()).Count()
                 : _plan.Stages.TakeWhile(s => s <= current).Count();

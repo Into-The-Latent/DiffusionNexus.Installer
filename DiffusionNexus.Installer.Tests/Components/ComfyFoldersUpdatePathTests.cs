@@ -190,6 +190,17 @@ public class ComfyFoldersUpdatePathTests : BunitContext
     }
 
     [Fact]
+    public async Task A_type_with_no_folder_row_still_warns_when_the_yaml_does_not_list_it()
+    {
+        var module = await WithWorkloadAsync(WithModel("models/LLM"), Profile() with
+        {
+            ModelFolderMappings = new Dictionary<string, string> { ["checkpoints"] = "checkpoints" },
+        });
+
+        module.MissingModelTypes.Should().Equal("LLM");
+    }
+
+    [Fact]
     public async Task A_type_the_yaml_does_not_list_warns_and_leaves_the_file_alone()
     {
         var module = await WithWorkloadAsync(WithModel("models/vae"), Profile() with

@@ -48,7 +48,11 @@ public sealed class ExistingRun
                 var nodes = Path.Combine(repository, "custom_nodes");
                 return new FolderFacts(
                     Directory.Exists(nodes)
-                        ? Directory.EnumerateDirectories(nodes).Select(d => Path.GetFileName(d)).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                        ? Directory.EnumerateDirectories(nodes)
+                            // An empty one is a leftover: the run clones into it, so it's still to add.
+                            .Where(d => Directory.EnumerateFileSystemEntries(d).Any())
+                            .Select(d => Path.GetFileName(d))
+                            .ToHashSet(StringComparer.OrdinalIgnoreCase)
                         : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                     hasModelPathsFile);
             }

@@ -162,7 +162,7 @@
         }
         @* Only offered for an install that actually succeeded: starting a failed or cancelled one
            runs a half-built app, and the report beside it is what the user needs to read first. *@
-        @if (Session.Result is { IsSuccess: true } && CanLaunch)
+        @if (Session.Result is { IsSuccess: true } && CanLaunch && !SomethingFailedOnUpdate(Session.ReportRows))
         {
             <button class="btn-primary" @onclick="LaunchAndClose">Start app &amp; close</button>
         }
