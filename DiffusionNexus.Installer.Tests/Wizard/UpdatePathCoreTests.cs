@@ -254,6 +254,43 @@ public class UpdatePathCoreTests
     }
 
     [Fact]
+    public void An_unreadable_custom_nodes_does_not_hide_the_yaml()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var repo = Path.Combine(Path.GetTempPath(), "UpdatePathFacts_" + Guid.NewGuid().ToString("N"));
+        var nodes = Path.Combine(repo, "custom_nodes");
+        Directory.CreateDirectory(nodes);
+        File.WriteAllText(Path.Combine(repo, "extra_model_paths.yaml"), "comfyui:\n");
+
+        void Icacls(string args)
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "icacls", $"\"{nodes}\" {args}") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true })!;
+            process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            process.ExitCode.Should().Be(0, "the test needs the folder locked");
+        }
+
+        Icacls("/deny *S-1-1-0:(RX)");
+        try
+        {
+            var act = () => Directory.EnumerateDirectories(nodes).ToList();
+            act.Should().Throw<UnauthorizedAccessException>("the test needs the folder unreadable");
+
+            var (_, run, _) = UpdateRun(Workload("A"));
+            run.Profile = Profile() with { RepositoryPath = repo };
+
+            run.HasModelPathsFile.Should().BeTrue();
+        }
+        finally
+        {
+            Icacls("/remove:d *S-1-1-0");
+            Directory.Delete(repo, recursive: true);
+        }
+    }
+
+    [Fact]
     public void The_same_answer_again_changes_nothing()
     {
         var (_, run, _) = UpdateRun(Workload("A"));

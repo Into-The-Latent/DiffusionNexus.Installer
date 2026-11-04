@@ -39,6 +39,10 @@ public sealed class ExistingRun
         {
             if (profile is not { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository }) return None;
 
+            // Apart, so an unreadable custom_nodes doesn't report that the yaml is missing: Confirm
+            // would say a file is added, and the run would rewrite the one that's there.
+            var hasModelPathsFile = File.Exists(Path.Combine(repository, "extra_model_paths.yaml"));
+
             try
             {
                 var nodes = Path.Combine(repository, "custom_nodes");
@@ -46,11 +50,11 @@ public sealed class ExistingRun
                     Directory.Exists(nodes)
                         ? Directory.EnumerateDirectories(nodes).Select(d => Path.GetFileName(d)).ToHashSet(StringComparer.OrdinalIgnoreCase)
                         : new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-                    File.Exists(Path.Combine(repository, "extra_model_paths.yaml")));
+                    hasModelPathsFile);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return None;
+                return new FolderFacts(new HashSet<string>(StringComparer.OrdinalIgnoreCase), hasModelPathsFile);
             }
         }
     }
