@@ -217,7 +217,7 @@ public class MismatchModalTests : BunitContext
         var pending = service.ResolveAsync([Mismatch("a", "https://h.invalid/a.bin")]);
         cut.WaitForAssertion(() => cut.FindAll("button").Should().NotBeEmpty());
 
-        await cut.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel installation").ClickAsync(new MouseEventArgs());
+        await cut.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel").ClickAsync(new MouseEventArgs());
 
         (await pending).Should().BeNull();
     }
