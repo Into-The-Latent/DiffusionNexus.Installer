@@ -184,6 +184,11 @@ the catalog reaches those lists correctly.
 9. Truncate a downloaded `.pth`, such as `4x-UltraSharp.pth`, to a few bytes and run again.
    **Expect:** it's under "Files that can't be checked", ticked, with its sizes. Sizes that would
    round to the same text show as exact bytes.
+10. Move a downloaded model into a new subfolder of its folder, such as `models\vae\old\`, cut it
+    to a few bytes and run again. **Expect:** it's under "Incomplete downloads". After Continue the
+    good copy is in `models\vae\`, the file in `old\` is gone, and its report row says "removed the
+    old copy at". Run it once more with two such copies in different subfolders. **Expect:** both
+    stay and the row warns.
 
 ## 4. Known limitations
 
