@@ -7,8 +7,9 @@ using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 namespace DiffusionNexus.Installer.Core.Install;
 
 /// <param name="Proceed">False only when the user dismissed the mismatch dialog.</param>
-/// <param name="Warning">Set when verification itself failed, or models only will download a file again; the run still proceeds.</param>
-public sealed record PreflightResult(bool Proceed, string? Warning);
+/// <param name="Warning">Set when verification itself failed; the install still proceeds.</param>
+/// <param name="Notice">Something the run is about to do that nobody was asked about. Nothing is wrong.</param>
+public sealed record PreflightResult(bool Proceed, string? Warning, string? Notice = null);
 
 /// <summary>Runs when the user leaves Confirm, before the install session starts.</summary>
 public interface IModelPreflight
@@ -80,7 +81,7 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
                 mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).Select(m => m.Url),
                 mismatches.Where(m => m.Verdict != ExistingModelVerdict.Truncated).Select(m => m.Url),
                 notes);
-            return new PreflightResult(true, RedownloadNotice(mismatches));
+            return new PreflightResult(true, null, RedownloadNotice(mismatches));
         }
 
         var resolution = await prompt.ResolveAsync(mismatches, ct).ConfigureAwait(false);
