@@ -25,7 +25,11 @@
             {
                 <p><strong>Everything working?</strong> Untick this. You still get the workload's custom nodes and models.</p>
             }
-            <button class="btn-secondary" type="button" data-role="open-folder" @onclick="OpenFolder">Open my ComfyUI folder to back it up</button>
+            <button class="btn-secondary" type="button" data-role="open-folder" disabled="@string.IsNullOrEmpty(Module.Folder)" @onclick="OpenFolder">Open my ComfyUI folder to back it up</button>
+            @if (_openError is not null)
+            {
+                <p class="validation-error" data-role="open-error">@_openError</p>
+            }
         </div>
 
         @if (Module.TorchChange is { } change)
@@ -71,5 +75,19 @@
         await Changed.InvokeAsync();
     }
 
-    private void OpenFolder() => Actions.OpenFolder(Module.Folder);
+    private string? _openError;
+
+    /// <summary>This goes through the OS, which can refuse, and this is the moment someone is told to make a backup.</summary>
+    private void OpenFolder()
+    {
+        _openError = null;
+        try
+        {
+            Actions.OpenFolder(Module.Folder);
+        }
+        catch (Exception ex)
+        {
+            _openError = $"Could not open the folder: {ex.Message}";
+        }
+    }
 }
