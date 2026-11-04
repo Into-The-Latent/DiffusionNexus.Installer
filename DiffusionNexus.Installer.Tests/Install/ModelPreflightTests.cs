@@ -95,7 +95,7 @@ public class ModelPreflightTests
 
         result.Proceed.Should().BeTrue();
         result.Warning.Should().BeNull("nothing went wrong");
-        result.Notice.Should().Be("ae.safetensors is incomplete, so this run downloads it again.");
+        result.Notice.Should().Be("ae.safetensors is incomplete, so this run replaces it.");
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class ModelPreflightTests
 
         var result = await new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan);
 
-        result.Notice.Should().Be("These files are incomplete, so this run downloads them again: ae.safetensors, b.gguf.");
+        result.Notice.Should().Be("These files are incomplete, so this run replaces them: ae.safetensors, b.gguf.");
     }
 
     private static InstallSession Session()

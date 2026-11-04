@@ -125,8 +125,8 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         return names.Count switch
         {
             0 => null,
-            1 => $"{names[0]} is incomplete, so this run downloads it again.",
-            _ => $"These files are incomplete, so this run downloads them again: {string.Join(", ", names)}.",
+            1 => $"{names[0]} is incomplete, so this run replaces it.",
+            _ => $"These files are incomplete, so this run replaces them: {string.Join(", ", names)}.",
         };
     }
 }

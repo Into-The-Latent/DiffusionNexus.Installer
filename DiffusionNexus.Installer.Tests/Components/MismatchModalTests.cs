@@ -76,7 +76,7 @@ public class MismatchModalTests : BunitContext
 
         cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox]").Should().ContainSingle());
         cut.FindAll("td").Select(c => c.TextContent.Trim()).Should().Contain(@"C:\models\a.bin");
-        cut.Markup.Should().Contain("removed");
+        cut.Markup.Should().Contain("removed once");
     }
 
     [Fact]
@@ -104,7 +104,8 @@ public class MismatchModalTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("a.bin"));
         cut.FindAll("input[type=checkbox]").Should().BeEmpty();
-        cut.Markup.Should().Contain("can't load").And.Contain("downloaded again");
+        cut.Markup.Should().Contain("can't load").And.Contain("downloaded again").And.Contain("removed once");
+        cut.FindAll("td").Select(c => c.TextContent.Trim()).Should().Contain(@"C:\models\a.bin", "it can be removed from there");
 
         await ContinueAsync(cut);
 
