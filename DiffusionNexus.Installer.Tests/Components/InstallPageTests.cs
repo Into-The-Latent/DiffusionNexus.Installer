@@ -1066,7 +1066,8 @@ public class InstallPageTests : BunitContext
         await page.FindAll("button").Single(b => b.TextContent.Trim() == "Start installation").ClickAsync(new MouseEventArgs());
 
         page.Markup.Should().Contain("Ready to install", "a dismissed dialog must not advance");
-        page.Markup.Should().Contain("not started");
+        page.Markup.Should().Contain("Nothing has started");
+        page.Markup.Should().NotContain("mismatched", "that word isn't in the dialog they just closed");
         page.Markup.Should().NotContain("Installing");
     }
 

@@ -73,7 +73,7 @@
                 {
                     <p class="validation-error">@_preflightWarning</p>
                 }
-                <InstallStage Run="_run" Done="_backToGallery" />
+                <InstallStage Run="_run" Done="_backToGallery" Notice="_runNotice" />
             }
             else
             {
@@ -177,6 +177,7 @@
     private bool _preflightBusy;
     private string? _preflightNotice;
     private string? _preflightWarning;
+    private string? _runNotice;
     private string? _settingsNotice;
     private bool _savingSettings;
 
@@ -411,9 +412,10 @@
             {
                 var result = await Preflight.RunAsync(_run.Plan, token);
                 _preflightWarning = result.Warning;
+                _runNotice = result.Notice;
                 if (!result.Proceed)
                 {
-                    _preflightNotice = "Installation not started: the mismatched model files were not resolved.";
+                    _preflightNotice = "Nothing has started. Your model files are as they were.";
                     return;
                 }
             }

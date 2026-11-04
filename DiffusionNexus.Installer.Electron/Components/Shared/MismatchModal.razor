@@ -5,29 +5,84 @@
 
 @if (Prompts.IsOpen)
 {
+    var incomplete = Prompts.Mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).ToList();
+    var different = Prompts.Mismatches.Where(m => m.Verdict == ExistingModelVerdict.CompleteDifferent).ToList();
+    var uncheckable = Prompts.Mismatches
+        .Where(m => m.Verdict is not (ExistingModelVerdict.Truncated or ExistingModelVerdict.CompleteDifferent))
+        .ToList();
+
     <div class="modal-backdrop">
         <div class="modal-card modal-card-wide" role="dialog" aria-modal="true">
-            <h2>Some existing model files look wrong</h2>
-            <p class="panel-hint">
-                These files are already in place but their size does not match what the server
-                reports. Ticked files are downloaded again; unticked files are kept as they are.
-            </p>
-            <table class="report">
-                <thead><tr><th>Redownload</th><th>File</th><th>On disk</th><th>Expected</th></tr></thead>
-                <tbody>
-                    @foreach (var m in Prompts.Mismatches)
-                    {
-                        <tr>
-                            <td><input type="checkbox" checked="@IsRedownload(m.Url)" @onchange="e => Toggle(m.Url, e)" /></td>
-                            <td title="@m.FilePath">@System.IO.Path.GetFileName(m.FilePath)</td>
-                            <td>@DiskSpaceRequirement.FormatBytes(m.ActualBytes)</td>
-                            <td>@DiskSpaceRequirement.FormatBytes(m.ExpectedBytes)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <h2>Check the model files already here</h2>
+
+            @if (incomplete.Count > 0)
+            {
+                <h3>Incomplete downloads</h3>
+                <p class="panel-hint">
+                    These files stop before their end, so they can't load. They'll be downloaded again,
+                    and a file listed here is removed once its new copy has arrived whole.
+                </p>
+                <table class="report">
+                    <thead><tr><th>File</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in incomplete)
+                        {
+                            <tr><td>@m.FilePath</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (different.Count > 0)
+            {
+                <h3>Different copies</h3>
+                <p class="panel-hint">
+                    These files are complete, so they should load, but they aren't the exact files this
+                    workload was tested with. They stay as they are unless you tick them. A ticked file
+                    is replaced with this workload's copy, which goes in the workload's own folder, and
+                    the file listed here is removed once that copy has arrived whole.
+                </p>
+                <table class="report">
+                    <thead><tr><th>Replace</th><th>File</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in different)
+                        {
+                            <tr>
+                                <td><input type="checkbox" checked="@IsRedownload(m)" @onchange="e => Toggle(m.Url, e)" /></td>
+                                <td>@m.FilePath</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (uncheckable.Count > 0)
+            {
+                <h3>Files that can't be checked</h3>
+                <p class="panel-hint">
+                    These files aren't the size the server reports, and there's no way to check them
+                    from here, so they may be broken. Ticked files are downloaded again; unticked files
+                    are kept as they are.
+                </p>
+                <table class="report">
+                    <thead><tr><th>Redownload</th><th>File</th><th>On disk</th><th>Expected</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in uncheckable)
+                        {
+                            var (onDisk, expected) = Sizes(m);
+                            <tr>
+                                <td><input type="checkbox" checked="@IsRedownload(m)" @onchange="e => Toggle(m.Url, e)" /></td>
+                                <td title="@m.FilePath">@System.IO.Path.GetFileName(m.FilePath)</td>
+                                <td>@onDisk</td>
+                                <td>@expected</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
             <div class="modal-actions">
-                <button class="btn-secondary" @onclick="() => Prompts.Answer(null)">Cancel installation</button>
+                <button class="btn-secondary" @onclick="() => Prompts.Answer(null)">Cancel</button>
                 <button class="btn-primary" @onclick="Continue">Continue</button>
             </div>
         </div>
@@ -35,31 +90,37 @@
 }
 
 @code {
-    // URLs the user unticked. Everything else redownloads: a size mismatch usually means a partial
-    // or corrupt file, so "download it again" is the safe default.
-    private readonly HashSet<string> _keep = new(StringComparer.OrdinalIgnoreCase);
+    // Boxes the user changed. Everything else follows what the SDK says for that verdict.
+    private readonly Dictionary<string, bool> _changed = new(StringComparer.OrdinalIgnoreCase);
 
     protected override void OnInitialized() => Prompts.Changed += OnChanged;
 
-    private bool IsRedownload(string url) => !_keep.Contains(url);
+    private bool IsRedownload(ExistingModelMismatch m) =>
+        m.Verdict == ExistingModelVerdict.Truncated
+        || (_changed.TryGetValue(m.Url, out var ticked) ? ticked : m.ReplaceByDefault);
 
-    private void Toggle(string url, ChangeEventArgs e)
+    private void Toggle(string url, ChangeEventArgs e) => _changed[url] = (bool)(e.Value ?? false);
+
+    // Two sizes that print the same would read as a mistake, so those are shown to the byte.
+    private static (string OnDisk, string Expected) Sizes(ExistingModelMismatch m)
     {
-        if ((bool)(e.Value ?? false)) _keep.Remove(url); else _keep.Add(url);
+        var onDisk = DiskSpaceRequirement.FormatBytes(m.ActualBytes);
+        var expected = DiskSpaceRequirement.FormatBytes(m.ExpectedBytes);
+        return onDisk == expected ? ($"{m.ActualBytes:N0} bytes", $"{m.ExpectedBytes:N0} bytes") : (onDisk, expected);
     }
 
     private void Continue()
     {
-        var all = Prompts.Mismatches.Select(m => m.Url).ToList();
-        var redownload = all.Where(u => !_keep.Contains(u)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var trusted = all.Where(_keep.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        _keep.Clear();
+        // One link can be two files. If either has to be replaced, the link is replaced.
+        var redownload = Prompts.Mismatches.Where(IsRedownload).Select(m => m.Url).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var trusted = Prompts.Mismatches.Select(m => m.Url).Where(u => !redownload.Contains(u)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _changed.Clear();
         Prompts.Answer(new MismatchResolution(redownload, trusted));
     }
 
     private void OnChanged()
     {
-        if (!Prompts.IsOpen) _keep.Clear();
+        if (!Prompts.IsOpen) _changed.Clear();
         InvokeAsync(StateHasChanged);
     }
 

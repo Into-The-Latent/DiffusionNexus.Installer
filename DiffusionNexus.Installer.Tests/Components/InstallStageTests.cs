@@ -345,6 +345,24 @@ public class InstallStageTests : BunitContext, IDisposable
     }
 
     [Fact]
+    public async Task The_redownload_notice_shows_while_the_run_goes_and_not_after_it()
+    {
+        var run = await RunAsync();
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Running);
+        var stage = Render<InstallStage>(p => p
+            .Add(x => x.Run, run)
+            .Add(x => x.Notice, "x.safetensors is incomplete and will be downloaded again."));
+
+        stage.Find("[data-role=run-notice]").TextContent.Should().Contain("x.safetensors");
+        stage.Find("[data-role=run-notice]").ClassList.Should().NotContain("validation-error", "nothing is wrong");
+
+        _session.SetupGet(s => s.Phase).Returns(InstallPhase.Completed);
+        _session.Raise(s => s.Changed += null);
+
+        stage.FindAll("[data-role=run-notice]").Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task A_twelve_step_install_ends_on_step_twelve_of_twelve()
     {
         // The pipeline's final report sets StepIndex to the step COUNT so the bar reaches 100%,

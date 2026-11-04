@@ -46,6 +46,11 @@
             <progress max="100" value="@progress.ProgressPercentage.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
         }
 
+        @if (Notice is not null && Session.Phase == InstallPhase.Running)
+        {
+            <p class="panel-hint" data-role="run-notice">@Notice</p>
+        }
+
         @* Running only: a run that ended may leave its last download marked active, and Skip then does nothing. *@
         @if (ModelsOnly && Session.Phase == InstallPhase.Running && Session.Progress is { Message: { Length: > 0 } modelProgress })
         {
@@ -204,6 +209,9 @@
 
     /// <summary>Raised when the user is finished with the result and wants the gallery back.</summary>
     [Parameter] public EventCallback Done { get; set; }
+
+    /// <summary>A line about this run, shown only while it goes: it speaks about what's coming.</summary>
+    [Parameter] public string? Notice { get; set; }
 
     /// <summary>
     /// How long "Copied" stays beside the heading. Transient on purpose: the log keeps growing

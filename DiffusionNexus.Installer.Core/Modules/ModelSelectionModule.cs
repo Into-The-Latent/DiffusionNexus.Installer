@@ -34,6 +34,7 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     private IReadOnlyList<ModelPresence> _presence = [];
     private readonly HashSet<string> _forceRedownloadUrls = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _trustedUrls = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, string> _judgedFiles = new Dictionary<string, string>();
 
     // A kept wizard (#45) is one module under two pages for a moment: the page that left may still
     // be scanning or estimating while the restored one starts its own. Each run is numbered as it
@@ -105,6 +106,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         _presence = [];
         _forceRedownloadUrls.Clear();
         _trustedUrls.Clear();
+        _judgedFiles = new Dictionary<string, string>();
+        VerificationNotes = [];
         Estimate = null;
         EstimateError = null;
         LastScannedTier = -1;
@@ -238,13 +241,22 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
     }
 
     /// <summary>Records the mismatch dialog's answers. Keyed by URL, never by model id: a model can have several links and only some mismatch.</summary>
-    public void ApplyVerification(IEnumerable<string> forceRedownloadUrls, IEnumerable<string> trustedUrls)
+    public void ApplyVerification(
+        IEnumerable<string> forceRedownloadUrls,
+        IEnumerable<string> trustedUrls,
+        IReadOnlyList<string>? notes = null,
+        IReadOnlyDictionary<string, string>? judgedFiles = null)
     {
         _forceRedownloadUrls.Clear();
         _trustedUrls.Clear();
         _forceRedownloadUrls.UnionWith(forceRedownloadUrls);
         _trustedUrls.UnionWith(trustedUrls);
+        VerificationNotes = notes ?? [];
+        _judgedFiles = judgedFiles ?? new Dictionary<string, string>();
     }
+
+    /// <summary>What the check found, for the install log. It runs before the session that writes that log starts.</summary>
+    public IReadOnlyList<string> VerificationNotes { get; private set; } = [];
 
     public void Contribute(InstallationOptionsDraft draft)
     {
@@ -253,6 +265,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
 
         draft.ForceRedownloadUrls.Clear();
         draft.ForceRedownloadUrls.UnionWith(_forceRedownloadUrls);
+        draft.ForceRedownloadFiles.Clear();
+        foreach (var (url, path) in _judgedFiles) draft.ForceRedownloadFiles[url] = path;
         draft.TrustedUrls.Clear();
         draft.TrustedUrls.UnionWith(_trustedUrls);
     }
