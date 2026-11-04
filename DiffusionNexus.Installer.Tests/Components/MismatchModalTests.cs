@@ -149,6 +149,17 @@ public class MismatchModalTests : BunitContext
     }
 
     [Fact]
+    public void Two_rows_for_the_same_file_both_show_whatever_their_kind()
+    {
+        var (cut, service) = Open();
+        var row = Mismatch("a", "https://h.invalid/a.bin");
+
+        _ = service.ResolveAsync([row, row]);
+
+        cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox]").Should().HaveCount(2));
+    }
+
+    [Fact]
     public void A_kind_that_has_no_files_has_no_section()
     {
         var (cut, service) = Open();

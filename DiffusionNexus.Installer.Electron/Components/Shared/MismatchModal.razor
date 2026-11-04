@@ -7,7 +7,9 @@
 {
     var incomplete = Prompts.Mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).ToList();
     var different = Prompts.Mismatches.Where(m => m.Verdict == ExistingModelVerdict.CompleteDifferent).ToList();
-    var uncheckable = Prompts.Mismatches.Except(incomplete).Except(different).ToList();
+    var uncheckable = Prompts.Mismatches
+        .Where(m => m.Verdict is not (ExistingModelVerdict.Truncated or ExistingModelVerdict.CompleteDifferent))
+        .ToList();
 
     <div class="modal-backdrop">
         <div class="modal-card modal-card-wide" role="dialog" aria-modal="true">

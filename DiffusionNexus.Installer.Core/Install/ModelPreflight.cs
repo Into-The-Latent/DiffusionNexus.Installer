@@ -3,7 +3,6 @@ using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
-using Microsoft.Extensions.Logging;
 
 namespace DiffusionNexus.Installer.Core.Install;
 
@@ -27,13 +26,11 @@ public interface IModelPreflight
 /// and its report row warns, because in a folder the user chose it's usually a different file of that name.
 /// </para>
 /// <para>
-/// The sizes go to the log, not the dialog: the verdict is what a person can act on.
+/// Every mismatch's sizes go into the install log, which is saved with the run. The dialog only shows
+/// them for files it has no verdict on, because the verdict is what a person can act on.
 /// </para>
 /// </summary>
-public sealed class ModelPreflight(
-    IExistingModelVerifier verifier,
-    IMismatchedFilePrompt prompt,
-    ILogger<ModelPreflight>? logger = null) : IModelPreflight
+public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedFilePrompt prompt) : IModelPreflight
 {
     public async Task<PreflightResult> RunAsync(WizardPlan plan, CancellationToken ct = default)
     {
@@ -73,25 +70,23 @@ public sealed class ModelPreflight(
 
         if (mismatches.Count == 0) return new PreflightResult(true, null);
 
-        foreach (var m in mismatches)
-        {
-            logger?.LogInformation(
-                "Existing model {File}: {Verdict}, {ActualBytes} bytes on disk, expected {ExpectedBytes} ({Url})",
-                m.FilePath, m.Verdict, m.ActualBytes, m.ExpectedBytes, m.Url);
-        }
+        var notes = mismatches
+            .Select(m => $"Existing model {m.FilePath}: {m.Verdict}, {m.ActualBytes} bytes on disk, {m.ExpectedBytes} bytes expected ({m.Url})")
+            .ToList();
 
         if (plan.Selection.Mode == WizardMode.ModelsOnly)
         {
             module.ApplyVerification(
                 mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).Select(m => m.Url),
-                mismatches.Where(m => m.Verdict != ExistingModelVerdict.Truncated).Select(m => m.Url));
+                mismatches.Where(m => m.Verdict != ExistingModelVerdict.Truncated).Select(m => m.Url),
+                notes);
             return new PreflightResult(true, null);
         }
 
         var resolution = await prompt.ResolveAsync(mismatches, ct).ConfigureAwait(false);
         if (resolution is null) return new PreflightResult(false, null);
 
-        module.ApplyVerification(resolution.RedownloadUrls, resolution.TrustedUrls);
+        module.ApplyVerification(resolution.RedownloadUrls, resolution.TrustedUrls, notes);
         return new PreflightResult(true, null);
     }
 }

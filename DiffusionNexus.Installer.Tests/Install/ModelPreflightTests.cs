@@ -7,7 +7,6 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -80,34 +79,60 @@ public class ModelPreflightTests
         plan.ToOptions().TrustedUrls.Should().BeEquivalentTo([Other]);
     }
 
-    private sealed class RecordingLogger : ILogger<ModelPreflight>
+    private static InstallSession Session()
     {
-        public List<string> Lines { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-            Lines.Add(formatter(state, exception));
+        var orchestrator = new Mock<SDK.Services.IInstallationOrchestrator>();
+        orchestrator
+            .Setup(o => o.InstallAsync(
+                It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<SDK.Services.InstallationOptions>(),
+                It.IsAny<IProgress<SDK.Services.InstallLogEntry>>(), It.IsAny<IProgress<SDK.Services.InstallationProgress>>(),
+                It.IsAny<IProgress<SDK.Services.DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SDK.Services.InstallationResult.Success("done"));
+        return new InstallSession(orchestrator.Object);
     }
 
     [Theory]
     [InlineData(WizardMode.FreshInstall)]
     [InlineData(WizardMode.ModelsOnly)]
-    public async Task The_sizes_go_to_the_log_on_every_path(WizardMode mode)
+    public async Task The_sizes_reach_the_install_log_on_every_path(WizardMode mode)
     {
         var verifier = new Mock<IExistingModelVerifier>();
         verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([Mismatch() with { Verdict = ExistingModelVerdict.CompleteDifferent }]);
         var prompt = new Mock<IMismatchedFilePrompt>();
-        var logger = new RecordingLogger();
+        prompt.Setup(p => p.ResolveAsync(It.IsAny<IReadOnlyList<ExistingModelMismatch>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MismatchResolution([], [Vae.Url]));
         var (plan, _) = await PlanAsync(vaePresent: true, mode);
+        var session = Session();
 
-        await new ModelPreflight(verifier.Object, prompt.Object, logger).RunAsync(plan);
+        await new ModelPreflight(verifier.Object, prompt.Object).RunAsync(plan);
+        await session.StartAsync(plan);
 
-        logger.Lines.Should().ContainSingle(l =>
-            l.Contains("ae.safetensors") && l.Contains("CompleteDifferent") && l.Contains("10") && l.Contains("20"));
+        session.LogLines.Should().ContainSingle(l =>
+            l.Message.Contains("ae.safetensors") && l.Message.Contains("CompleteDifferent")
+            && l.Message.Contains("10 bytes") && l.Message.Contains("20 bytes"));
+    }
+
+    [Fact]
+    public async Task A_second_check_that_finds_nothing_leaves_nothing_in_the_log()
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.SetupSequence(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Mismatch()])
+            .ReturnsAsync([]);
+        var prompt = new Mock<IMismatchedFilePrompt>();
+        prompt.Setup(p => p.ResolveAsync(It.IsAny<IReadOnlyList<ExistingModelMismatch>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MismatchResolution([], [Vae.Url]));
+        var (plan, _) = await PlanAsync(vaePresent: true);
+        var session = Session();
+        var preflight = new ModelPreflight(verifier.Object, prompt.Object);
+
+        await preflight.RunAsync(plan);
+        await preflight.RunAsync(plan);
+        await session.StartAsync(plan);
+
+        session.LogLines.Should().NotContain(l => l.Message.Contains("ae.safetensors"));
     }
 
     [Fact]

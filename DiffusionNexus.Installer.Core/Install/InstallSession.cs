@@ -1,4 +1,5 @@
 using DiffusionNexus.Installer.Core.Content;
+using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Updates;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Models.Installation;
@@ -135,6 +136,11 @@ public sealed class InstallSession : IInstallSession, IDisposable
             lock (_gate) _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             lock (_gate) _skipDownloadCts = new CancellationTokenSource();
             RecordCatalog(plan);
+            foreach (var note in plan.AllModules.OfType<ModelSelectionModule>().SelectMany(m => m.VerificationNotes))
+            {
+                Append(new InstallLogLine(DateTimeOffset.Now, note, SdkLogLevel.Info));
+            }
+
             NotifyNow();
             _flushTimer.Change(_flushInterval, _flushInterval);
 

@@ -6,8 +6,9 @@ namespace DiffusionNexus.Installer.Core.Host;
 public sealed record MismatchResolution(HashSet<string> RedownloadUrls, HashSet<string> TrustedUrls);
 
 /// <summary>
-/// One dialog listing every already-present file whose size differs from the server's, with a
-/// redownload-or-keep choice per file. Shown before an install starts, never mid-install.
+/// One dialog listing every already-present file that differs from the server's copy, saying what
+/// each one means. A file that can't load is replaced with no choice; the rest offer redownload or
+/// keep. Shown before an install starts, never mid-install.
 /// </summary>
 public interface IMismatchedFilePrompt
 {
