@@ -50,8 +50,15 @@ public sealed class WizardRun
         {
             // By stage, not by position: the list may have just lost or gained a stage, even this one.
             var current = CurrentStage;
+            var before = _plan.Stages;
             _plan.RefreshStages();
-            _index = _plan.Stages.TakeWhile(s => s <= current).Count();
+
+            // A stage that appeared behind this one still has to be seen: its module contributes
+            // either way, and the Visual C++ page exists to announce a UAC prompt before it comes.
+            var missed = _plan.Stages.Where(s => s < current && !before.Contains(s)).ToList();
+            _index = missed.Count > 0
+                ? _plan.Stages.TakeWhile(s => s < missed[0]).Count()
+                : _plan.Stages.TakeWhile(s => s <= current).Count();
             if (CurrentStage == WizardStage.Install) _plan.Selection.Existing?.Freeze();
             return true;
         }

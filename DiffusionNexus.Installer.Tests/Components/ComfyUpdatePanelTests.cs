@@ -196,6 +196,18 @@ public class ComfyUpdatePanelTests : BunitContext
     }
 
     [Fact]
+    public async Task A_folder_that_cannot_be_opened_says_so_and_keeps_the_screen()
+    {
+        _actions.Setup(a => a.OpenFolder(It.IsAny<string>())).Throws(new InvalidOperationException("blocked shell"));
+        var (module, _) = await ModuleAsync(packs: Workload("A"));
+        var panel = Panel(module);
+
+        panel.Find("[data-role=open-folder]").Click();
+
+        panel.Find("[data-role=open-error]").TextContent.Should().Contain("blocked shell");
+    }
+
+    [Fact]
     public async Task A_python_with_no_wheel_stops_a_run_that_changes_torch()
     {
         var (module, _) = await ModuleAsync(Profile(python: "3.9.1"), packs: Workload("A"));
