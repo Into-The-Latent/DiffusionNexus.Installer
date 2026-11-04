@@ -134,6 +134,26 @@ public class ModelPreflightTests
         plan.Selection.TargetFolder = Path.Combine(Path.GetTempPath(), "ModelPreflightTests_" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task A_page_that_left_during_the_check_leaves_nothing_on_the_module()
+    {
+        using var cts = new CancellationTokenSource();
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                cts.Cancel();
+                return [Mismatch() with { Verdict = ExistingModelVerdict.Truncated }];
+            });
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        var act = () => new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        plan.ToOptions().ForceRedownloadUrls.Should().BeEmpty();
+        plan.ToOptions().ForceRedownloadFiles.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task The_file_a_run_replaces_is_named_for_the_download_on_models_only()
     {
         var verifier = new Mock<IExistingModelVerifier>();

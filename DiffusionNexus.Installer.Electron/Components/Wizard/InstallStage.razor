@@ -46,12 +46,12 @@
             <progress max="100" value="@progress.ProgressPercentage.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
         }
 
-        @* Running only: a run that ended may leave its last download marked active, and Skip then does nothing. *@
         @if (Notice is not null && Session.Phase == InstallPhase.Running)
         {
             <p class="panel-hint" data-role="run-notice">@Notice</p>
         }
 
+        @* Running only: a run that ended may leave its last download marked active, and Skip then does nothing. *@
         @if (ModelsOnly && Session.Phase == InstallPhase.Running && Session.Progress is { Message: { Length: > 0 } modelProgress })
         {
             <p data-role="model-progress">@modelProgress</p>

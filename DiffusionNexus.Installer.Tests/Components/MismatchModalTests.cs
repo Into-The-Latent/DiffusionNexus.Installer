@@ -68,6 +68,18 @@ public class MismatchModalTests : BunitContext
     }
 
     [Fact]
+    public void A_different_copy_shows_where_it_is_because_ticking_it_can_remove_it_from_there()
+    {
+        var (cut, service) = Open();
+
+        _ = service.ResolveAsync([Mismatch("a", "https://h.invalid/a.bin", ExistingModelVerdict.CompleteDifferent)]);
+
+        cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox]").Should().ContainSingle());
+        cut.FindAll("td").Select(c => c.TextContent.Trim()).Should().Contain(@"C:\models\a.bin");
+        cut.Markup.Should().Contain("removed");
+    }
+
+    [Fact]
     public async Task Ticking_a_different_copy_replaces_it()
     {
         var (cut, service) = Open();

@@ -35,8 +35,9 @@
                 <h3>Different copies</h3>
                 <p class="panel-hint">
                     These files are complete, so they should load, but they aren't the exact files this
-                    workload was tested with. They stay as they are unless you tick them. Ticked files
-                    are replaced with this workload's copy.
+                    workload was tested with. They stay as they are unless you tick them. A ticked file
+                    is replaced with this workload's copy, which goes in the workload's own folder, and
+                    the file listed here is removed.
                 </p>
                 <table class="report">
                     <thead><tr><th>Replace</th><th>File</th></tr></thead>
@@ -45,7 +46,7 @@
                         {
                             <tr>
                                 <td><input type="checkbox" checked="@IsRedownload(m)" @onchange="e => Toggle(m.Url, e)" /></td>
-                                <td title="@m.FilePath">@System.IO.Path.GetFileName(m.FilePath)</td>
+                                <td>@m.FilePath</td>
                             </tr>
                         }
                     </tbody>

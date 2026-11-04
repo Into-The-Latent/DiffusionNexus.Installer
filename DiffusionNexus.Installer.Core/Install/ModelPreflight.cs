@@ -70,6 +70,10 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
             return new PreflightResult(true, $"Could not verify existing model files: {ex.Message}");
         }
 
+        // The dialog comes back empty for a page that left. This path has no dialog, and the module
+        // may already be showing elsewhere (#45), where these entries name files a run may delete.
+        ct.ThrowIfCancellationRequested();
+
         if (mismatches.Count == 0) return new PreflightResult(true, null);
 
         var notes = mismatches
