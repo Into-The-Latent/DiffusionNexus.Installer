@@ -63,6 +63,26 @@ public class WizardRunTests
     }
 
     [Fact]
+    public async Task A_module_that_starts_to_apply_in_a_stage_already_seen_is_shown_too()
+    {
+        // System was there for the GPU warning. After a side trip the driver is back, torch moves,
+        // and the Visual C++ page applies in that same stage.
+        var runtime = new ToggleModule(WizardStage.System);
+        var run = await UpdateRunAsync(new GateModule(WizardStage.System, valid: true), runtime, new GateModule(WizardStage.Confirm, valid: true));
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+
+        runtime.Applies = true;
+        run.TryNext().Should().BeTrue();
+
+        run.CurrentStage.Should().Be(WizardStage.System);
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Install, "it has been seen now, so it doesn't send the run back again");
+    }
+
+    [Fact]
     public async Task A_stage_that_was_there_all_along_does_not_send_the_run_back()
     {
         var system = new ToggleModule(WizardStage.System) { Applies = true };
