@@ -119,12 +119,16 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
         var run = await UpdateRunAsync(false, new WorkloadChoice(Workload("A"), 16));
         var existing = run.Plan.Selection.Existing!;
         var check = new TaskCompletionSource();
-        var refreshes = 0;
+        var refreshed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var armed = false;
         var cut = Render<ExistingReviewPanel>(p => p
             .Add(x => x.Module, Review(run))
-            .Add(x => x.Changed, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => refreshes++)));
+            .Add(x => x.Changed, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () =>
+            {
+                if (armed) refreshed.TrySetResult();
+            })));
         cut.Find("[data-role=understood]").Change(true);
-        refreshes = 0;
+        armed = true;
 
         existing.Checking(check.Task);
 
@@ -133,11 +137,10 @@ public sealed class UpdateConfirmTests : BunitContext, IDisposable
         existing.Profile = Profile() with { UpdateScript = UpdateScriptState.Current };
         check.SetResult();
 
-        cut.WaitForAssertion(() =>
-        {
-            refreshes.Should().BePositive("the page owns the Start button");
-            cut.Find("[data-role=understood]").HasAttribute("checked").Should().BeFalse();
-        });
+        // Awaited, not asserted inside a wait: the panel renders before it calls the page, so a wait
+        // that only looks again after a render can look too early and never look again.
+        await refreshed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        cut.WaitForAssertion(() => cut.Find("[data-role=understood]").HasAttribute("checked").Should().BeFalse());
     }
 
     [Fact]
