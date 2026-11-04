@@ -95,7 +95,7 @@ public class ModelPreflightTests
 
         result.Proceed.Should().BeTrue();
         result.Warning.Should().BeNull("nothing went wrong");
-        result.Notice.Should().Contain("ae.safetensors").And.Contain("downloaded again").And.NotContain("kept.safetensors");
+        result.Notice.Should().Be("ae.safetensors is incomplete, so this run downloads it again.");
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class ModelPreflightTests
 
         var result = await new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan);
 
-        result.Notice.Should().Be("These files are incomplete and will be downloaded again: ae.safetensors, b.gguf.");
+        result.Notice.Should().Be("These files are incomplete, so this run downloads them again: ae.safetensors, b.gguf.");
     }
 
     private static InstallSession Session()
@@ -129,6 +129,79 @@ public class ModelPreflightTests
         return new InstallSession(orchestrator.Object);
     }
 
+    // A folder that isn't there: a session writes its log file into a real one.
+    private static void NoLogFile(WizardPlan plan) =>
+        plan.Selection.TargetFolder = Path.Combine(Path.GetTempPath(), "ModelPreflightTests_" + Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task The_file_a_run_replaces_is_named_for_the_download_on_models_only()
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Mismatch() with { Verdict = ExistingModelVerdict.Truncated },
+                Mismatch() with { Url = "https://h.invalid/kept", FilePath = @"C:\AI\kept.safetensors", Verdict = ExistingModelVerdict.CompleteDifferent },
+            ]);
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        await new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan);
+
+        plan.ToOptions().ForceRedownloadFiles.Should().ContainSingle()
+            .Which.Should().Be(new KeyValuePair<string, string>(Vae.Url, @"C:\AI\ComfyUI\models\vae\ae.safetensors"));
+    }
+
+    [Fact]
+    public async Task The_file_a_run_replaces_is_named_for_the_download_from_the_dialog_and_a_kept_one_is_not()
+    {
+        const string Kept = "https://h.invalid/kept";
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Mismatch(), Mismatch() with { Url = Kept, FilePath = @"C:\AI\kept.safetensors" }]);
+        var prompt = new Mock<IMismatchedFilePrompt>();
+        prompt.Setup(p => p.ResolveAsync(It.IsAny<IReadOnlyList<ExistingModelMismatch>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MismatchResolution([Vae.Url], [Kept]));
+        var (plan, _) = await PlanAsync(vaePresent: true);
+
+        await new ModelPreflight(verifier.Object, prompt.Object).RunAsync(plan);
+
+        plan.ToOptions().ForceRedownloadFiles.Should().ContainSingle().Which.Key.Should().Be(Vae.Url);
+    }
+
+    [Fact]
+    public async Task A_link_judged_on_two_files_names_neither_so_nothing_is_deleted()
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Mismatch() with { Verdict = ExistingModelVerdict.Truncated },
+                Mismatch() with { FilePath = @"C:\AI\other\ae.safetensors", Verdict = ExistingModelVerdict.Truncated },
+            ]);
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        await new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan);
+
+        plan.ToOptions().ForceRedownloadUrls.Should().ContainSingle();
+        plan.ToOptions().ForceRedownloadFiles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_second_check_forgets_the_file_the_first_one_named()
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.SetupSequence(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Mismatch() with { Verdict = ExistingModelVerdict.Truncated }])
+            .ReturnsAsync([]);
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+        var preflight = new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>());
+
+        await preflight.RunAsync(plan);
+        await preflight.RunAsync(plan);
+
+        plan.ToOptions().ForceRedownloadFiles.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData(WizardMode.FreshInstall)]
     [InlineData(WizardMode.ModelsOnly)]
@@ -141,7 +214,8 @@ public class ModelPreflightTests
         prompt.Setup(p => p.ResolveAsync(It.IsAny<IReadOnlyList<ExistingModelMismatch>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MismatchResolution([], [Vae.Url]));
         var (plan, _) = await PlanAsync(vaePresent: true, mode);
-        var session = Session();
+        NoLogFile(plan);
+        using var session = Session();
 
         await new ModelPreflight(verifier.Object, prompt.Object).RunAsync(plan);
         await session.StartAsync(plan);
@@ -162,7 +236,8 @@ public class ModelPreflightTests
         prompt.Setup(p => p.ResolveAsync(It.IsAny<IReadOnlyList<ExistingModelMismatch>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MismatchResolution([], [Vae.Url]));
         var (plan, _) = await PlanAsync(vaePresent: true);
-        var session = Session();
+        NoLogFile(plan);
+        using var session = Session();
         var preflight = new ModelPreflight(verifier.Object, prompt.Object);
 
         await preflight.RunAsync(plan);

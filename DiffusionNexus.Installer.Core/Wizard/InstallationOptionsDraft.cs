@@ -30,6 +30,7 @@ public sealed class InstallationOptionsDraft
     public HashSet<Guid> ExcludedNodeIds { get; } = [];
     public HashSet<Guid> ExcludedWorkflowIds { get; } = [];
     public HashSet<string> ForceRedownloadUrls { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> ForceRedownloadFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> TrustedUrls { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Func<string, string, Task<ShortcutConflictResult>>? OnShortcutConflict { get; set; }
     public string? ModelBaseFolder { get; set; }
@@ -68,6 +69,7 @@ public sealed class InstallationOptionsDraft
         ExcludedNodeIds = [.. ExcludedNodeIds],
         ExcludedWorkflowIds = [.. ExcludedWorkflowIds],
         ForceRedownloadUrls = new HashSet<string>(ForceRedownloadUrls, StringComparer.OrdinalIgnoreCase),
+        ForceRedownloadFiles = new Dictionary<string, string>(ForceRedownloadFiles, StringComparer.OrdinalIgnoreCase),
         TrustedUrls = new HashSet<string>(TrustedUrls, StringComparer.OrdinalIgnoreCase),
         OnShortcutConflict = OnShortcutConflict,
         ModelBaseFolder = ModelBaseFolder,

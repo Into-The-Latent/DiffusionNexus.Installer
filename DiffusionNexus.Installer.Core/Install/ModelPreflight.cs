@@ -27,8 +27,9 @@ public interface IModelPreflight
 /// and its report row warns, because in a folder the user chose it's usually a different file of that name.
 /// </para>
 /// <para>
-/// Every mismatch's sizes go into the install log, which is saved with the run. The dialog only shows
-/// them for files it has no verdict on, because the verdict is what a person can act on.
+/// Every mismatch's sizes go into the install log, saved with the run on an install or an update. Models
+/// only saves no log, so there they're in Copy log. The dialog only shows them for files it has no
+/// verdict on, because the verdict is what a person can act on.
 /// </para>
 /// </summary>
 public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedFilePrompt prompt) : IModelPreflight
@@ -77,18 +78,35 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
 
         if (plan.Selection.Mode == WizardMode.ModelsOnly)
         {
+            var incomplete = mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).Select(m => m.Url).ToList();
             module.ApplyVerification(
-                mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).Select(m => m.Url),
+                incomplete,
                 mismatches.Where(m => m.Verdict != ExistingModelVerdict.Truncated).Select(m => m.Url),
-                notes);
+                notes,
+                JudgedFiles(mismatches, incomplete));
             return new PreflightResult(true, null, RedownloadNotice(mismatches));
         }
 
         var resolution = await prompt.ResolveAsync(mismatches, ct).ConfigureAwait(false);
         if (resolution is null) return new PreflightResult(false, null);
 
-        module.ApplyVerification(resolution.RedownloadUrls, resolution.TrustedUrls, notes);
+        module.ApplyVerification(
+            resolution.RedownloadUrls, resolution.TrustedUrls, notes, JudgedFiles(mismatches, resolution.RedownloadUrls));
         return new PreflightResult(true, null);
+    }
+
+    /// <summary>
+    /// The file each replaced link was judged on, the only file the run may delete. A link judged on
+    /// two files can't say which one it replaces, so it names neither and both stay.
+    /// </summary>
+    private static Dictionary<string, string> JudgedFiles(IReadOnlyList<ExistingModelMismatch> mismatches, IEnumerable<string> replaced)
+    {
+        var urls = replaced.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return mismatches
+            .Where(m => urls.Contains(m.Url))
+            .GroupBy(m => m.Url, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Select(m => m.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
+            .ToDictionary(g => g.Key, g => g.First().FilePath, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>The Models panel told this person existing files aren't downloaded again, and no dialog corrects that here.</summary>
@@ -103,8 +121,8 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
         return names.Count switch
         {
             0 => null,
-            1 => $"{names[0]} is incomplete and will be downloaded again.",
-            _ => $"These files are incomplete and will be downloaded again: {string.Join(", ", names)}.",
+            1 => $"{names[0]} is incomplete, so this run downloads it again.",
+            _ => $"These files are incomplete, so this run downloads them again: {string.Join(", ", names)}.",
         };
     }
 }

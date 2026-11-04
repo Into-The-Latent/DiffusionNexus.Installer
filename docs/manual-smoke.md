@@ -187,8 +187,8 @@ the catalog reaches those lists correctly.
 10. Move a downloaded model into a new subfolder of its folder, such as `models\vae\old\`, cut it
     to a few bytes and run again. **Expect:** it's under "Incomplete downloads". After Continue the
     good copy is in `models\vae\`, the file in `old\` is gone, and its report row says "removed the
-    old copy at". Run it once more with two such copies in different subfolders. **Expect:** both
-    stay and the row warns.
+    old copy at". Run it once more with two such copies in different subfolders. **Expect:** only
+    the one the check found is removed, and the other stays.
 
 ## 4. Known limitations
 
@@ -583,7 +583,7 @@ Use a workload with a small model, such as Krea-2-Turbo with only 4x-UltraSharp 
 16. Start a large model, and click **Cancel download** while it runs. **Expect:** a `.part` file while it runs, then no file of that name afterwards.
 17. Start it again and end the installer from Task Manager while it runs, then run the same folder again. **Expect:** only the `.part` is left, the model isn't marked "already downloaded", and the new run replaces the `.part` with the finished file.
 18. Untick every model on Content. **Expect:** **Next** is disabled and says to tick at least one model.
-18a. Run a model into a folder, cut its `.safetensors` file to a few bytes and run again. **Expect:** no dialog, a line above the progress saying the file "is incomplete and will be downloaded again", and the file back at its full size afterwards.
+18a. Run a model into a folder, cut its `.safetensors` file to a few bytes and run again. **Expect:** no dialog, a line above the progress saying the file "is incomplete, so this run downloads it again", gone once the run ends, and the file back at its full size afterwards.
 
 ## 12. Update existing ComfyUI and Select multiple (#28, SDK #70)
 
