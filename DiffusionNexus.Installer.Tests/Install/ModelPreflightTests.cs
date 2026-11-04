@@ -79,6 +79,42 @@ public class ModelPreflightTests
         plan.ToOptions().TrustedUrls.Should().BeEquivalentTo([Other]);
     }
 
+    [Fact]
+    public async Task Models_only_says_before_the_run_that_an_incomplete_file_downloads_again()
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Mismatch() with { Verdict = ExistingModelVerdict.Truncated },
+                Mismatch() with { Url = "https://h.invalid/kept", FilePath = @"C:\AI\kept.safetensors", Verdict = ExistingModelVerdict.CompleteDifferent },
+            ]);
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        var result = await new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan);
+
+        result.Proceed.Should().BeTrue();
+        result.Warning.Should().Contain("ae.safetensors").And.Contain("downloaded again").And.NotContain("kept.safetensors");
+    }
+
+    [Fact]
+    public async Task Models_only_names_every_incomplete_file_once()
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Mismatch() with { Verdict = ExistingModelVerdict.Truncated },
+                Mismatch() with { Url = "https://h.invalid/same", Verdict = ExistingModelVerdict.Truncated },
+                Mismatch() with { Url = "https://h.invalid/b", FilePath = @"C:\AI\b.gguf", Verdict = ExistingModelVerdict.Truncated },
+            ]);
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        var result = await new ModelPreflight(verifier.Object, Mock.Of<IMismatchedFilePrompt>()).RunAsync(plan);
+
+        result.Warning.Should().Be("These files are incomplete and will be downloaded again: ae.safetensors, b.gguf.");
+    }
+
     private static InstallSession Session()
     {
         var orchestrator = new Mock<SDK.Services.IInstallationOrchestrator>();

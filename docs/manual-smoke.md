@@ -172,8 +172,18 @@ the catalog reaches those lists correctly.
    unexplained skips, and no row says "Requires more VRAM" for a model you expected.
 7. Re-run the same install over that folder after truncating one downloaded Hugging Face model
    file (not the Civitai `Krea 2 Identity Edit` download, whose name only comes from the server)
-   to a few bytes. **Expect:** pressing Next on Confirm shows ONE dialog listing that file;
-   Continue with it ticked re-downloads it; Cancel installation leaves you on Confirm with a notice.
+   to a few bytes. Pick a `.safetensors` or `.gguf` file. **Expect:** pressing Next on Confirm shows
+   ONE dialog, "Check the model files already here", with that file under "Incomplete downloads"
+   and no box beside it. Continue re-downloads it. Cancel leaves you on Confirm with "Nothing has
+   started. Your model files are as they were."
+8. Download `https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors`
+   into `models\vae` of an install, then run a workload over it that uses the `Comfy-Org/flux2-dev`
+   copy, such as Flux-Klein. **Expect:** the file is under "Different copies" with its box unticked,
+   and no sizes. Continue keeps it and the install log has a line with both sizes. Run it again
+   and tick the box. **Expect:** the file is replaced and is 336,213,556 bytes.
+9. Truncate a downloaded `.pth`, such as `4x-UltraSharp.pth`, to a few bytes and run again.
+   **Expect:** it's under "Files that can't be checked", ticked, with its sizes. Sizes that would
+   round to the same text show as exact bytes.
 
 ## 4. Known limitations
 
@@ -568,6 +578,7 @@ Use a workload with a small model, such as Krea-2-Turbo with only 4x-UltraSharp 
 16. Start a large model, and click **Cancel download** while it runs. **Expect:** a `.part` file while it runs, then no file of that name afterwards.
 17. Start it again and end the installer from Task Manager while it runs, then run the same folder again. **Expect:** only the `.part` is left, the model isn't marked "already downloaded", and the new run replaces the `.part` with the finished file.
 18. Untick every model on Content. **Expect:** **Next** is disabled and says to tick at least one model.
+18a. Run a model into a folder, cut its `.safetensors` file to a few bytes and run again. **Expect:** no dialog, a line above the progress saying the file "is incomplete and will be downloaded again", and the file back at its full size afterwards.
 
 ## 12. Update existing ComfyUI and Select multiple (#28, SDK #70)
 

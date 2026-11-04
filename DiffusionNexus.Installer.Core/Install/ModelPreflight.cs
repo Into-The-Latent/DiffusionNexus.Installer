@@ -7,7 +7,7 @@ using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 namespace DiffusionNexus.Installer.Core.Install;
 
 /// <param name="Proceed">False only when the user dismissed the mismatch dialog.</param>
-/// <param name="Warning">Set when verification itself failed; the install still proceeds.</param>
+/// <param name="Warning">Set when verification itself failed, or models only will download a file again; the run still proceeds.</param>
 public sealed record PreflightResult(bool Proceed, string? Warning);
 
 /// <summary>Runs when the user leaves Confirm, before the install session starts.</summary>
@@ -80,7 +80,7 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
                 mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).Select(m => m.Url),
                 mismatches.Where(m => m.Verdict != ExistingModelVerdict.Truncated).Select(m => m.Url),
                 notes);
-            return new PreflightResult(true, null);
+            return new PreflightResult(true, RedownloadNotice(mismatches));
         }
 
         var resolution = await prompt.ResolveAsync(mismatches, ct).ConfigureAwait(false);
@@ -88,5 +88,22 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
 
         module.ApplyVerification(resolution.RedownloadUrls, resolution.TrustedUrls, notes);
         return new PreflightResult(true, null);
+    }
+
+    /// <summary>The Models panel told this person existing files aren't downloaded again, and no dialog corrects that here.</summary>
+    private static string? RedownloadNotice(IReadOnlyList<ExistingModelMismatch> mismatches)
+    {
+        var names = mismatches
+            .Where(m => m.Verdict == ExistingModelVerdict.Truncated)
+            .Select(m => Path.GetFileName(m.FilePath))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return names.Count switch
+        {
+            0 => null,
+            1 => $"{names[0]} is incomplete and will be downloaded again.",
+            _ => $"These files are incomplete and will be downloaded again: {string.Join(", ", names)}.",
+        };
     }
 }
