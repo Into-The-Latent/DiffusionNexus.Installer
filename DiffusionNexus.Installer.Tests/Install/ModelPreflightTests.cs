@@ -7,6 +7,7 @@ using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Entities;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -57,6 +58,56 @@ public class ModelPreflightTests
         result.Warning.Should().BeNull();
         plan.ToOptions().ForceRedownloadUrls.Should().BeEmpty("nothing may be overwritten");
         plan.ToOptions().TrustedUrls.Should().BeEquivalentTo([Vae.Url]);
+    }
+
+    [Fact]
+    public async Task Models_only_replaces_a_file_that_cannot_load_and_keeps_the_rest()
+    {
+        const string Other = "https://h.invalid/other.safetensors";
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                Mismatch() with { Verdict = ExistingModelVerdict.Truncated },
+                Mismatch() with { Url = Other, Verdict = ExistingModelVerdict.CompleteDifferent },
+            ]);
+        var prompt = new Mock<IMismatchedFilePrompt>(MockBehavior.Strict);
+        var (plan, _) = await PlanAsync(vaePresent: true, WizardMode.ModelsOnly);
+
+        await new ModelPreflight(verifier.Object, prompt.Object).RunAsync(plan);
+
+        plan.ToOptions().ForceRedownloadUrls.Should().BeEquivalentTo([Vae.Url]);
+        plan.ToOptions().TrustedUrls.Should().BeEquivalentTo([Other]);
+    }
+
+    private sealed class RecordingLogger : ILogger<ModelPreflight>
+    {
+        public List<string> Lines { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Lines.Add(formatter(state, exception));
+    }
+
+    [Theory]
+    [InlineData(WizardMode.FreshInstall)]
+    [InlineData(WizardMode.ModelsOnly)]
+    public async Task The_sizes_go_to_the_log_on_every_path(WizardMode mode)
+    {
+        var verifier = new Mock<IExistingModelVerifier>();
+        verifier.Setup(v => v.VerifyAsync(It.IsAny<IReadOnlyList<ExistingModelCandidate>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Mismatch() with { Verdict = ExistingModelVerdict.CompleteDifferent }]);
+        var prompt = new Mock<IMismatchedFilePrompt>();
+        var logger = new RecordingLogger();
+        var (plan, _) = await PlanAsync(vaePresent: true, mode);
+
+        await new ModelPreflight(verifier.Object, prompt.Object, logger).RunAsync(plan);
+
+        logger.Lines.Should().ContainSingle(l =>
+            l.Contains("ae.safetensors") && l.Contains("CompleteDifferent") && l.Contains("10") && l.Contains("20"));
     }
 
     [Fact]

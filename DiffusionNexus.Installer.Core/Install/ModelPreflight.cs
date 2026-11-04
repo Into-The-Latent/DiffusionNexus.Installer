@@ -3,6 +3,7 @@ using DiffusionNexus.Installer.Core.Host;
 using DiffusionNexus.Installer.Core.Modules;
 using DiffusionNexus.Installer.Core.Wizard;
 using DiffusionNexus.Installer.SDK.Services.Installation.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace DiffusionNexus.Installer.Core.Install;
 
@@ -22,12 +23,17 @@ public interface IModelPreflight
 /// ToOptions carries them as ForceRedownloadUrls / TrustedUrls. Never a prompt per file, never
 /// mid-install. Dismissing the dialog refuses to proceed; a failing check warns and proceeds.
 /// <para>
-/// No dialog on models only. It redownloads by default, which suits an install's own folder, where a
-/// wrong size usually means a partial file. In a folder the user chose it usually means a different
-/// file of that name, and that path overwrites nothing: the file stays and its report row warns.
+/// No dialog on models only. A file that stops early can't load, so it's replaced. Anything else stays
+/// and its report row warns, because in a folder the user chose it's usually a different file of that name.
+/// </para>
+/// <para>
+/// The sizes go to the log, not the dialog: the verdict is what a person can act on.
 /// </para>
 /// </summary>
-public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedFilePrompt prompt) : IModelPreflight
+public sealed class ModelPreflight(
+    IExistingModelVerifier verifier,
+    IMismatchedFilePrompt prompt,
+    ILogger<ModelPreflight>? logger = null) : IModelPreflight
 {
     public async Task<PreflightResult> RunAsync(WizardPlan plan, CancellationToken ct = default)
     {
@@ -67,9 +73,18 @@ public sealed class ModelPreflight(IExistingModelVerifier verifier, IMismatchedF
 
         if (mismatches.Count == 0) return new PreflightResult(true, null);
 
+        foreach (var m in mismatches)
+        {
+            logger?.LogInformation(
+                "Existing model {File}: {Verdict}, {ActualBytes} bytes on disk, expected {ExpectedBytes} ({Url})",
+                m.FilePath, m.Verdict, m.ActualBytes, m.ExpectedBytes, m.Url);
+        }
+
         if (plan.Selection.Mode == WizardMode.ModelsOnly)
         {
-            module.ApplyVerification([], mismatches.Select(m => m.Url));
+            module.ApplyVerification(
+                mismatches.Where(m => m.Verdict == ExistingModelVerdict.Truncated).Select(m => m.Url),
+                mismatches.Where(m => m.Verdict != ExistingModelVerdict.Truncated).Select(m => m.Url));
             return new PreflightResult(true, null);
         }
 
