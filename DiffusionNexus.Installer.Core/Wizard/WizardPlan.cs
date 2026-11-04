@@ -5,19 +5,44 @@ namespace DiffusionNexus.Installer.Core.Wizard;
 /// <summary>The screens and modules one wizard run will actually show.</summary>
 public sealed class WizardPlan
 {
-    private readonly Dictionary<WizardStage, IReadOnlyList<IWizardModule>> _byStage;
+    private readonly IReadOnlyList<IWizardModule> _modules;
+    private Dictionary<WizardStage, IReadOnlyList<IWizardModule>> _byStage = [];
 
-    internal WizardPlan(WizardSelection selection, Dictionary<WizardStage, IReadOnlyList<IWizardModule>> byStage)
+    /// <param name="selection">What the wizard has learned.</param>
+    /// <param name="modules">Every initialized module of this path, applicable or not.</param>
+    internal WizardPlan(WizardSelection selection, IReadOnlyList<IWizardModule> modules)
     {
         Selection = selection;
-        _byStage = byStage;
-        Stages = byStage.Keys.OrderBy(s => (int)s).ToList();
+        _modules = modules;
+        RefreshStages();
     }
 
     public WizardSelection Selection { get; }
 
     /// <summary>Ordered, and containing only stages that have something to show.</summary>
-    public IReadOnlyList<WizardStage> Stages { get; }
+    public IReadOnlyList<WizardStage> Stages { get; private set; } = [];
+
+    /// <summary>
+    /// Asks the modules again whether they apply. For the update path, where the answers that decide
+    /// it (the install's torch, the Update checkbox) come after the plan is built. Other paths decide
+    /// once, at build, and <see cref="WizardRun"/> never calls this on them.
+    /// </summary>
+    public void RefreshStages()
+    {
+        var byStage = _modules
+            .Where(m => m.AppliesTo(Selection))
+            .GroupBy(m => m.Stage)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<IWizardModule>)g.OrderBy(m => m.Order).ToList());
+
+        // Confirm and Install always run. TryAdd so a module targeting one of them is kept.
+        byStage.TryAdd(WizardStage.Confirm, []);
+        byStage.TryAdd(WizardStage.Install, []);
+
+        _byStage = byStage;
+        Stages = byStage.Keys.OrderBy(s => (int)s).ToList();
+    }
 
     public IReadOnlyList<IWizardModule> Modules(WizardStage stage) =>
         _byStage.TryGetValue(stage, out var modules) ? modules : [];

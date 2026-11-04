@@ -3,6 +3,15 @@
 @using DiffusionNexus.Installer.Electron.Components.Shared
 @inject IFolderPicker FolderPicker
 
+@if (Module.WaitsForInstall)
+{
+    <section class="panel" data-role="folders-wait">
+        <h2>Output and model folders</h2>
+        <p class="panel-hint">These fill in from your ComfyUI once its folder is checked.</p>
+    </section>
+}
+else
+{
 @* Two panels, not one (issue #27): the output folder and the model folder are unrelated
    settings, and in one box the model switch read as if it governed the output path above it. *@
 <section class="panel" data-role="output-panel">
@@ -17,6 +26,11 @@
                   OnText="On: generated images and videos are saved to the folder you choose below."
                   OffText="@OutputOffText"
                   Folder="@Module.OutputFolder" FolderNoun="output folder" />
+
+    @if (Module.OutputFolderDiffers)
+    {
+        <p class="validation-error" data-role="output-differs">@OutputDiffersText</p>
+    }
 
     @if (Module.UseOwnOutputFolder)
     {
@@ -49,6 +63,15 @@
                   OffText="@ModelOffText"
                   Folder="@Module.ModelBaseFolder" FolderNoun="library folder" />
 
+    @if (Module.ModelFolderDiffers)
+    {
+        <p class="validation-error" data-role="model-differs">@ModelDiffersText</p>
+    }
+    else if (Module.MissingModelTypes is { Count: > 0 } missing)
+    {
+        <p class="validation-error" data-role="model-missing-types">Your extra_model_paths.yaml doesn't list @string.Join(", ", missing), so ComfyUI won't find these models there until you add it. We leave that file as it is.</p>
+    }
+
     @if (Module.UseModelLibraryFolder)
     {
     <div class="path-row switch-body">
@@ -63,7 +86,7 @@
 
     @* With the library, not in Advanced: it changes the install, and the Advanced badge speaks
        only for the folder names and additional folders, so ticked in there it went unseen. *@
-    @if (!string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
+    @if (Module.OffersOverwrite && !string.IsNullOrWhiteSpace(Module.ModelBaseFolder))
     {
         <label class="checkbox switch-body">
             <input type="checkbox" data-role="overwrite-yaml" checked="@Module.OverwriteExtraModelPaths" @onchange="OnOverwriteChanged" />
@@ -114,9 +137,23 @@
     </AdvancedDisclosure>
     }
 </section>
+}
 
 @code {
     [Parameter, EditorRequired] public ComfyFoldersModule Module { get; set; } = default!;
+
+    private string OutputDiffersText => Module.CurrentOutputFolder is { } current
+        ? $"Your ComfyUI currently sends output to {current}. Continuing changes that in run_nvidia.bat."
+        : "Your ComfyUI currently saves output to its own folder. Continuing changes that in run_nvidia.bat.";
+
+    private string ModelDiffersText => (Module.CurrentModelFolder, Module.UseModelLibraryFolder) switch
+    {
+        (null, true) when Module.HasModelPathsFile =>
+            "Your ComfyUI has an extra_model_paths.yaml. Continuing rewrites that file, and anything else in it stops applying; a backup is kept.",
+        ({ } current, true) => $"Your ComfyUI currently loads models from {current} (extra_model_paths.yaml). Continuing rewrites that file, and anything else in it stops applying; a backup is kept.",
+        ({ } current, false) => $"Your ComfyUI also loads models from {current} (extra_model_paths.yaml). That file stays, and new models go to ComfyUI's own models folder.",
+        _ => "Your ComfyUI loads models from its own folder today. Continuing adds an extra_model_paths.yaml.",
+    };
 
     /// <summary>
     /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the

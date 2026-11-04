@@ -25,6 +25,10 @@
                 <label class="checkbox">
                     <input type="checkbox" checked="@row.IsSelected" @onchange="e => OnRowChanged(row, e)" />
                     <span>@row.Name</span>
+                    @if (row.PackName is { } pack)
+                    {
+                        <span class="tag" data-role="pack">@pack</span>
+                    }
                     @if (row.IsExisting)
                     {
                         <span class="tag" title="@row.ExistingPath">already downloaded</span>
@@ -123,11 +127,16 @@
             await RescanAsync();
             ScheduleEstimate();
         }
+
+        // The Update checkbox on a sibling panel decides whether the estimate makes room for torch.
+        if (!_disposed && Selection.Existing is { } run && _estimatedWithTorch != run.UpgradeTorch) ScheduleEstimate();
     }
 
     /// <summary>A library on the install drive reports one shared figure; the estimator then leaves LibraryAvailableBytes null on purpose.</summary>
     private bool SameDriveAsInstall(DiskSpaceEstimate estimate) =>
         Selection.ModelBaseFolder is { } library && SdkDiskSpaceEstimator.SharesDrive(Selection.TargetFolder, library);
+
+    private bool? _estimatedWithTorch;
 
     private bool ScanIsStale() =>
         Module.LastScannedTier != Selection.SelectedVramProfile
@@ -168,6 +177,7 @@
     private void ScheduleEstimate()
     {
         if (_disposed) return;
+        _estimatedWithTorch = Selection.Existing?.UpgradeTorch;
         _estimateCts?.Cancel();
         _estimateCts?.Dispose();
         var cts = new CancellationTokenSource();

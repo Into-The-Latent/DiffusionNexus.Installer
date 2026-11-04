@@ -27,6 +27,8 @@ public sealed class VcRuntimeModule(IVcRuntimeDetectionService detection) : IWiz
     public int Order => 10;
     public WorkloadCapability Satisfies => WorkloadCapability.None;
 
+    public bool UsedIn(WizardMode mode) => mode is WizardMode.FreshInstall or WizardMode.UpdateExisting;
+
     /// <summary>Version found on the machine, when the probe found one at all.</summary>
     public Version? InstalledVersion { get; private set; }
 

@@ -493,6 +493,41 @@ public class InstallSessionTests
     }
 
     [Fact]
+    public async Task An_update_writes_its_log_into_the_comfyui_folder()
+    {
+        // Not beside it: the rule for a fresh install's empty folder doesn't apply to one in use.
+        var folder = Directory.CreateTempSubdirectory("dn-log-").FullName;
+        var comfy = Path.Combine(folder, "ComfyUI");
+        Directory.CreateDirectory(comfy);
+        File.WriteAllText(Path.Combine(comfy, "main.py"), string.Empty);
+        try
+        {
+            var workload = new InstallationConfiguration { Name = "Update" };
+            workload.Repository.Type = RepositoryType.ComfyUI;
+            workload.Repository.RepositoryUrl = "https://github.com/comfyanonymous/ComfyUI";
+            var plan = await new WizardModuleRegistry(() => []).BuildPlanAsync(new WizardSelection { Workload = workload, Mode = WizardMode.UpdateExisting });
+            plan.Selection.TargetFolder = comfy;
+            var orchestrator = new Mock<IInstallationOrchestrator>();
+            orchestrator
+                .Setup(o => o.InstallAsync(
+                    It.IsAny<InstallationConfiguration>(), It.IsAny<string>(), It.IsAny<InstallationOptions>(),
+                    It.IsAny<IProgress<InstallLogEntry>>(), It.IsAny<IProgress<InstallationProgress>>(),
+                    It.IsAny<IProgress<DownloadProgress>>(), It.IsAny<Func<CancellationToken>>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(InstallationResult.Success("done"));
+            var session = new InstallSession(orchestrator.Object);
+
+            await session.StartAsync(plan);
+
+            Path.GetDirectoryName(session.LogFilePath).Should().Be(comfy);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task A_finished_run_writes_the_whole_log_to_the_install_folder()
     {
         var folder = Directory.CreateTempSubdirectory("dn-log-").FullName;

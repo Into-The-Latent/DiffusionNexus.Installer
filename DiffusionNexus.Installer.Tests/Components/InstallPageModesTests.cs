@@ -50,6 +50,7 @@ public class InstallPageModesTests : BunitContext
         Services.AddSingleton(_registry);
         Services.AddSingleton(_session.Object);
         Services.AddSingleton(Mock.Of<IUserPrompt>());
+        Services.AddSingleton(new WorkloadPicks());
         Services.AddSingleton(Mock.Of<IModelPreflight>());
         Services.AddSingleton<ICatalogProvenance>(new FakeCatalogProvenance(() => "test catalog"));
     }

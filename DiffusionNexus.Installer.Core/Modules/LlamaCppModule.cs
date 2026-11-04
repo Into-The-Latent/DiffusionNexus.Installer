@@ -21,6 +21,8 @@ public sealed class LlamaCppModule(IWorkloadSource workloads) : IWizardModule
     public int Order => 50;
     public WorkloadCapability Satisfies => WorkloadCapability.LlamaCpp;
 
+    public bool UsedIn(WizardMode mode) => mode is WizardMode.FreshInstall or WizardMode.UpdateExisting;
+
     /// <summary>Display name of the resolved wheel, or null when the id matched nothing.</summary>
     public string? WheelName { get; private set; }
 

@@ -14,10 +14,100 @@ public class WizardRunTests
         public int Order => 0;
         public WorkloadCapability Satisfies => WorkloadCapability.None;
         public bool AppliesTo(WizardSelection s) => true;
+        public bool UsedIn(WizardMode mode) => true;
         public Task InitializeAsync(WizardSelection s, CancellationToken ct = default) => Task.CompletedTask;
         public void Contribute(InstallationOptionsDraft d) { }
         public ModuleValidation Validate() =>
             valid ? ModuleValidation.Ok() : ModuleValidation.Error("not ready");
+    }
+
+    private sealed class ToggleModule(WizardStage stage) : IWizardModule
+    {
+        public bool Applies { get; set; }
+        public string Id => $"toggle-{stage}";
+        public WizardStage Stage => stage;
+        public int Order => 0;
+        public WorkloadCapability Satisfies => WorkloadCapability.None;
+        public bool AppliesTo(WizardSelection s) => Applies;
+        public bool UsedIn(WizardMode mode) => true;
+        public Task InitializeAsync(WizardSelection s, CancellationToken ct = default) => Task.CompletedTask;
+        public void Contribute(InstallationOptionsDraft d) { }
+        public ModuleValidation Validate() => ModuleValidation.Ok();
+    }
+
+    private static async Task<WizardRun> UpdateRunAsync(params IWizardModule[] modules)
+    {
+        var workload = new InstallationConfiguration { Name = "ComfyUI" };
+        return new WizardRun(await new WizardModuleRegistry(() => modules)
+            .BuildPlanAsync(new WizardSelection { Workload = workload, Mode = WizardMode.UpdateExisting }));
+    }
+
+    [Fact]
+    public async Task A_stage_that_appears_behind_the_current_one_is_shown_and_not_skipped()
+    {
+        // The Visual C++ page announces a UAC prompt. Skipping it would leave that prompt unexplained,
+        // and the module would still contribute its default.
+        var system = new ToggleModule(WizardStage.System);
+        var run = await UpdateRunAsync(new GateModule(WizardStage.Location, valid: true), system, new GateModule(WizardStage.Confirm, valid: true));
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+
+        system.Applies = true;
+        run.TryNext().Should().BeTrue();
+
+        run.CurrentStage.Should().Be(WizardStage.System);
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Install);
+    }
+
+    [Fact]
+    public async Task A_module_that_starts_to_apply_in_a_stage_already_seen_is_shown_too()
+    {
+        // System was there for the GPU warning. After a side trip the driver is back, torch moves,
+        // and the Visual C++ page applies in that same stage.
+        var runtime = new ToggleModule(WizardStage.System);
+        var run = await UpdateRunAsync(new GateModule(WizardStage.System, valid: true), runtime, new GateModule(WizardStage.Confirm, valid: true));
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+
+        runtime.Applies = true;
+        run.TryNext().Should().BeTrue();
+
+        run.CurrentStage.Should().Be(WizardStage.System);
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Install, "it has been seen now, so it doesn't send the run back again");
+    }
+
+    [Fact]
+    public async Task A_module_that_starts_to_apply_on_the_current_stage_is_shown_before_moving_on()
+    {
+        var runtime = new ToggleModule(WizardStage.System);
+        var run = await UpdateRunAsync(new GateModule(WizardStage.System, valid: true), runtime);
+        run.CurrentStage.Should().Be(WizardStage.System);
+
+        runtime.Applies = true;
+        run.TryNext().Should().BeTrue();
+
+        run.CurrentStage.Should().Be(WizardStage.System, "this page was never drawn with that module on it");
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+    }
+
+    [Fact]
+    public async Task A_stage_that_was_there_all_along_does_not_send_the_run_back()
+    {
+        var system = new ToggleModule(WizardStage.System) { Applies = true };
+        var run = await UpdateRunAsync(system, new GateModule(WizardStage.Confirm, valid: true));
+        run.TryNext().Should().BeTrue();
+        run.CurrentStage.Should().Be(WizardStage.Confirm);
+
+        run.TryNext().Should().BeTrue();
+
+        run.CurrentStage.Should().Be(WizardStage.Install);
     }
 
     private static async Task<WizardPlan> BuildPlanAsync(params IWizardModule[] modules)

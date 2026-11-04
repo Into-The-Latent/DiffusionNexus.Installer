@@ -206,8 +206,12 @@ public sealed class InstallSession : IInstallSession, IDisposable
         }
     }
 
-    private static string RunName(WizardPlan plan) =>
-        plan.Selection.Mode == WizardMode.ModelsOnly ? "Download" : "Installation";
+    private static string RunName(WizardPlan plan) => plan.Selection.Mode switch
+    {
+        WizardMode.ModelsOnly => "Download",
+        WizardMode.UpdateExisting => "Update",
+        _ => "Installation",
+    };
 
     /// <summary>
     /// Spec 7.2: one log line and one report row naming the catalog this run's workload came from
@@ -228,7 +232,7 @@ public sealed class InstallSession : IInstallSession, IDisposable
             PlannedOperation = text,
             Category = InstallReportCategory.Step,
             Outcome = warning ? InstallReportOutcome.Skipped : InstallReportOutcome.Success,
-            Comment = plan.Selection.Mode == WizardMode.ModelsOnly ? "The catalog this download reads." : "The catalog this install reads.",
+            Comment = $"The catalog this {(plan.Selection.Mode == WizardMode.FreshInstall ? "install" : RunName(plan).ToLowerInvariant())} reads.",
             IsWarning = warning,
         };
         Append(new InstallLogLine(DateTimeOffset.Now, text, warning ? SdkLogLevel.Warning : SdkLogLevel.Info));

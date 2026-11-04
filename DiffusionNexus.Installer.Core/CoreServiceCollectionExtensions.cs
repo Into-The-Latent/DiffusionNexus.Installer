@@ -69,14 +69,18 @@ public static class CoreServiceCollectionExtensions
         // fresh set for every plan, so a workload never sees another workload's answers.
         services.AddTransient<IWizardModule, InstallFolderModule>();
         services.AddTransient<IWizardModule, ModelsOnlyFolderModule>();
+        services.AddTransient<IWizardModule, ExistingFolderModule>();
         services.AddTransient<IWizardModule, ComfyFoldersModule>();
+        services.AddTransient<IWizardModule, ComfyUpdateModule>();
         services.AddTransient<IWizardModule, VramProfileModule>();
         services.AddTransient<IWizardModule, ModelSelectionModule>();
         services.AddTransient<IWizardModule, WorkflowSelectionModule>();
         services.AddTransient<IWizardModule, GpuPreflightModule>();
+        services.AddTransient<IWizardModule, ExistingGpuModule>();
         services.AddTransient<IWizardModule, VcRuntimeModule>();
         services.AddTransient<IWizardModule, LlamaCppModule>();
         services.AddTransient<IWizardModule, ShortcutsModule>();
+        services.AddTransient<IWizardModule, ExistingReviewModule>();
         services.AddTransient<IWizardModule, DisclaimerModule>();
 
         // Size lookups get their OWN bounded client, never the container's: AddInstallationServices
@@ -89,6 +93,7 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IDiskSpaceEstimator, SdkDiskSpaceEstimator>();
         services.AddSingleton<IExistingModelVerifier, SdkExistingModelVerifier>();
         services.AddSingleton<IModelPresenceScanner, ModelPresenceScanner>();
+        services.AddSingleton<WorkloadPicks>();
 
         services.AddSingleton<DevTools.LauncherScriptPreview>();
         services.AddSingleton<Gallery.GalleryBuilder>();

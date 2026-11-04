@@ -6,8 +6,8 @@ namespace DiffusionNexus.Installer.Core.Modules;
 /// Which VRAM tier the install targets. The tier drives which per-tier model variants the SDK
 /// downloads (ModelDownloadStepHandler via VramProfileHelper.SelectBestMatchingLinks) and what
 /// the disk-space estimate counts. Only the tiers the workload declares are offered, lowest first
-/// and preselected -- 1.x behaviour, and the user's explicit choice: no auto-detection. Models only
-/// preselects the highest instead (the owner's decision, 2026-11-03).
+/// and preselected -- 1.x behaviour, and the user's explicit choice: no auto-detection. The new paths
+/// preselect the highest instead (the owner's decision, 2026-11-03).
 /// </summary>
 public sealed class VramProfileModule : IWizardModule
 {
@@ -47,8 +47,8 @@ public sealed class VramProfileModule : IWizardModule
         _selection = selection;
         Tiers = VramTiers.Parse(selection.Workload.Vram.VramProfiles);
         SelectedTier = Tiers.Count == 0 ? 0
-            : selection.Mode == WizardMode.ModelsOnly ? Tiers[^1]
-            : Tiers[0];
+            : selection.Mode == WizardMode.FreshInstall ? Tiers[0]
+            : Tiers[^1];
         return Task.CompletedTask;
     }
 

@@ -42,14 +42,14 @@ public class ExistingChoicePageTests : BunitContext
     }
 
     [Fact]
-    public void Choice_update_card_is_disabled()
+    public void Choice_update_card_opens_the_update_path()
     {
         var cut = Render<ExistingChoice>();
 
         var card = cut.Find("[data-role=update-card]");
 
-        card.TagName.Should().NotBe("A", "there must be nothing to click until the update path exists");
-        card.QuerySelector("a").Should().BeNull();
-        card.TextContent.Should().Contain("Update existing ComfyUI").And.Contain("Coming soon");
+        card.TagName.Should().Be("A");
+        card.GetAttribute("href").Should().Be("/existing/update");
+        card.TextContent.Should().Contain("Update existing ComfyUI").And.NotContain("Coming soon");
     }
 }

@@ -7,5 +7,8 @@ public enum WizardMode
     FreshInstall,
 
     /// <summary>Downloads a workload's models into any folder, and nothing else.</summary>
-    ModelsOnly
+    ModelsOnly,
+
+    /// <summary>Updates an installed ComfyUI, and adds workloads to it.</summary>
+    UpdateExisting
 }

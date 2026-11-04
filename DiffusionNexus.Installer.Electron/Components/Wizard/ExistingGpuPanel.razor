@@ -1,0 +1,10 @@
+@using DiffusionNexus.Installer.Core.Modules
+
+<section class="panel">
+    <h2>Graphics card</h2>
+    <p class="validation-error" data-role="no-gpu">No usable NVIDIA GPU was found. Torch and your launcher stay as they are, and this workload may not run on this machine.</p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ExistingGpuModule Module { get; set; } = default!;
+}

@@ -1,0 +1,72 @@
+@using DiffusionNexus.Installer.Core.Host
+@using DiffusionNexus.Installer.Core.Modules
+@implements IDisposable
+@inject IFolderPicker FolderPicker
+
+<section class="panel">
+    <h2>Your ComfyUI</h2>
+    <p class="panel-hint">Choose the folder of the ComfyUI you want to update. We check it before anything changes.</p>
+    @if (Module.IsChecking)
+    {
+        <p class="panel-hint folder-check">Checking this folder...</p>
+    }
+    else if (Module.Validate() is { IsValid: false, ErrorMessage: { } problem })
+    {
+        @* Shown here, next to the box it is about; the page skips this module in its own list. *@
+        <p class="validation-error" data-role="folder-problem">@problem</p>
+        @if (Module.ShowsFreshInstallLink)
+        {
+            <a class="folder-fresh-install" data-role="fresh-install" href="/software/ComfyUI">Fresh install</a>
+        }
+    }
+    <div class="path-row">
+        @* @bind, not value + @oninput: a render that falls behind the typing must not write the older text back. *@
+        <input type="text" @bind:get="Module.Folder" @bind:set="OnFolderTyped" @bind:event="oninput" />
+        <button class="btn-secondary" @onclick="Browse">Browse...</button>
+    </div>
+    @if (Module.Summary is { Count: > 0 } summary)
+    {
+        <dl class="summary" data-role="found">
+            @foreach (var (label, value) in summary)
+            {
+                <dt>@label</dt>
+                <dd>@value</dd>
+            }
+        </dl>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ExistingFolderModule Module { get; set; } = default!;
+
+    /// <summary>
+    /// Raised after any edit. The parent owns the Next button, and Blazor re-renders only the
+    /// component that owns a handler.
+    /// </summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    protected override void OnInitialized() => Module.FolderCheckAnswered += OnAnswered;
+
+    private void OnAnswered() => _ = InvokeAsync(async () =>
+    {
+        await Changed.InvokeAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Module.FolderCheckAnswered -= OnAnswered;
+
+    private async Task OnFolderTyped(string? folder)
+    {
+        Module.Folder = folder ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Browse()
+    {
+        var chosen = await FolderPicker.PickFolderAsync("Select your ComfyUI folder", Module.Folder);
+        if (chosen is null) return;          // dismissed -- leave the field untouched
+
+        Module.Folder = chosen;
+        await Changed.InvokeAsync();
+    }
+}

@@ -5,8 +5,11 @@ using DiffusionNexus.Installer.Core.Wizard;
 namespace DiffusionNexus.Installer.Core.Modules;
 
 /// <summary>One model the workload declares. <see cref="Group"/> is the catalog destination, for display only.</summary>
-public sealed class ModelRow(Guid id, string name, string group)
+public sealed class ModelRow(Guid id, string name, string group, string? packName = null)
 {
+    /// <summary>On a merged list, the workload this model came from.</summary>
+    public string? PackName { get; } = packName;
+
     public Guid Id { get; } = id;
     public string Name { get; } = name;
     public string Group { get; } = group;
@@ -87,7 +90,11 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
         Rows = selection.Workload.ModelDownloads
             .Where(m => m.Enabled)
             .DistinctBy(m => m.Id)
-            .Select(m => new ModelRow(m.Id, m.Name, string.IsNullOrWhiteSpace(m.Destination) ? NotAssignedGroup : m.Destination))
+            .Select(m => new ModelRow(
+                m.Id,
+                m.Name,
+                string.IsNullOrWhiteSpace(m.Destination) ? NotAssignedGroup : m.Destination,
+                selection.PackNameByModelId.GetValueOrDefault(m.Id)))
             .ToList();
         Groups = Rows
             .GroupBy(r => r.Group)
@@ -148,7 +155,8 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
             ? []
             : scanner.Scan(new ModelScanRequest(
                 _selection.Workload,
-                downloadOnly ? folder : RepositoryPaths.Resolve(_selection.Workload, folder),
+                // Only a fresh install creates a folder under the one chosen.
+                _selection.Mode == WizardMode.FreshInstall ? RepositoryPaths.Resolve(_selection.Workload, folder) : folder,
                 _selection.ModelBaseFolder,
                 _selection.FolderPathOverrides,
                 tier,
@@ -197,7 +205,9 @@ public sealed class ModelSelectionModule(IModelPresenceScanner scanner, IDiskSpa
                 Rows.Where(r => !r.IsSelected).Select(r => r.Id).ToHashSet(),
                 Rows.Where(r => r.IsExisting).Select(r => r.Id).ToHashSet(),
                 _selection.ModelBaseFolder,
-                _selection.Mode == WizardMode.ModelsOnly), ct).ConfigureAwait(false);
+                // Only a fresh install creates a repository and a venv to make room for, and a torch
+                // that moves on an update takes gigabytes of its own, so it gets the same rough room.
+                _selection.Mode != WizardMode.FreshInstall && !(_selection.Existing is { UpgradeTorch: true } existing && ComfyUpdateModule.TorchVersionChanges(existing))), ct).ConfigureAwait(false);
 
             // An estimator that ignores ct finishes anyway; only the newest request may show.
             if (!Latest()) return;

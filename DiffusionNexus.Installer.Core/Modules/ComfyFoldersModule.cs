@@ -1,5 +1,7 @@
 using DiffusionNexus.Installer.Core.Content;
+using DiffusionNexus.Installer.Core.Existing;
 using DiffusionNexus.Installer.Core.Wizard;
+using DiffusionNexus.Installer.SDK.Services.Installation.Existing;
 using DiffusionNexus.Installer.SDK.Models.Configuration;
 using DiffusionNexus.Installer.SDK.Models.Installation;
 using DiffusionNexus.Installer.SDK.Services.Settings;
@@ -78,11 +80,13 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     public bool ShowsOwnValidation => true;
 
     private WizardSelection? _selection;
+    private ExistingRun? _existing;
+    private ExistingComfyUIProfile? _seededFrom;
     private UserSettings? _user;
     private bool _useModelLibraryFolder;
     private string _modelBaseFolder = string.Empty;
     private readonly List<FolderTypeRow> _folderTypes = [];
-    private readonly List<AdditionalFolderRow> _additionalFolders = [];
+    private List<AdditionalFolderRow> _additionalFolders = [];
 
     // What the advanced section held when it was loaded. Persist only rewrites the per-type and
     // additional folders when they differ from this: a user who never opened Advanced must not
@@ -185,7 +189,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         _selection is not null
         && FolderInput.Clean(_selection.TargetFolder) is { } target
         && FolderInput.InstallFolderProblem(target) is null
-            ? RepositoryPaths.Resolve(_selection.Workload, target)
+            ? _existing is not null ? target : RepositoryPaths.Resolve(_selection.Workload, target)
             : null;
 
     /// <summary>
@@ -204,8 +208,127 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// mechanism exists. Putting AI-Toolkit back means teaching the generated start script to
     /// export MODELS_PATH -- an SDK change, tracked separately.
     /// </summary>
+    public bool UsedIn(WizardMode mode) => mode is WizardMode.FreshInstall or WizardMode.UpdateExisting;
+
     public bool AppliesTo(WizardSelection selection) =>
         selection.Workload.Repository.Type is RepositoryType.ComfyUI;
+
+    /// <summary>What the install's run script says now. Null means ComfyUI's own output folder.</summary>
+    public string? CurrentOutputFolder => _existing?.Profile?.OutputFolder;
+
+    /// <summary>What the install's extra_model_paths.yaml says now. Null means no library.</summary>
+    public string? CurrentModelFolder => _existing?.Profile?.ModelBaseFolder;
+
+    /// <summary>Update path: continuing changes where this ComfyUI sends its output.</summary>
+    public bool OutputFolderDiffers => _existing?.Profile is not null && !SameFolder(EffectiveOutputFolder, CurrentOutputFolder);
+
+    /// <summary>Update path: continuing changes where this ComfyUI loads its models from.</summary>
+    public bool ModelFolderDiffers =>
+        _existing?.Profile is not null
+        && (!SameFolder(EffectiveModelBaseFolder, CurrentModelFolder) || (UseModelLibraryFolder && AdvancedEdited));
+
+    /// <summary>
+    /// Types this run's models go into that the install's yaml doesn't list. ComfyUI reads only what
+    /// it lists under a base_path, so a model of such a type would land where nothing looks for it.
+    /// A warning only: rewriting the file would drop whatever else it holds.
+    /// </summary>
+    public IReadOnlyList<string> MissingModelTypes =>
+        _existing?.Profile?.ModelFolderMappings is not { } mappings || !UseModelLibraryFolder || _selection is null
+            ? []
+            : _selection.Workload.ModelDownloads
+                .Where(m => m.Enabled)
+                .Select(m => ModelDestinationType(m.Destination))
+                .Where(type => type is not null && Listed(mappings, type) is null)
+                .Select(type => type!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+    /// <summary>The folder the yaml gives a type, under either of the names ComfyUI reads it by.</summary>
+    private static string? Listed(IReadOnlyDictionary<string, string> mappings, string type) =>
+        mappings.GetValueOrDefault(type) ?? (OtherNames.TryGetValue(type, out var other) ? mappings.GetValueOrDefault(other) : null);
+
+    private static readonly Dictionary<string, string> OtherNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["diffusion_models"] = "unet",
+        ["unet"] = "diffusion_models",
+        ["text_encoders"] = "clip",
+        ["clip"] = "text_encoders",
+    };
+
+    /// <summary>"vae" from "models/vae". Null for a destination with no type folder.</summary>
+    private static string? ModelDestinationType(string? destination)
+    {
+        var parts = destination?.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        var at = parts.Length > 0 && parts[0].Equals("models", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        return at < parts.Length ? parts[at] : null;
+    }
+
+    /// <summary>Whether the install has a yaml at all, which a switch that was off doesn't tell.</summary>
+    public bool HasModelPathsFile => _existing?.HasModelPathsFile == true;
+
+    private static bool SameFolder(string? a, string? b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+        return string.Equals(Comparable(a), Comparable(b), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Comparable(string folder)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return folder;
+        }
+    }
+
+    /// <summary>The folder box has no install behind it yet, so the panels have nothing to start from.</summary>
+    public bool WaitsForInstall => _existing is not null && _existing.Profile is not { Support: ExistingInstallSupport.Supported };
+
+    /// <summary>On the update path the run decides: a changed folder rewrites the file, with a backup.</summary>
+    public bool OffersOverwrite => _existing is null;
+
+    /// <summary>
+    /// The panels start filled in from the install, each time another install is found there. When
+    /// the same one is checked again, as after a side trip, only what nobody touched here follows the
+    /// files: what was typed stays, and a file edited during the trip must not read as a change to undo.
+    /// </summary>
+    private void SeedFromInstall()
+    {
+        if (_existing?.Profile is not { Support: ExistingInstallSupport.Supported, RepositoryPath: { } repository } profile
+            || ReferenceEquals(profile, _seededFrom)) return;
+
+        var again = _seededFrom is not null && SameFolder(repository, _seededFrom.RepositoryPath);
+
+        if (!again || SameFolder(EffectiveOutputFolder, _seededFrom!.OutputFolder))
+        {
+            UseOwnOutputFolder = profile.OutputFolder is not null;
+            OutputFolder = profile.OutputFolder ?? string.Empty;
+        }
+
+        if (!again || (SameFolder(EffectiveModelBaseFolder, _seededFrom!.ModelBaseFolder) && !AdvancedEdited))
+        {
+            _useModelLibraryFolder = profile.ModelBaseFolder is not null;
+            _modelBaseFolder = profile.ModelBaseFolder ?? string.Empty;
+
+            // Its own type folders, so a model goes where this ComfyUI will look for it.
+            foreach (var row in _folderTypes)
+                row.Value = (profile.ModelFolderMappings is { } mappings ? Listed(mappings, row.Key) : null) ?? row.Standard;
+            _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (!again)
+        {
+            // A new list, not Clear: this runs on the folder check's thread, and a render may be walking the old one.
+            _additionalFolders = [];
+            _loadedAdditional = [];
+        }
+
+        _seededFrom = profile;
+        SyncSelection();
+    }
 
     public async Task InitializeAsync(WizardSelection selection, CancellationToken ct = default)
     {
@@ -217,6 +340,28 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
 
         var user = await settings.GetOrCreateForCurrentUserAsync(ct).ConfigureAwait(false);
         _user = user;
+
+        _existing = selection.Existing;
+        if (_existing is not null)
+        {
+            // This install's own folders count here, not what the next fresh install starts from.
+            _folderTypes.Clear();
+            foreach (var type in UserModelFolderMap.FolderTypes) _folderTypes.Add(new FolderTypeRow(type));
+            _additionalFolders.Clear();
+            _useModelLibraryFolder = false;
+            _modelBaseFolder = string.Empty;
+            UseOwnOutputFolder = false;
+            OutputFolder = string.Empty;
+            _loadedOverrides = new Dictionary<string, string>(FolderPathOverrides, StringComparer.OrdinalIgnoreCase);
+            _loadedAdditional = [];
+            _seededFrom = null;
+            _existing.Changed += SeedFromInstall;
+            _existing.FolderChanges = FolderChangeLines;
+            SeedFromInstall();
+            SyncSelection();
+            return;
+        }
+
         _useModelLibraryFolder = !string.IsNullOrWhiteSpace(user.DefaultModelBaseFolder);
         // ?? as for the additional folders below: System.Text.Json loads "OutputFolder": null as
         // null despite the non-nullable property, and the text boxes and setters expect a string.
@@ -295,6 +440,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     {
         if (_selection is null || !AppliesTo(_selection)) return;
 
+        // An update's folders belong to that install: the next fresh install must not start from them.
+        if (_existing is not null) return;
+
         // Re-read, never the copy from InitializeAsync: the install-folder module saves just
         // before this one, and writing a stale object back would undo it.
         // Off saves an empty library folder. The switch IS that field on the next start, so a
@@ -315,6 +463,24 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         }
 
         await settings.SaveAsync(user, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>What this page changes in the install, the same rules as <see cref="Contribute"/>.</summary>
+    private List<string> FolderChangeLines()
+    {
+        var lines = new List<string>();
+
+        if (OutputFolderDiffers)
+            lines.Add(EffectiveOutputFolder is { } output
+                ? $"Output folder: changes to {output}, in run_nvidia.bat."
+                : "Output folder: back to ComfyUI's own, in run_nvidia.bat.");
+
+        if (EffectiveModelBaseFolder is { } model && ModelFolderDiffers)
+            lines.Add(HasModelPathsFile
+                ? $"Model folder: extra_model_paths.yaml is rewritten to read {model}, and anything else in it stops applying. A backup is kept."
+                : $"Model folder: an extra_model_paths.yaml is added to read {model}.");
+
+        return lines;
     }
 
     /// <summary>
@@ -348,7 +514,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// Why the output folder cannot be used, or null. Beyond the checks every folder gets (see
     /// <see cref="FolderProblem"/>), some characters break the start script.
     /// </summary>
-    public string? OutputFolderProblem => FolderProblem(
+    public string? OutputFolderProblem => _existing is not null && EffectiveOutputFolder is not null && !OutputFolderDiffers ? null : FolderProblem(
         UseOwnOutputFolder, OutputFolder,
         blank: "Choose an output folder, or turn off \"Use my own output folder\".",
         notFull: @"Enter the full path of the output folder, for example D:\Renders.",
@@ -362,7 +528,7 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// YAML reads a space followed by # as the start of a comment, so "D:\AI #2\Models" would send
     /// ComfyUI to D:/AI -- refused until the SDK quotes the value.
     /// </summary>
-    public string? ModelFolderProblem => FolderProblem(
+    public string? ModelFolderProblem => _existing is not null && EffectiveModelBaseFolder is not null && !ModelFolderDiffers ? null : FolderProblem(
         UseModelLibraryFolder, _modelBaseFolder,
         blank: "Choose your model library folder, or turn off \"Use my own model folder\".",
         notFull: @"Enter the full path of your model library, for example D:\Models.",
@@ -394,6 +560,9 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
     /// </summary>
     private string? InstallContaining(string folder)
     {
+        // An update doesn't delete anything, and an output folder inside ComfyUI is its own default.
+        if (_existing is not null) return null;
+
         if (InstallRoot is not { } root) return null;
 
         var install = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
@@ -414,6 +583,14 @@ public sealed class ComfyFoldersModule(IUserSettingsRepository settings) : IWiza
         // travel together. With the switch off there is no base folder, so no YAML.
         draft.GenerateExtraModelPaths = model is not null;
         draft.OverwriteExtraModelPaths = model is not null && OverwriteExtraModelPaths;
+
+        if (_existing is not null)
+        {
+            // An unchanged folder leaves this install's files exactly as they are.
+            draft.GenerateExtraModelPaths = model is not null && ModelFolderDiffers;
+            draft.OverwriteExtraModelPaths = draft.GenerateExtraModelPaths;
+            draft.ChangeOutputFolder = OutputFolderDiffers;
+        }
 
         draft.FolderPathOverrides.Clear();
         draft.AdditionalFolders.Clear();

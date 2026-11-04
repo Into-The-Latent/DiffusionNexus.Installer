@@ -18,7 +18,7 @@
            into an issue needs what came before it. Hidden where there is no clipboard, for the
            same reason "Close installer" is hidden outside Electron (issue #14). *@
         <div class="panel-head">
-            <h2>@(ModelsOnly ? "Downloading" : "Installing")</h2>
+            <h2>@(ModelsOnly ? "Downloading" : Update ? "Updating" : "Installing")</h2>
             @if (Clipboard.IsAvailable)
             {
                 <span class="panel-head-actions">
@@ -33,7 +33,7 @@
 
         @if (_startError is not null)
         {
-            <p class="validation-error">This @(ModelsOnly ? "download" : "installation") could not be started: @_startError</p>
+            <p class="validation-error">This @(ModelsOnly ? "download" : Update ? "update" : "installation") could not be started: @_startError</p>
         }
 
         @* A models-only run is one step: the counter would say "Step 1 of 1" over an empty bar for hours. *@
@@ -46,7 +46,13 @@
             <progress max="100" value="@progress.ProgressPercentage.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
         }
 
-        @if (Session.CurrentDownload is { IsActive: true } download)
+        @* Running only: a run that ended may leave its last download marked active, and Skip then does nothing. *@
+        @if (ModelsOnly && Session.Phase == InstallPhase.Running && Session.Progress is { Message: { Length: > 0 } modelProgress })
+        {
+            <p data-role="model-progress">@modelProgress</p>
+        }
+
+        @if (Session.Phase == InstallPhase.Running && Session.CurrentDownload is { IsActive: true } download)
         {
             @if (ModelsOnly)
             {
@@ -76,11 +82,12 @@
             var rows = Session.ReportRows;
         }
 
-        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !result.NothingDelivered ? "result-ok" : "result-bad")">
+        <h2 class="@(result is null ? null : result.IsSuccess && !SomeDownloadsFailed(rows) && !SomeDownloadsWarned(rows) && !result.NothingDelivered && !SomethingFailedOnUpdate(rows) ? "result-ok" : "result-bad")">
             @(result is null ? "Result"
-              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : ModelsOnly ? "Download complete" : "Installation complete")
+              : result.IsSuccess ? (SomeDownloadsFailed(rows) ? "Some downloads failed" : result.NothingDelivered ? "Nothing was downloaded" : SomethingFailedOnUpdate(rows) ? "Finished with problems" : SomeDownloadsWarned(rows) ? (ModelsOnly ? "Download finished with warnings" : "Finished with warnings") : ModelsOnly ? "Download complete" : !Update ? "Installation complete" : Run.Plan.Selection.UpdateOnly ? "Update complete" : "Extension complete")
               : result.IsCancelled ? "Cancelled"
               : ModelsOnly ? "Download failed"
+              : Update ? "Update failed"
               : "Installation failed")
         </h2>
 
@@ -127,7 +134,7 @@
 <div class="wizard-actions">
     @if (Session.Phase == InstallPhase.Running)
     {
-        <button class="btn-secondary" @onclick="() => Session.Cancel()">@(ModelsOnly ? "Cancel download" : "Cancel installation")</button>
+        <button class="btn-secondary" @onclick="() => Session.Cancel()">@(ModelsOnly ? "Cancel download" : Update ? "Cancel update" : "Cancel installation")</button>
     }
     else
     {
@@ -150,7 +157,7 @@
         }
         @* Only offered for an install that actually succeeded: starting a failed or cancelled one
            runs a half-built app, and the report beside it is what the user needs to read first. *@
-        @if (Session.Result is { IsSuccess: true } && CanLaunch)
+        @if (Session.Result is { IsSuccess: true } && CanLaunch && !SomethingFailedOnUpdate(Session.ReportRows))
         {
             <button class="btn-primary" @onclick="LaunchAndClose">Start app &amp; close</button>
         }
@@ -166,12 +173,22 @@
 
     private bool ModelsOnly => Run.Plan.Selection.Mode == WizardMode.ModelsOnly;
 
+    private bool Update => Run.Plan.Selection.Mode == WizardMode.UpdateExisting;
+
+    /// <summary>The code left alone or a node that failed: the run went on, but "complete" would be a false claim.</summary>
+    private bool SomethingFailedOnUpdate(IReadOnlyList<InstallReportEntry> rows) =>
+        Update && rows.Any(r => r.Outcome == InstallReportOutcome.Failed);
+
     /// <summary>
     /// A models-only run is only its downloads, so "complete" over a failed one would be a false
     /// claim. A fresh install keeps its heading: the failed row sits beside the install that worked.
     /// </summary>
     private bool SomeDownloadsFailed(IReadOnlyList<InstallReportEntry> rows) =>
         ModelsOnly && rows.Any(r => r.Outcome == InstallReportOutcome.Failed);
+
+    /// <summary>A kept file of another size or a name clash: a model may be missing, and "complete" would claim it isn't.</summary>
+    private bool SomeDownloadsWarned(IReadOnlyList<InstallReportEntry> rows) =>
+        (ModelsOnly || Update) && rows.Any(r => r.IsWarning && r.Category == InstallReportCategory.Model && r.Outcome == InstallReportOutcome.Skipped);
 
     private string? _startError;
     private string? _actionError;
@@ -253,7 +270,7 @@
 
     private bool CanLaunch => Targets.LauncherScript is { } script && File.Exists(script);
 
-    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), ModelsOnly ? "open the download folder" : "open the installation folder");
+    private void OpenFolder() => Act(() => Actions.OpenFolder(Targets.Folder!), ModelsOnly ? "open the download folder" : Update ? "open the ComfyUI folder" : "open the installation folder");
 
     /// <summary>
     /// The same rendering the log file uses, so what lands in an issue is what is on disk. A

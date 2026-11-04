@@ -72,8 +72,8 @@ public class DependencyInjectionTests
         using var provider = Build();
 
         provider.GetServices<IWizardModule>().Select(m => m.Id).Should().BeEquivalentTo(
-            "install-folder", "models-only-folder", "comfy-folders", "vram-profile", "model-selection", "workflow-selection",
-            "gpu-preflight", "vc-runtime", "llama-cpp", "shortcuts", "disclaimer");
+            "install-folder", "models-only-folder", "existing-folder", "comfy-folders", "comfy-update", "vram-profile", "model-selection", "workflow-selection",
+            "gpu-preflight", "existing-gpu", "vc-runtime", "llama-cpp", "shortcuts", "existing-review", "disclaimer");
     }
 
     [Fact]
@@ -94,6 +94,8 @@ public class DependencyInjectionTests
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => Mock.Of<IJSRuntime>());
+        services.AddSingleton(Mock.Of<IProcessRunner>());
+        services.AddSingleton(Mock.Of<IPythonService>());
         services.AddInstallationServices();
         services.AddDiffusionNexusUserSettings(Path.Combine(Path.GetTempPath(), $"dn-{Guid.NewGuid():N}.json"));
         services.AddDiffusionNexusCatalog(o =>

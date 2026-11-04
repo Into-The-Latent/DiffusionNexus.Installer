@@ -28,6 +28,7 @@ public class SoftwareWorkloadsPageTests : BunitContext
         Services.AddSingleton(OfflineCommunityLinks.Cache());
         Services.AddSingleton(OfflineServerMessages.Cache());
         UpdateSignals.Register(Services);
+        Services.AddSingleton(new WorkloadPicks());
     }
 
     private static InstallationConfiguration Workload(
